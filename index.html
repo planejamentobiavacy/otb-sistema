@@ -1092,19 +1092,7 @@ buildGradeMap();
 }
 var overlay = document.createElement('div');
 overlay.className = 'modal-overlay';
-overlay.innerHTML = '
-<div class="modal">
-<div class="modal-header">
-<h2>? Diagnostico de Importacao</h2>
-<button class="modal-close" id="closeDiag">?</button>
-</div>
-<div class="modal-body" id="diagBody"></div>
-<div class="diag-actions">
-<button class="btn ghost" id="diagCancel" style="color:var(--text);border-color:var(--border-strong)">Fechar</button>
-<button class="btn primary" id="diagApply">Aplicar mapeamento e reprocessar</button>
-</div>
-</div>
-';
+overlay.innerHTML = '<div class="modal"> <div class="modal-header"> <h2>? Diagnostico de Importacao</h2> <button class="modal-close" id="closeDiag">?</button> </div> <div class="modal-body" id="diagBody"></div> <div class="diag-actions"> <button class="btn ghost" id="diagCancel" style="color:var(--text);border-color:var(--border-strong)">Fechar</button> <button class="btn primary" id="diagApply">Aplicar mapeamento e reprocessar</button> </div> </div> ';
 document.body.appendChild(overlay);
 document.getElementById('closeDiag').onclick =
 document.getElementById('diagCancel').onclick = function(){ overlay.remove(); };
@@ -1424,8 +1412,8 @@ if (state.cart && state.cart.length) console.log('CART - colunas:', Object.keys(
 if (state.prod && state.prod.length) console.log('PROD - colunas:', Object.keys(state.prod[0]), '| 1a linha:', state.prod[0]);
 buildGradeMap();
 console.log('GradeMap criado: ', Object.keys(state.gradeMap).length, 'grades unicas');
-console.log('Distribuicao por fornecedor:', state.(prodDiag && prodDiag.supplierCounts));
-console.log('Amostra de valores FORNECEDOR encontrados:', state.(prodDiag && prodDiag.rawFornecedorSamples));
+console.log('Distribuicao por fornecedor:', (state.prodDiag && state.prodDiag.supplierCounts));
+console.log('Amostra de valores FORNECEDOR encontrados:', (state.prodDiag && state.prodDiag.rawFornecedorSamples));
 state.diagnostics = [];
 var stkAgg = aggregate(state.stk, {
 date: ['DATA','MES','PERIODO','ANO_MES','DT_ESTOQUE','DATA_ESTOQUE','DT','ANOMES','MES_ANO'],
@@ -2782,9 +2770,7 @@ var tabs = [
 {id:'fornecedor',label:'? Fornecedor'},
 ];
 var bar = document.getElementById('dreTabsBar');
-bar.innerHTML = tabs.map(function(t){ return 
-<button onclick="dreSwitchTab(\(t.id))" id="dreTab-' + (t.id) + '" style="font-family:Inter,sans-serif;font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;letter-spacing:0">' + (t.label) + '</button>
-').join('');
+bar.innerHTML = tabs.map(function(t){ return '<button onclick="dreSwitchTab('+t.id+')" id="dreTab-' + (t.id) + '" style="font-family:Inter,sans-serif;font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;letter-spacing:0">' + (t.label) + '</button>').join('');
 var panels = document.getElementById('drePanels');
 var ml2 = function(m){ return ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m; };
 var selAno = function(id,val){
@@ -3151,8 +3137,8 @@ var sel = document.getElementById('dreFreteMetodo');
 if (sel) sel.value = DRE_CONFIG.freteMetodo || 'qtd';
 var anomes = Array.from(new Set(DRE_RAW.map(function(r){
 return String(r.ANO||'') + String(r.MES||'').padStart(2,'0');
-}))].filter(Boolean).sort();
-var ml = function(m){ return ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||var ml = function(m){ return ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m; }; };
+}))).filter(Boolean).sort();
+var ml = function(m){ return ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]; };
 var fmt = function(am){ return ml(am.slice(4))+'/'+am.slice(2,4); };
 var configs = [
 { key:'fob',       gridId:'dreFobGrid',       label:'ANO_MES', isPct:true },
@@ -3447,8 +3433,7 @@ var tabsList = [
 { id:'tipo',     label:'? Tipo',       show:dims.tipo    },
 ].filter(function(t){ return t.show !== false; });
 var bar = document.getElementById('folhaTabsBar');
-bar.innerHTML = tabsList.map(function(t){
-return '<button onclick="folhaSwitchTab(''+t.id)" id="folhaTab-'+t.id+'" style="font-family:inherit;font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap">'+t.label+'</button>';
+bar.innerHTML = tabsList.map(function(t){ return '<button onclick="folhaSwitchTab(\''+t.id+'\')" id="folhaTab-'+t.id+'" style="font-family:inherit;font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap">'+t.label+'</button>';
 }).join('');
 var periodos  = ['TODOS'].concat(Array.from(new Set(FOLHA_RAW.map(folhaGetPeriodo).filter(Boolean)))).sort();
 var areas     = ['TODOS'].concat(Array.from(new Set(FOLHA_RAW.map(folhaGetArea).filter(function(a){ return a!=='-'; }))).sort());
