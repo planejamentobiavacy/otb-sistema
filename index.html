@@ -552,11 +552,7 @@ function fetchPage(tab,out,p){
   var de=p*P,ate=de+P-1;
   return fetch(SUPA_URL+'/rest/v1/'+tab+'?select=*',{headers:{'apikey':SDATA,'Authorization':'Bearer '+SDATA,'Range':de+'-'+ate,'Range-Unit':'items'}})
   .then(function(r){return r.json();})
-  .then(function(rows){
-    out.push.apply(out,rows);
-    if(rows.length<P)return out;
-    return fetchPage(tab,out,p+1);
-  });
+  .then(function(rows){out.push.apply(out,rows);if(rows.length<P)return out;return fetchPage(tab,out,p+1);});
 }
 function selAll(tab){return fetchPage(tab,[],0);}
 function expRaw(rows){return rows.map(function(r){var m=Object.assign({},r.raw||{});if(r.canal)m.CANAL=r.canal;if(r.cluster)m.CLUSTER=r.cluster;if(r.rec_frete)m.REC_FRETE=r.rec_frete;if(r.custo_frete)m.CUSTO_FRETE=r.custo_frete;return m;});}
@@ -569,7 +565,6 @@ Promise.all([selAll('otb_stk'),selAll('otb_venda'),selAll('otb_carteira'),selAll
   state.canaisMap={};res[6].forEach(function(r){var a=String(r.ano_mes||'').trim(),v=String(r.cod_vendedor||'').trim(),c=String(r.canal||'').trim();if(a&&v&&c)state.canaisMap[a+'_'+v]=c;});
   state.clusterMap={};res[7].forEach(function(r){var k=String(r.cod_cliente||'').trim(),c=String(r.cluster||'').trim();if(k&&c)state.clusterMap[k]=c;});
   if(typeof FOLHA_RAW!=='undefined'){FOLHA_RAW=expRaw(res[8]);if(typeof FOLHA_LOADED!=='undefined')FOLHA_LOADED=FOLHA_RAW.length>0;}
-  console.log('OK STK='+state.stk.length+' PROD='+state.prod.length+' DRE='+state.vendaDre.length);
   var hoje=new Date().toLocaleDateString('pt-BR');
   ['st1','st2','st3'].forEach(function(id){var el=document.getElementById(id);if(el)el.textContent='Atualizado em '+hoje;});
   if(typeof setLoadingStep==='function'){setLoadingStep(2,'done');setLoadingStep(3,'active');}
@@ -1092,7 +1087,7 @@ buildGradeMap();
 }
 var overlay = document.createElement('div');
 overlay.className = 'modal-overlay';
-overlay.innerHTML = '<div class="modal"> <div class="modal-header"> <h2>? Diagnostico de Importacao</h2> <button class="modal-close" id="closeDiag">?</button> </div> <div class="modal-body" id="diagBody"></div> <div class="diag-actions"> <button class="btn ghost" id="diagCancel" style="color:var(--text);border-color:var(--border-strong)">Fechar</button> <button class="btn primary" id="diagApply">Aplicar mapeamento e reprocessar</button> </div> </div> ';
+overlay.innerHTML = '<div class="modal"> <div class="modal-header"> <h2>? Diagnostico de Importacao</h2> <button class="modal-close" id="closeDiag">?</button> </div> <div class="modal-body" id="diagBody"></div> <div class="diag-actions"> <button class="btn ghost" id="diagCancel" style="color:var(--text);border-color:var(--border-strong)">Fechar</button> <button class="btn primary" id="diagApply">Aplicar mapeamento e reprocessar</button> </div> </div>';
 document.body.appendChild(overlay);
 document.getElementById('closeDiag').onclick =
 document.getElementById('diagCancel').onclick = function(){ overlay.remove(); };
@@ -1131,7 +1126,8 @@ var prodSampleHtml = '';
 if (state.prod && state.prod.length){
 var sampleRows = state.prod.slice(0, 3);
 var det = pd.detected || {};
-prodSampleHtml = '<div style="margin-top:12px"> <b style="font-size:12px;color:var(--navy);display:block;margin-bottom:6px">Amostra das 3 primeiras linhas:</b> <div style="overflow-x:auto;border:1px solid var(--border);border-radius:3px"> <table style="border-collapse:collapse;font-size:11px;width:100%;font-family:'Consolas',monospace"> <thead><tr style="background:#1a1f2e;color:#fff"> ' + cols.map(function(col){ var isKey = col===det.grade||col===det.fornecedor||col===det.marca; return '<th style="padding:6px 8px;text-align:left;white-space:nowrap;'+(isKey?'background:#c48a00':'')+'">'+col+'</th>'; }).join('') + '
+prodSampleHtml = '<div style="margin-top:12px"> <b style="font-size:12px;color:var(--navy);display:block;margin-bottom:6px">Amostra das 3 primeiras linhas:</b> <div style="overflow-x:auto;border:1px solid var(--border);border-radius:3px"> <table style="border-collapse:collapse;font-size:11px;width:100%;font-family:'Consolas',monospace"> <thead><tr style="background:#1a1f2e;color:#fff"> ' + cols.map(function(col){ var isKey = col===det.grade||col===det.fornecedor||col===det.marca; return '<th style="padding:6px 8px;text-align:left;white-space:nowrap;'+(isKey?'background:#c48a00':'')+'">'+col+'</th>';
+}).join('') + '
 </tr></thead>
 <tbody>
 ' + sampleRows.map(function(r){ return '<tr>' + cols.map(function(col){ var val=r[col]; var show=val===null||val===undefined?'<i style="color:#999">(vazio)</i>':(val instanceof Date?val.toISOString().slice(0,10):String(val)); return '<td style="padding:5px 8px;border-top:1px solid var(--border);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis">'+show+'</td>'; }).join('')+'</tr>'; }).join('') + '
@@ -1141,33 +1137,7 @@ prodSampleHtml = '<div style="margin-top:12px"> <b style="font-size:12px;color:v
 </div>
 ';
 }
-sections.push('
-<div class="diag-section ' + (status) + '">
-<h3>[pacote] Arquivo 3 - Produtos ' + (badge) + '</h3>
-<div class="diag-body">
-<div class="diag-cols">' + cols.map(function(col){ return '<span>'+col+'</span>'; }).join(' . ') + '</div>
-<div class="diag-grid">
-<div class="diag-item"><span class="k">Total de linhas</span><span class="v">' + (pd.totalRows||0) + '</span></div>
-<div class="diag-item"><span class="k">Grades unicas</span><span class="v">' + (pd.uniqueGrades||0) + '</span></div>
-<div class="diag-item"><span class="k">Col. Grade detectada</span><span class="v ' + (!hasGrade?'none':'') + '">' + ((pd.detected && pd.detected.grade)||'NAO ENCONTRADA') + '</span></div>
-<div class="diag-item"><span class="k">Col. Fornecedor detectada</span><span class="v ' + (!hasForn?'none':'') + '">' + ((pd.detected && pd.detected.fornecedor)||'NAO ENCONTRADA') + '</span></div>
-</div>
-<div style="margin-top:10px"><b style="font-size:12px;color:var(--navy)">Fornecedores classificados:</b>
-' + Object.keys(pd.supplierCounts||{}).map(function(k){ return '<span style="display:inline-block;margin:4px 8px 0 0;padding:3px 8px;background:#fff;border:1px solid var(--border);border-radius:3px;font-size:11px"><b>'+k+':</b> '+(pd.supplierCounts[k])+'</span>'; }).join('')||'<i style="color:var(--red)">nenhum match</i>'
-</div>
-' + ((pd.rawFornecedorSamples && pd.rawFornecedorSamples.length) ? '<div style="margin-top:10px"><b style="font-size:12px;color:var(--navy)">Valores distintos encontrados na coluna FORNECEDOR:</b><div style="margin-top:6px;font-size:11px;color:var(--text-dim);line-height:1.6">'+pd.rawFornecedorSamples.map(function(f){ return '<code style="background:#fff;border:1px solid var(--border);padding:1px 6px;margin:2px;display:inline-block;border-radius:2px">'+f+'</code>'; }).join('')+'</div></div>' : '') + '
-' + (prodSampleHtml) + '
-<div style="margin-top:14px">
-<b style="font-size:12px;color:var(--navy);display:block;margin-bottom:8px">Mapeamento manual:</b>
-' + (buildMapSelect('prod','grade','Grade (chave)', cols, state.mapping.prod.grade || (pd.detected && pd.detected.grade))) + '
-' + (buildMapSelect('prod','fornecedor','Fornecedor', cols, state.mapping.prod.fornecedor || (pd.detected && pd.detected.fornecedor))) + '
-' + (buildMapSelect('prod','marca','Marca', cols, state.mapping.prod.marca || (pd.detected && pd.detected.marca))) + '
-' + (buildMapSelect('prod','categoria','Categoria', cols, state.mapping.prod.categoria || (pd.detected && pd.detected.categoria))) + '
-' + (buildMapSelect('prod','segmento','Segmento', cols, state.mapping.prod.segmento || (pd.detected && pd.detected.segmento))) + '
-</div>
-</div>
-</div>
-');
+sections.push('<div class="diag-section ' + (status) + '"> <h3>[pacote] Arquivo 3 - Produtos ' + (badge) + '</h3> <div class="diag-body"> <div class="diag-cols">' + cols.map(function(col){ return '<span>'+col+'</span>'; }).join(' . ') + '</div> <div class="diag-grid"> <div class="diag-item"><span class="k">Total de linhas</span><span class="v">' + (pd.totalRows||0) + '</span></div> <div class="diag-item"><span class="k">Grades unicas</span><span class="v">' + (pd.uniqueGrades||0) + '</span></div> <div class="diag-item"><span class="k">Col. Grade detectada</span><span class="v ' + (!hasGrade?'none':'') + '">' + ((pd.detected && pd.detected.grade)||'NAO ENCONTRADA') + '</span></div> <div class="diag-item"><span class="k">Col. Fornecedor detectada</span><span class="v ' + (!hasForn?'none':'') + '">' + ((pd.detected && pd.detected.fornecedor)||'NAO ENCONTRADA') + '</span></div> </div> <div style="margin-top:10px"><b style="font-size:12px;color:var(--navy)">Fornecedores classificados:</b> ' + Object.keys(pd.supplierCounts||{}).map(function(k){ return '<span style="display:inline-block;margin:4px 8px 0 0;padding:3px 8px;background:#fff;border:1px solid var(--border);border-radius:3px;font-size:11px"><b>'+k+':</b> '+(pd.supplierCounts[k])+'</span>'; }).join('')||'<i style="color:var(--red)">nenhum match</i>' </div> ' + ((pd.rawFornecedorSamples && pd.rawFornecedorSamples.length) ? '<div style="margin-top:10px"><b style="font-size:12px;color:var(--navy)">Valores distintos encontrados na coluna FORNECEDOR:</b><div style="margin-top:6px;font-size:11px;color:var(--text-dim);line-height:1.6">'+pd.rawFornecedorSamples.map(function(f){ return '<code style="background:#fff;border:1px solid var(--border);padding:1px 6px;margin:2px;display:inline-block;border-radius:2px">'+f+'</code>'; }).join('')+'</div></div>' : '') + ' ' + (prodSampleHtml) + ' <div style="margin-top:14px"> <b style="font-size:12px;color:var(--navy);display:block;margin-bottom:8px">Mapeamento manual:</b> ' + (buildMapSelect('prod','grade','Grade (chave)', cols, state.mapping.prod.grade || (pd.detected && pd.detected.grade))) + ' ' + (buildMapSelect('prod','fornecedor','Fornecedor', cols, state.mapping.prod.fornecedor || (pd.detected && pd.detected.fornecedor))) + ' ' + (buildMapSelect('prod','marca','Marca', cols, state.mapping.prod.marca || (pd.detected && pd.detected.marca))) + ' ' + (buildMapSelect('prod','categoria','Categoria', cols, state.mapping.prod.categoria || (pd.detected && pd.detected.categoria))) + ' ' + (buildMapSelect('prod','segmento','Segmento', cols, state.mapping.prod.segmento || (pd.detected && pd.detected.segmento))) + ' </div> </div> </div> ');
 }
 var srcMap = { stk:'Estoque (STK)', venda:'Vendas (VENDA)', cart:'Carteira' };
 state.diagnostics.forEach(function(d){
@@ -1195,15 +1165,7 @@ var srcRows = d.source === 'stk' ? state.stk : d.source === 'venda' ? state.vend
 var sampleHtml = '';
 if (srcRows && srcRows.length){
 var sampleRows = srcRows.slice(0, 3);
-sampleHtml = '
-<div style="margin-top:12px">
-<b style="font-size:12px;color:var(--navy);display:block;margin-bottom:6px">Amostra das 3 primeiras linhas:</b>
-<div style="overflow-x:auto;border:1px solid var(--border);border-radius:3px">
-<table style="border-collapse:collapse;font-size:11px;width:100%;font-family:'Consolas',monospace">
-<thead><tr style="background:#1a1f2e;color:#fff">
-' + cols.map(function(col){
-var isKey = col===det.grade||col===det.date||col===det.qty||col===det.val;
-return '<th style="padding:6px 8px;text-align:left;white-space:nowrap;'+(isKey?'background:#c48a00':'')+'">'+col+'</th>';
+sampleHtml = '<div style="margin-top:12px"> <b style="font-size:12px;color:var(--navy);display:block;margin-bottom:6px">Amostra das 3 primeiras linhas:</b> <div style="overflow-x:auto;border:1px solid var(--border);border-radius:3px"> <table style="border-collapse:collapse;font-size:11px;width:100%;font-family:'Consolas',monospace"> <thead><tr style="background:#1a1f2e;color:#fff"> ' + cols.map(function(col){ var isKey = col===det.grade||col===det.date||col===det.qty||col===det.val; return '<th style="padding:6px 8px;text-align:left;white-space:nowrap;'+(isKey?'background:#c48a00':'')+'">'+col+'</th>';
 }).join('') + '
 </tr></thead>
 <tbody>
@@ -1215,35 +1177,7 @@ return '<th style="padding:6px 8px;text-align:left;white-space:nowrap;'+(isKey?'
 </div>
 ';
 }
-sections.push('
-<div class="diag-section ' + (status) + '">
-<h3>' + (d.source === 'stk' ? '[grafico]' : d.source === 'venda' ? '[dinheiro]' : '?') + ' ' + (label) + ' ' + (badge) + '</h3>
-<div class="diag-body">
-<div class="diag-cols">' + (cols.length ? cols.map(function(col){ return '<span>'+col+'</span>'; }).join(' . ') : '<i>arquivo vazio</i>') + '</div>
-<div class="diag-grid">
-<div class="diag-item"><span class="k">Total de linhas</span><span class="v">' + (d.totalRows.toLocaleString('pt-BR')) + '</span></div>
-<div class="diag-item"><span class="k">Linhas processadas</span><span class="v">' + (d.rowsProcessed.toLocaleString('pt-BR')) + '</span></div>
-<div class="diag-item"><span class="k">Soma quantidade</span><span class="v">' + (d.totalQty.toLocaleString('pt-BR')) + '</span></div>
-<div class="diag-item"><span class="k">Soma valor</span><span class="v">' + (d.totalVal.toLocaleString('pt-BR',{maximumFractionDigits:0})) + '</span></div>
-<div class="diag-item"><span class="k">Col. Grade</span><span class="v ' + (!det.grade?'none':'') + '">' + (det.grade||'NAO ENCONTRADA') + '</span></div>
-<div class="diag-item"><span class="k">Col. Data</span><span class="v ' + (!det.date?'none':'') + '">' + (det.date||'NAO ENCONTRADA') + '</span></div>
-<div class="diag-item"><span class="k">Col. Quantidade</span><span class="v ' + (!det.qty?'none':'') + '">' + (det.qty||'NAO ENCONTRADA') + '</span></div>
-<div class="diag-item"><span class="k">Col. Valor</span><span class="v ' + (!det.val?'none':'') + '">' + (det.val||'NAO ENCONTRADA') + '</span></div>
-</div>
-' + (d.sampleYms.length ? '<div class="diag-note"><b>Meses encontrados:</b> ' + d.sampleYms.join(', ') + (d.sampleYms.length>=12?'...':'') + '</div>' : '')
-+ (Object.keys(d.supplierCounts).length ? '<div class="diag-note"><b>Distribuicao por fornecedor:</b> ' + Object.entries(d.supplierCounts).map(function(e){ return e[0]+': '+e[1]; }).join(' . ') + '</div>' : '')
-+ (warningsList.length ? '<ul style="margin-top:10px;font-size:11px;padding-left:20px;line-height:1.7">'+warningsList.join('')+'</ul>' : '')
-' + (sampleHtml) + '
-<div style="margin-top:14px">
-<b style="font-size:12px;color:var(--navy);display:block;margin-bottom:8px">Mapeamento manual:</b>
-' + (buildMapSelect(d.source,'grade','Grade (chave)', cols, state.mapping[d.source].grade || det.grade)) + '
-' + (buildMapSelect(d.source,'date','Data', cols, state.mapping[d.source].date || det.date)) + '
-' + (buildMapSelect(d.source,'qty','Quantidade', cols, state.mapping[d.source].qty || det.qty)) + '
-' + (buildMapSelect(d.source,'val','Valor', cols, state.mapping[d.source].val || det.val)) + '
-</div>
-</div>
-</div>
-');
+sections.push('<div class="diag-section ' + (status) + '"> <h3>' + (d.source === 'stk' ? '[grafico]' : d.source === 'venda' ? '[dinheiro]' : '?') + ' ' + (label) + ' ' + (badge) + '</h3> <div class="diag-body"> <div class="diag-cols">' + (cols.length ? cols.map(function(col){ return '<span>'+col+'</span>'; }).join(' . ') : '<i>arquivo vazio</i>') + '</div> <div class="diag-grid"> <div class="diag-item"><span class="k">Total de linhas</span><span class="v">' + (d.totalRows.toLocaleString('pt-BR')) + '</span></div> <div class="diag-item"><span class="k">Linhas processadas</span><span class="v">' + (d.rowsProcessed.toLocaleString('pt-BR')) + '</span></div> <div class="diag-item"><span class="k">Soma quantidade</span><span class="v">' + (d.totalQty.toLocaleString('pt-BR')) + '</span></div> <div class="diag-item"><span class="k">Soma valor</span><span class="v">' + (d.totalVal.toLocaleString('pt-BR',{maximumFractionDigits:0})) + '</span></div> <div class="diag-item"><span class="k">Col. Grade</span><span class="v ' + (!det.grade?'none':'') + '">' + (det.grade||'NAO ENCONTRADA') + '</span></div> <div class="diag-item"><span class="k">Col. Data</span><span class="v ' + (!det.date?'none':'') + '">' + (det.date||'NAO ENCONTRADA') + '</span></div> <div class="diag-item"><span class="k">Col. Quantidade</span><span class="v ' + (!det.qty?'none':'') + '">' + (det.qty||'NAO ENCONTRADA') + '</span></div> <div class="diag-item"><span class="k">Col. Valor</span><span class="v ' + (!det.val?'none':'') + '">' + (det.val||'NAO ENCONTRADA') + '</span></div> </div> ' + (d.sampleYms.length ? '<div class="diag-note"><b>Meses encontrados:</b> ' + d.sampleYms.join(', ') + (d.sampleYms.length>=12?'...':'') + '</div>' : '') + (Object.keys(d.supplierCounts).length ? '<div class="diag-note"><b>Distribuicao por fornecedor:</b> ' + Object.entries(d.supplierCounts).map(function(e){ return e[0]+': '+e[1]; }).join(' . ') + '</div>' : '') + (warningsList.length ? '<ul style="margin-top:10px;font-size:11px;padding-left:20px;line-height:1.7">'+warningsList.join('')+'</ul>' : '') ' + (sampleHtml) + ' <div style="margin-top:14px"> <b style="font-size:12px;color:var(--navy);display:block;margin-bottom:8px">Mapeamento manual:</b> ' + (buildMapSelect(d.source,'grade','Grade (chave)', cols, state.mapping[d.source].grade || det.grade)) + ' ' + (buildMapSelect(d.source,'date','Data', cols, state.mapping[d.source].date || det.date)) + ' ' + (buildMapSelect(d.source,'qty','Quantidade', cols, state.mapping[d.source].qty || det.qty)) + ' ' + (buildMapSelect(d.source,'val','Valor', cols, state.mapping[d.source].val || det.val)) + ' </div> </div> </div> ');
 });
 var totalByCell = 0;
 if (state.matrices){
@@ -1266,12 +1200,7 @@ body.innerHTML = sections.join('');
 function buildMapSelect(src, field, label, cols, current){
 var opts = ['<option value="">- nao usar -</option>']
 .concat(cols.map(function(c){ return '<option value="' + (c; }) + '" ' + (c===current?'selected':'') + '>' + (c) + '</option>'));
-return '
-<div class="map-row">
-<label>' + (label) + '</label>
-<select id="map-' + (src) + '-' + (field) + '">' + (opts.join('')) + '</select>
-</div>
-';
+return '<div class="map-row"> <label>' + (label) + '</label> <select id="map-' + (src) + '-' + (field) + '">' + (opts.join('')) + '</select> </div> ';
 }
 
 </script>
@@ -1469,8 +1398,7 @@ var realized = months.filter(function(y){ return y < state.currentMonth; });
 var last3 = realized.slice(-3);
 var avgFatQ = last3.length ? last3.reduce(function(s,y){ return s+m[y].vendaQty; },0)/last3.length : 0;
 var avgFatV = last3.length ? last3.reduce(function(s,y){ return s+m[y].vendaVal; },0)/last3.length : 0;
-var avgPrecoVenda = last3.length && last3.some(function(y){ return m[y].vendaQty>0; }) ? last3.reduce(function(s,y){ return s+(m[y].vendaQty>0 ? m[y].vendaVal/m[y].vendaQty : 0); },0) / last3.filter(function(y){ return m[y].vendaQty>0; }).length
-: 0;
+var avgPrecoVenda = last3.length && last3.some(function(y){ return m[y].vendaQty>0; }) ? last3.reduce(function(s,y){ return s+(m[y].vendaQty>0 ? m[y].vendaVal/m[y].vendaQty : 0); },0) / last3.filter(function(y){ return m[y].vendaQty>0; }).length : 0;
 months.forEach(function(ym,i){
 var cell = m[ym];
 if (ym < state.currentMonth){
@@ -1686,7 +1614,7 @@ var result = {};
 var participation2 = {};
 for (var mo = 1; mo <= 12; mo++){
 var moStr = String(mo).padStart(2,'0');
-var realizados = months2.filter(function(ym){ return ym < cur2 && ym.endsWith('-'+moStr; }));
+var realizados = months2.filter(function(ym){ return ym < cur2 && ym.endsWith('-'+moStr) });
 if (realizados.length === 0){
 participation2[moStr] = { qtyShare: baseRatio, valShare: baseRatio };
 continue;
@@ -1753,7 +1681,7 @@ for (var mo = 1; mo <= 12; mo++){
 var moStr = String(mo).padStart(2,'0');
 // Todos os meses realizados deste mes-calendario (ex: todos os "04")
 var mesesDoMes = realizados
-.filter(function(ym){ return ym.endsWith('-'+moStr; }))
+.filter(function(ym){ return ym.endsWith('-'+moStr) })
 .sort();
 var recentes = mesesDoMes.slice(-3);
 var lyMeses  = mesesDoMes.slice(-1);
@@ -2759,7 +2687,9 @@ var tabs = [
 {id:'fornecedor',label:'? Fornecedor'},
 ];
 var bar = document.getElementById('dreTabsBar');
-bar.innerHTML = tabs.map(function(t){ return '<button onclick="dreSwitchTab('+t.id+')" id="dreTab-' + (t.id) + '" style="font-family:Inter,sans-serif;font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;letter-spacing:0">' + (t.label) + '</button>').join('');
+bar.innerHTML = tabs.map(function(t){ return 
+<button onclick="dreSwitchTab('+t.id+')" id="dreTab-' + (t.id) + '" style="font-family:Inter,sans-serif;font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;letter-spacing:0">' + (t.label) + '</button>
+').join('');
 var panels = document.getElementById('drePanels');
 var ml2 = function(m){ return ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m; };
 var selAno = function(id,val){
@@ -2783,33 +2713,7 @@ var selCluster = function(id){ return '<div style="display:flex;flex-direction:c
 var selRegiao = function(id){ return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Regiao</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:100px">'+regioes2.map(function(v){ return '<option value="'+v+'">'+v+'</option>'; }).join('')+'</select></div>'; };
 var selForn = function(id){ return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Fornecedor</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:120px">'+fornecs2.map(function(v){ return '<option value="'+v+'">'+v+'</option>'; }).join('')+'</select></div>'; };
 var filtersBar = function(ids){ return '<div style="display:flex;align-items:flex-end;gap:10px;padding:10px 0 14px;flex-wrap:wrap">'+ids.join('')+'</div>'; };
-panels.innerHTML = '
-<div id="drePanel-mensal">
-' + (filtersBar([selAno('dre-ano-mensal'), selQ('dre-q-mensal'), selMes('dre-mes-mensal'), selCanal('dre-canal-mensal'), selCluster('dre-cluster-mensal'), selRegiao('dre-reg-mensal'), selForn('dre-forn-mensal')])) + '
-<div id="dreKpi-mensal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px"></div>
-<div id="dreTable-mensal"></div>
-</div>
-<div id="drePanel-canal" style="display:none">
-' + (filtersBar([selAno('dre-ano-canal'), selQ('dre-q-canal'), selMes('dre-mes-canal'), selCluster('dre-cluster-canal'), selRegiao('dre-reg-canal'), selForn('dre-forn-canal')])) + '
-<div id="dreKpi-canal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px"></div>
-<div id="dreTable-canal"></div>
-</div>
-<div id="drePanel-cluster" style="display:none">
-' + (filtersBar([selAno('dre-ano-cluster'), selQ('dre-q-cluster'), selMes('dre-mes-cluster'), selCanal('dre-canal-cluster'), selRegiao('dre-reg-cluster'), selForn('dre-forn-cluster')])) + '
-<div id="dreKpi-cluster" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px"></div>
-<div id="dreTable-cluster"></div>
-</div>
-<div id="drePanel-regiao" style="display:none">
-' + (filtersBar([selAno('dre-ano-regiao'), selQ('dre-q-regiao'), selMes('dre-mes-regiao'), selCanal('dre-canal-regiao'), selCluster('dre-cluster-regiao'), selForn('dre-forn-regiao')])) + '
-<div id="dreKpi-regiao" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px"></div>
-<div id="dreTable-regiao"></div>
-</div>
-<div id="drePanel-fornecedor" style="display:none">
-' + (filtersBar([selAno('dre-ano-forn'), selQ('dre-q-forn'), selMes('dre-mes-forn'), selCanal('dre-canal-forn'), selCluster('dre-cluster-forn'), selRegiao('dre-reg-forn')])) + '
-<div id="dreKpi-forn" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px"></div>
-<div id="dreTable-forn"></div>
-</div>
-';
+panels.innerHTML = '<div id="drePanel-mensal"> ' + (filtersBar([selAno('dre-ano-mensal'), selQ('dre-q-mensal'), selMes('dre-mes-mensal'), selCanal('dre-canal-mensal'), selCluster('dre-cluster-mensal'), selRegiao('dre-reg-mensal'), selForn('dre-forn-mensal')])) + ' <div id="dreKpi-mensal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px"></div> <div id="dreTable-mensal"></div> </div> <div id="drePanel-canal" style="display:none"> ' + (filtersBar([selAno('dre-ano-canal'), selQ('dre-q-canal'), selMes('dre-mes-canal'), selCluster('dre-cluster-canal'), selRegiao('dre-reg-canal'), selForn('dre-forn-canal')])) + ' <div id="dreKpi-canal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px"></div> <div id="dreTable-canal"></div> </div> <div id="drePanel-cluster" style="display:none"> ' + (filtersBar([selAno('dre-ano-cluster'), selQ('dre-q-cluster'), selMes('dre-mes-cluster'), selCanal('dre-canal-cluster'), selRegiao('dre-reg-cluster'), selForn('dre-forn-cluster')])) + ' <div id="dreKpi-cluster" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px"></div> <div id="dreTable-cluster"></div> </div> <div id="drePanel-regiao" style="display:none"> ' + (filtersBar([selAno('dre-ano-regiao'), selQ('dre-q-regiao'), selMes('dre-mes-regiao'), selCanal('dre-canal-regiao'), selCluster('dre-cluster-regiao'), selForn('dre-forn-regiao')])) + ' <div id="dreKpi-regiao" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px"></div> <div id="dreTable-regiao"></div> </div> <div id="drePanel-fornecedor" style="display:none"> ' + (filtersBar([selAno('dre-ano-forn'), selQ('dre-q-forn'), selMes('dre-mes-forn'), selCanal('dre-canal-forn'), selCluster('dre-cluster-forn'), selRegiao('dre-reg-forn')])) + ' <div id="dreKpi-forn" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px"></div> <div id="dreTable-forn"></div> </div> ';
 dreSwitchTab('mensal');
 }
 function dreSwitchTab(tab){
@@ -3183,7 +3087,7 @@ return '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cur
 if (leadsDiv) leadsDiv.innerHTML = canais.map(function(canal){
 var checked = DRE_CONFIG.canaisLeads[canal] ? 'checked' : '';
 return '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;color:#333">'
-+ '<input type="checkbox" '+checked+' onchange="DRE_CONFIG.canaisLeads[''+canal+'']=this.checked" style="cursor:pointer"> '+canal+'</label>';
++ '<input type="checkbox" '+checked+' onchange="DRE_CONFIG.canaisLeads[canal]=this.checked" style="cursor:pointer"> '+canal+'</label>';
 }).join('');
 }
 function dreConfigInputChange(input){
@@ -3422,7 +3326,8 @@ var tabsList = [
 { id:'tipo',     label:'? Tipo',       show:dims.tipo    },
 ].filter(function(t){ return t.show !== false; });
 var bar = document.getElementById('folhaTabsBar');
-bar.innerHTML = tabsList.map(function(t){ return '<button onclick="folhaSwitchTab(\''+t.id+'\')" id="folhaTab-'+t.id+'" style="font-family:inherit;font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap">'+t.label+'</button>';
+bar.innerHTML = tabsList.map(function(t){
+return '<button onclick="folhaSwitchTab('+t.id+')" id="folhaTab-'+t.id+'" style="font-family:inherit;font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap">'+t.label+'</button>';
 }).join('');
 var periodos  = ['TODOS'].concat(Array.from(new Set(FOLHA_RAW.map(folhaGetPeriodo).filter(Boolean)))).sort();
 var areas     = ['TODOS'].concat(Array.from(new Set(FOLHA_RAW.map(folhaGetArea).filter(function(a){ return a!=='-'; }))).sort());
