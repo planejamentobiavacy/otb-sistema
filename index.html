@@ -1126,17 +1126,7 @@ var prodSampleHtml = '';
 if (state.prod && state.prod.length){
 var sampleRows = state.prod.slice(0, 3);
 var det = pd.detected || {};
-prodSampleHtml = '<div style="margin-top:12px"> <b style="font-size:12px;color:var(--navy);display:block;margin-bottom:6px">Amostra das 3 primeiras linhas:</b> <div style="overflow-x:auto;border:1px solid var(--border);border-radius:3px"> <table style="border-collapse:collapse;font-size:11px;width:100%;font-family:'Consolas',monospace"> <thead><tr style="background:#1a1f2e;color:#fff"> ' + cols.map(function(col){ var isKey = col===det.grade||col===det.fornecedor||col===det.marca; return '<th style="padding:6px 8px;text-align:left;white-space:nowrap;'+(isKey?'background:#c48a00':'')+'">'+col+'</th>';
-}).join('') + '
-</tr></thead>
-<tbody>
-' + sampleRows.map(function(r){ return '<tr>' + cols.map(function(col){ var val=r[col]; var show=val===null||val===undefined?'<i style="color:#999">(vazio)</i>':(val instanceof Date?val.toISOString().slice(0,10):String(val)); return '<td style="padding:5px 8px;border-top:1px solid var(--border);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis">'+show+'</td>'; }).join('')+'</tr>'; }).join('') + '
-</tbody>
-</table>
-</div>
-</div>
-';
-}
+prodSampleHtml = '<div style="margin-top:12px"> <b style="font-size:12px;color:var(--navy);display:block;margin-bottom:6px">Amostra das 3 primeiras linhas:</b> <div style="overflow-x:auto;border:1px solid var(--border);border-radius:3px"> <table style="border-collapse:collapse;font-size:11px;width:100%;font-family:'Consolas',monospace"> <thead><tr style="background:#1a1f2e;color:#fff"> ' + cols.map(function(col){ var isKey = col===det.grade||col===det.fornecedor||col===det.marca; return '<th style="padding:6px 8px;text-align:left;white-space:nowrap;'+(isKey?'background:#c48a00':'')+'">'+col+'</th>'; }).join('') + ' </tr></thead> <tbody> ' + sampleRows.map(function(r){ return '<tr>' + cols.map(function(col){ var val=r[col]; var show=val===null||val===undefined?'<i style="color:#999">(vazio)</i>':(val instanceof Date?val.toISOString().slice(0,10):String(val)); return '<td style="padding:5px 8px;border-top:1px solid var(--border);white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis">'+show+'</td>'; }).join('')+'</tr>'; }).join('') + ' </tbody> </table> </div> </div> '; }
 sections.push('<div class="diag-section ' + (status) + '"> <h3>[pacote] Arquivo 3 - Produtos ' + (badge) + '</h3> <div class="diag-body"> <div class="diag-cols">' + cols.map(function(col){ return '<span>'+col+'</span>'; }).join(' . ') + '</div> <div class="diag-grid"> <div class="diag-item"><span class="k">Total de linhas</span><span class="v">' + (pd.totalRows||0) + '</span></div> <div class="diag-item"><span class="k">Grades unicas</span><span class="v">' + (pd.uniqueGrades||0) + '</span></div> <div class="diag-item"><span class="k">Col. Grade detectada</span><span class="v ' + (!hasGrade?'none':'') + '">' + ((pd.detected && pd.detected.grade)||'NAO ENCONTRADA') + '</span></div> <div class="diag-item"><span class="k">Col. Fornecedor detectada</span><span class="v ' + (!hasForn?'none':'') + '">' + ((pd.detected && pd.detected.fornecedor)||'NAO ENCONTRADA') + '</span></div> </div> <div style="margin-top:10px"><b style="font-size:12px;color:var(--navy)">Fornecedores classificados:</b> ' + Object.keys(pd.supplierCounts||{}).map(function(k){ return '<span style="display:inline-block;margin:4px 8px 0 0;padding:3px 8px;background:#fff;border:1px solid var(--border);border-radius:3px;font-size:11px"><b>'+k+':</b> '+(pd.supplierCounts[k])+'</span>'; }).join('')||'<i style="color:var(--red)">nenhum match</i>' </div> ' + ((pd.rawFornecedorSamples && pd.rawFornecedorSamples.length) ? '<div style="margin-top:10px"><b style="font-size:12px;color:var(--navy)">Valores distintos encontrados na coluna FORNECEDOR:</b><div style="margin-top:6px;font-size:11px;color:var(--text-dim);line-height:1.6">'+pd.rawFornecedorSamples.map(function(f){ return '<code style="background:#fff;border:1px solid var(--border);padding:1px 6px;margin:2px;display:inline-block;border-radius:2px">'+f+'</code>'; }).join('')+'</div></div>' : '') + ' ' + (prodSampleHtml) + ' <div style="margin-top:14px"> <b style="font-size:12px;color:var(--navy);display:block;margin-bottom:8px">Mapeamento manual:</b> ' + (buildMapSelect('prod','grade','Grade (chave)', cols, state.mapping.prod.grade || (pd.detected && pd.detected.grade))) + ' ' + (buildMapSelect('prod','fornecedor','Fornecedor', cols, state.mapping.prod.fornecedor || (pd.detected && pd.detected.fornecedor))) + ' ' + (buildMapSelect('prod','marca','Marca', cols, state.mapping.prod.marca || (pd.detected && pd.detected.marca))) + ' ' + (buildMapSelect('prod','categoria','Categoria', cols, state.mapping.prod.categoria || (pd.detected && pd.detected.categoria))) + ' ' + (buildMapSelect('prod','segmento','Segmento', cols, state.mapping.prod.segmento || (pd.detected && pd.detected.segmento))) + ' </div> </div> </div> ');
 }
 var srcMap = { stk:'Estoque (STK)', venda:'Vendas (VENDA)', cart:'Carteira' };
@@ -1956,10 +1946,7 @@ var hidden = isCollapsed && monthNum !== '12';
 var toggleHtml = '';
 if (isJan && !isCollapsed) toggleHtml = '<span class="year-toggle" data-year="' + (yearNum) + '" title="Fechar ano">?</span>';
 if (isDez && isCollapsed) toggleHtml = '<span class="year-toggle" data-year="' + (yearNum) + '" title="Abrir ano">?</span>';
-html.push('<th class="year-cell ' + (isFut?'future':'') + ' ' + (isCollapsed && isDez ? 'collapsed-year':'') + '" ' + (hidden?'style="display:none"':'') + '>
-' + (toggleHtml) + '
-' + (year) + (isCollapsed && isDez ? ' <span style="opacity:.7;font-size:10px">(total)</span>' : '') + '
-</th>');
+html.push('<th class="year-cell ' + (isFut?'future':'') + ' ' + (isCollapsed && isDez ? 'collapsed-year':'') + '" ' + (hidden?'style="display:none"':'') + '> ' + (toggleHtml) + ' ' + (year) + (isCollapsed && isDez ? ' <span style="opacity:.7;font-size:10px">(total)</span>' : '') + ' </th>');
 });
 html.push('</tr>');
 html.push('<tr>');
@@ -2687,9 +2674,9 @@ var tabs = [
 {id:'fornecedor',label:'? Fornecedor'},
 ];
 var bar = document.getElementById('dreTabsBar');
-bar.innerHTML = tabs.map(function(t){ return 
-<button onclick="dreSwitchTab('+t.id+')" id="dreTab-' + (t.id) + '" style="font-family:Inter,sans-serif;font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;letter-spacing:0">' + (t.label) + '</button>
-').join('');
+bar.innerHTML = tabs.map(function(t){ return '<button onclick="dreSwitchTab('+t.id+')" id="dreTab-' + (t.id) + '" style="font-family:Inter,sans-serif;font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;letter-spacing:0">' + (t.label) + '</button>').join('');
+
+
 var panels = document.getElementById('drePanels');
 var ml2 = function(m){ return ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m; };
 var selAno = function(id,val){
