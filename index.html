@@ -1170,7 +1170,7 @@ body.innerHTML = sections.join('');
 }
 function buildMapSelect(src, field, label, cols, current){
 var opts = ['<option value="">- nao usar -</option>']
-.concat(cols.map(function(c){ return '<option value="' + (c; }) + '" ' + (c===current?'selected':'') + '>' + (c) + '</option>'));
+.concat(cols.map(function(c){ return '<option value="' + c + '" ' + (c===current?'selected':'') + '>' + (c) + '</option>'));
 return '<div class="map-row"> <label>' + (label) + '</label> <select id="map-' + (src) + '-' + (field) + '">' + (opts.join('')) + '</select> </div> ';
 }
 
@@ -1965,8 +1965,7 @@ var hidden = isCollapsed && monthNum !== '12';
 var isYearTotal = isCollapsed && monthNum === '12';
 var v;
 if (isYearTotal){
-var yearMonths = months.filter(function(m){ return m.startsWith(yearNum);
-}));
+var yearMonths = months.filter(function(m){ return m.startsWith(yearNum); }));
 var ml = function(m){ return ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m; };
 var vals = yearMonths.map(function(m){ return matrix[m][key]; }).filter(function(x){ return x !== null && x !== undefined; });
 if (row.aggType === 'sum'){
