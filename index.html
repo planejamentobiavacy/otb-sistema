@@ -92,13 +92,13 @@ function showHome(){
     </div>
     <div style="padding:22px;display:flex;flex-direction:column;gap:16px">
       <div>
-        <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #eee">📂 Google Drive — Pasta OTB</div>
+        <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #eee">☁️ Supabase — Dados em Nuvem</div>
         <div style="font-size:12px;color:#555;line-height:1.8;background:#f5f7ff;border:1px solid #dde3f5;border-radius:6px;padding:12px 14px;margin-bottom:10px">
-          Os arquivos abaixo são lidos automaticamente:<br>
+          Os dados são carregados automaticamente do Supabase:<br>
           <b>BASE_STK_VENDA.XLSX · BASE_CARTEIRA.XLSX · BASE_PRODUTO.XLSX</b><br>
           <b>BASE_VENDA_DRE.XLSX · BASE_FRETE_DRE.XLSX</b>
         </div>
-        <button id="gcBtnDrive" onclick="globalCarregarDrive()" style="width:100%;background:#f0f4ff;border:1.5px solid #1a2547;color:#1a2547;padding:11px;border-radius:4px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Carregar dados do Google Drive</button>
+        <button id="gcBtnDrive" onclick="loadFilesFromDrive()" style="width:100%;background:#0b8a3e;border:1.5px solid #086b30;color:#fff;padding:11px;border-radius:4px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Recarregar do Supabase</button>
         <div id="gcDriveStatus" style="display:none;margin-top:8px;padding:10px 14px;border-radius:4px;font-size:12px;font-weight:600;text-align:center"></div>
       </div>
       <div>
@@ -2478,7 +2478,7 @@ if (status){
   status.style.background = '#fff8e6';
   status.style.border = '1px solid #f0c050';
   status.style.color = '#8a6000';
-  status.innerHTML = '... Conectando ao Google Drive...';
+  status.innerHTML = '... Conectando ao Supabase...';
 }
 
 loadFilesFromDrive();
@@ -2486,7 +2486,7 @@ loadFilesFromDrive();
 // Monitor de progresso
 var elapsed = 0;
 var msgs = [
-  '... Conectando ao Google Drive...',
+  '... Conectando ao Supabase...',
   '... Lendo BASE_STK_VENDA (pode demorar)...',
   '... Lendo BASE_CARTEIRA...',
   '... Lendo BASE_PRODUTO...',
