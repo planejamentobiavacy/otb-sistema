@@ -1169,7 +1169,7 @@ sections.unshift(' <div class="diag-section ' + (totalByCell>0?'ok':'error') + '
 body.innerHTML = sections.join('');
 }
 function buildMapSelect(src, field, label, cols, current){
-var opts = ['<option value="">- nao usar -</option>'].concat(cols.map(function(c){ return '<option value="' + c + '" ' + (c===current?'selected':'') + '>' + (c) + '</option>'));
+var opts = ['<option value="">- nao usar -</option>'].concat(cols.map(function(c){ return '<option value="' + c + '" ' + (c===current?'selected':'') + '>' + (c) + '</option>'; }));
 return '<div class="map-row"> <label>' + (label) + '</label> <select id="map-' + (src) + '-' + (field) + '">' + (opts.join('')) + '</select> </div> ';
 }
 
@@ -2197,7 +2197,7 @@ document.addEventListener('DOMContentLoaded', _bindCards);
 } else {
 _bindCards();
 }
-}
+
 
 </script>
 <script id="__OTB_DATA__" type="application/json"></script>
@@ -2654,7 +2654,15 @@ var tabs = [
 {id:'fornecedor',label:'? Fornecedor'},
 ];
 var bar = document.getElementById('dreTabsBar');
-bar.innerHTML = tabs.map(function(t){ return '<button onclick="dreSwitchTab('+t.id+')" id="dreTab-' + (t.id) + '" style="font-family:Inter,sans-serif;font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;letter-spacing:0">' + (t.label) + '</button>').join('');
+var bar_html = '';
+tabs.forEach(function(t){
+  var btn = document.createElement('button');
+  btn.id = 'dreTab-' + t.id;
+  btn.style.cssText = 'font-family:Inter,sans-serif;font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;letter-spacing:0';
+  btn.textContent = t.label;
+  btn.onclick = function(){ dreSwitchTab(t.id); };
+  bar.appendChild(btn);
+});
 
 
 var panels = document.getElementById('drePanels');
@@ -2793,10 +2801,7 @@ fecpst+=dreNum(r.FECPST);
 rf    +=dreNum(r.REC_FRETE);        cf    +=dreNum(r.CUSTO_FRETE);
 qtdGradeHava += dreNum(r.QTD_GRADE_HAVA || r.QTD_GRADE || 0);
 });
-var anomesList = Array.from(new Set(rows.map(function(r){
-var ano = String(r.ANO||''); var mes = String(r.MES||'').padStart(2,'0');
-return ano+mes;
-}))];
+var _aSet={}; rows.forEach(function(r){ var ano=String(r.ANO||''),mes=String(r.MES||'').padStart(2,'0'); if(ano&&mes)_aSet[ano+mes]=1; }); var anomesList=Object.keys(_aSet).sort();
 return{fat,fat_v,dev,qtd,custo,icms,cofins,pis,fecpst,rec_frete:rf,custo_frete:cf,qtdGradeHava,anomesList};
 }
 function dreCalc(a, shareRB, shareQTD){
@@ -2946,7 +2951,7 @@ return '<style>.dre-tbl td:first-child{text-align:left!important;font-weight:600
 + ebitdaPct
 + '</tbody></table>';
 }
-}
+
 document.addEventListener('dreDataLoaded', function(){ initDre(); });</script>
 
 <script>
