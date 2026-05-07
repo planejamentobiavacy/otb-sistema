@@ -1175,22 +1175,6 @@ return '<div class="map-row"> <label>' + (label) + '</label> <select id="map-' +
 
 </script>
 <script>
-function findCol(sample, candidates){
-if (!sample) return null;
-var keys = Object.keys(sample);
-for (var i = 0; i < candidates.length; i++){
-  var c = candidates[i].toUpperCase();
-  var found = keys.find(function(k){ return k.toUpperCase() === c; });
-  if (found) return found;
-}
-// partial match fallback
-for (var i = 0; i < candidates.length; i++){
-  var c = candidates[i].toUpperCase();
-  var found = keys.find(function(k){ return k.toUpperCase().indexOf(c) >= 0; });
-  if (found) return found;
-}
-return null;
-}
 function buildGradeMap(){
 if (!state.prod || state.prod.length===0) return;
 var sample = state.prod[0];
@@ -1457,7 +1441,7 @@ var ly = m[lyYm];
 cell.varLyQty = (ly && ly.fatQty>0) ? (cell.fatQty/ly.fatQty - 1)*100 : null;
 cell.varLyVal = (ly && ly.fatVal>0) ? (cell.fatVal/ly.fatVal - 1)*100 : null;
 });
-state.matrices[sup] = {};
+state.matrices[sup] = m;
 var ml = function(m){ return ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m; };
 }
 state.suppliers.filter(function(s){ return s!=='AVACY'; }).forEach(function(sup){
