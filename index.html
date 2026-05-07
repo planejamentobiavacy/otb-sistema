@@ -547,7 +547,39 @@ var SDATA='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6
 var P=1000;
 var statusEl=document.getElementById('gcDriveStatus');
 var gcBtn=document.getElementById('gcBtnDrive');
-function dbg(m){console.log('[OTB]',m);if(statusEl)statusEl.innerHTML=m;if(typeof setLoadingMsg==='function')setLoadingMsg(m);}
+// Mostrar painel de loading imediatamente
+if(statusEl){
+  statusEl.style.display='block';
+  statusEl.style.background='#1a2547';
+  statusEl.style.border='1px solid #3a4a7a';
+  statusEl.style.color='#fff';
+  statusEl.style.borderRadius='6px';
+  statusEl.style.padding='14px 16px';
+  statusEl.style.lineHeight='1.8';
+}
+if(gcBtn){ gcBtn.disabled=true; gcBtn.textContent='⏳ Carregando...'; }
+var _loadStart = Date.now();
+function _elapsed(){ return ((Date.now()-_loadStart)/1000).toFixed(0)+'s'; }
+function dbg(m){
+  console.log('[OTB]',m);
+  if(statusEl) statusEl.innerHTML=m;
+  if(typeof setLoadingMsg==='function')setLoadingMsg(m);
+}
+function dbgStatus(tabela, total){
+  if(!statusEl) return;
+  var ico = total>0 ? '✅' : '⏳';
+  var rows = total>0 ? ' — <b>'+total.toLocaleString('pt-BR')+'</b> registros' : ' — carregando...';
+  var existing = statusEl.innerHTML;
+  // Replace or append line for this table
+  var marker = 'data-tab="'+tabela+'"';
+  var line = '<div '+marker+' style="font-size:12px;margin:2px 0">'+ico+' <b>'+tabela+'</b>'+rows+'</div>';
+  if(existing.indexOf(marker)>=0){
+    var re = new RegExp('<div '+marker+'[^>]*>.*?<\/div>');
+    statusEl.innerHTML = existing.replace(re, line);
+  } else {
+    statusEl.innerHTML += line;
+  }
+}
 function fetchPage(tab,out,p){
   var de=p*P,ate=de+P-1;
   return fetch(SUPA_URL+'/rest/v1/'+tab+'?select=*',{headers:{'apikey':SDATA,'Authorization':'Bearer '+SDATA,'Range':de+'-'+ate,'Range-Unit':'items'}})
@@ -558,7 +590,20 @@ function selAll(tab){return fetchPage(tab,[],0);}
 function expRaw(rows){return rows.map(function(r){var m=Object.assign({},r.raw||{});if(r.canal)m.CANAL=r.canal;if(r.cluster)m.CLUSTER=r.cluster;if(r.rec_frete)m.REC_FRETE=r.rec_frete;if(r.custo_frete)m.CUSTO_FRETE=r.custo_frete;return m;});}
 dbg('Carregando Supabase...');
 if(typeof setLoadingStep==='function'){setLoadingStep(1,'done');setLoadingStep(2,'active');}
-Promise.all([selAll('otb_stk'),selAll('otb_venda'),selAll('otb_carteira'),selAll('otb_produto'),selAll('otb_venda_dre'),selAll('otb_frete_dre'),selAll('otb_canais'),selAll('otb_cluster'),selAll('otb_folha')])
+// Init status lines before starting
+if(statusEl){
+  statusEl.innerHTML = '<div style="font-size:13px;font-weight:700;margin-bottom:8px;border-bottom:1px solid rgba(255,255,255,.2);padding-bottom:6px">🔄 Conectando ao Supabase...</div>';
+  ['otb_stk','otb_venda','otb_carteira','otb_produto','otb_venda_dre','otb_frete_dre','otb_canais','otb_cluster','otb_folha'].forEach(function(t){
+    statusEl.innerHTML += '<div data-tab="'+t+'" style="font-size:12px;margin:2px 0">⏳ <b>'+t+'</b> — carregando...</div>';
+  });
+}
+function selAllTracked(tab){
+  return selAll(tab).then(function(rows){
+    dbgStatus(tab, rows.length);
+    return rows;
+  });
+}
+Promise.all([selAllTracked('otb_stk'),selAllTracked('otb_venda'),selAllTracked('otb_carteira'),selAllTracked('otb_produto'),selAllTracked('otb_venda_dre'),selAllTracked('otb_frete_dre'),selAllTracked('otb_canais'),selAllTracked('otb_cluster'),selAllTracked('otb_folha')])
 .then(function(res){
   state.stk=expRaw(res[0]);state.venda=expRaw(res[1]);state.cart=expRaw(res[2]);
   state.prod=expRaw(res[3]);state.vendaDre=expRaw(res[4]);state.frete=expRaw(res[5]);
@@ -581,15 +626,22 @@ Promise.all([selAll('otb_stk'),selAll('otb_venda'),selAll('otb_carteira'),selAll
   if(typeof hideLoading==='function')setTimeout(hideLoading,300);
   var d=document.getElementById('dreScreen');if(d&&d.style.display!=='none'&&typeof initDre==='function')setTimeout(initDre,100);
   var f=document.getElementById('folhaScreen');if(f&&f.style.display!=='none'&&typeof initFolha==='function')setTimeout(initFolha,100);
-  if(statusEl){statusEl.style.background='#e8f5ee';statusEl.style.border='1px solid #0b8a3e';statusEl.style.color='#0b8a3e';statusEl.innerHTML='[OK] Supabase!';}
-  if(gcBtn){gcBtn.disabled=false;gcBtn.textContent='[reload] Recarregar';}
+  if(statusEl){
+    statusEl.style.background='#e8f5ee';statusEl.style.border='1px solid #0b8a3e';statusEl.style.color='#0b8a3e';statusEl.style.borderRadius='6px';statusEl.style.padding='12px 16px';
+    statusEl.innerHTML='<b>✅ Carregado com sucesso!</b><br><span style="font-size:11px;font-weight:400">Tempo: '+_elapsed()+' · Clique em 💾 Salvar Tudo para salvar.</span>';
+    setTimeout(function(){ if(statusEl) statusEl.style.display='none'; }, 8000);
+  }
+  if(gcBtn){gcBtn.disabled=false;gcBtn.textContent='🔄 Recarregar do Supabase';}
   renderTabs();renderTable();
 }).catch(function(err){
   console.error(err);dbg('Erro: '+err.message);
   if(typeof toast==='function')toast('Erro: '+err.message,true);
   if(typeof hideLoading==='function')hideLoading();
-  if(statusEl){statusEl.style.background='#fdeaea';statusEl.style.border='1px solid #c8102e';statusEl.style.color='#c8102e';statusEl.innerHTML='[ERRO] '+err.message;}
-  if(gcBtn){gcBtn.disabled=false;gcBtn.textContent='[reload] Recarregar';}
+  if(statusEl){
+    statusEl.style.background='#fdeaea';statusEl.style.border='1px solid #c8102e';statusEl.style.color='#c8102e';statusEl.style.borderRadius='6px';statusEl.style.padding='12px 16px';
+    statusEl.innerHTML='<b>❌ Erro ao carregar</b><br><span style="font-size:11px;font-weight:400">'+err.message+'</span>';
+  }
+  if(gcBtn){gcBtn.disabled=false;gcBtn.textContent='🔄 Recarregar do Supabase';}
 });
 }
 async function processDriveFiles(result){
@@ -1441,7 +1493,7 @@ var ly = m[lyYm];
 cell.varLyQty = (ly && ly.fatQty>0) ? (cell.fatQty/ly.fatQty - 1)*100 : null;
 cell.varLyVal = (ly && ly.fatVal>0) ? (cell.fatVal/ly.fatVal - 1)*100 : null;
 });
-state.matrices[sup] = m;
+state.matrices[sup] = {};
 var ml = function(m){ return ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m; };
 }
 state.suppliers.filter(function(s){ return s!=='AVACY'; }).forEach(function(sup){
