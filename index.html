@@ -1175,6 +1175,22 @@ return '<div class="map-row"> <label>' + (label) + '</label> <select id="map-' +
 
 </script>
 <script>
+function findCol(sample, candidates){
+if (!sample) return null;
+var keys = Object.keys(sample);
+for (var i = 0; i < candidates.length; i++){
+  var c = candidates[i].toUpperCase();
+  var found = keys.find(function(k){ return k.toUpperCase() === c; });
+  if (found) return found;
+}
+// partial match fallback
+for (var i = 0; i < candidates.length; i++){
+  var c = candidates[i].toUpperCase();
+  var found = keys.find(function(k){ return k.toUpperCase().indexOf(c) >= 0; });
+  if (found) return found;
+}
+return null;
+}
 function buildGradeMap(){
 if (!state.prod || state.prod.length===0) return;
 var sample = state.prod[0];
@@ -2393,7 +2409,10 @@ _bindCards();
       </div>
       <div style="display:flex;align-items:center;gap:12px;margin-left:auto">
         <span id="folhaHeaderMeta" style="font-size:11px;color:rgba(255,255,255,.5);text-align:right;line-height:1.7"></span>
-
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px">
+          <button id="folhaBtnSalvar" onclick="folhaSalvar(this)" style="background:#7b2d8b;color:#fff;border:1px solid #5c2068;padding:5px 18px;border-radius:3px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Salvar</button>
+          <span id="folhaSavedLabel" style="font-size:10px;color:rgba(255,255,255,.45);white-space:nowrap;text-align:right"></span>
+        </div>
       </div>
     </div>
   </header>
@@ -2404,7 +2423,7 @@ _bindCards();
       <div style="color:#888;font-size:13px;max-width:380px;line-height:1.8">Use <b>⚙️ Configurações</b> na tela inicial para carregar <b>BASE_FOLHA.xlsx</b> do Google Drive.</div>
       <button onclick="showHomeFolha()" style="background:#1a2547;color:#fff;border:none;padding:10px 24px;border-radius:4px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">← Voltar ao Início</button>
     </div>
-    <div id="folhaApp" style="display:none;flex:1;flex-direction:column;min-height:0;overflow:hidden">
+    <div id="folhaApp" style="display:none">
       
       <div style="display:flex;align-items:center;padding:0;background:#fff;border-bottom:2px solid #d0d8ee;overflow-x:auto;box-shadow:0 2px 8px rgba(26,42,108,.06);flex-shrink:0" id="folhaTabsBar"></div>
       <div id="folhaFiltros" style="display:flex;align-items:flex-end;gap:10px;padding:12px 20px;background:#f0f3fa;border-bottom:1px solid #d0d8ee;flex-wrap:wrap"></div>
@@ -3164,238 +3183,325 @@ sa,dg,cd,ebt
 <script>
 var FOLHA_RAW    = [];
 var FOLHA_LOADED = false;
+var FOLHA_TAB    = 'periodo';
 var SUPA_ROW_KEY_FOLHA = 'folha_current';
-var FOLHA_ABA    = 'area'; // 'area' | 'cargo' | 'nome'
-
-var FOLHA_FILTROS = { situacao:'Todos', tipo:'Todos', area:'Todos', nome:'Todos', ano:'Todos' };
-
-function folhaNum(v){
-  if(!v&&v!==0) return 0; if(typeof v==='number') return v;
-  var s=String(v).trim().replace(/\./g,'').replace(',','.'); var n=parseFloat(s); return isNaN(n)?0:n;
+var FOLHA_VERBAS = [
+'SALARIO_BASE','BONIFICACAO','AJUDA_CUSTO','CURSOS','UTILIDADE',
+'COMISSAO','DSR','GRENDENE','HORAS_EXTRA','DSR_HE',
+'AUX_DOENCA','AUX_SEGURO','AUX_MATERN','VERBAS_RESCIS','S13_PARC'
+];
+function folhaDims(raw){
+if (!raw || !raw.length) return {};
+var first = raw[0];
+return {
+periodo:  'PERIODO'   in first,
+nome:     'NOME'      in first || 'NOME_FUNCIONARIO' in first || 'FUNCIONARIO' in first,
+area:     'AREA'      in first || 'SETOR' in first || 'DEPARTAMENTO' in first,
+cargo:    'CARGO'     in first || 'FUNCAO' in first,
+tipo:     'TIPO'      in first || 'TIPO_CONTRATO' in first || 'VINCULO' in first,
+matricula:'MATRICULA' in first,
+};
 }
-function folhaBrl(v){ return Math.round(v).toLocaleString('pt-BR'); }
-function folhaGetField(r,candidates){
-  for(var i=0;i<candidates.length;i++){
-    var k=candidates[i]; var keys=Object.keys(r);
-    var found=keys.find(function(rk){ return rk.toUpperCase()===k.toUpperCase(); });
-    if(found!==undefined&&r[found]!==null&&r[found]!==undefined&&String(r[found]).trim()!=='') return String(r[found]).trim();
-  }
-  return '';
+function folhaCol(r, options){
+for (var i=0; i<options.length; i++){
+if (options[i] in r && r[options[i]] != null && String(r[options[i]]).trim() !== '')
+return String(r[options[i]]).trim();
 }
-function folhaGetPeriodo(r){ return folhaGetField(r,['PERIODO','ANO_MES','periodo','ano_mes']); }
-function folhaGetArea(r){ return folhaGetField(r,['AREA','SETOR','DEPARTAMENTO','area'])||'(sem área)'; }
-function folhaGetCargo(r){ return folhaGetField(r,['DESC_FUNCAO','CARGO','FUNCAO','cargo','desc_funcao'])||'(sem cargo)'; }
-function folhaGetNome(r){ return folhaGetField(r,['NOME','NOME_FUNCIONARIO','FUNCIONARIO','pessoa','nome'])||'(sem nome)'; }
-function folhaGetTipo(r){ return folhaGetField(r,['TIPO','TIPO_CONTRATO','VINCULO','tipo'])||''; }
-function folhaGetSituacao(r){ return folhaGetField(r,['SITUACAO','STATUS','situacao'])||''; }
-
-var FOLHA_VERBAS=['SALARIO_BASE','BONIFICACAO','AJUDA_CUSTO','CURSOS','UTILIDADE','COMISSAO','DSR','GRENDENE','HORAS_EXTRA','DSR_HE','AUX_DOENCA','AUX_SEGURO','AUX_MATERN','VERBAS_RESCIS','S13_PARC'];
+return '-';
+}
+function folhaGetNome(r)     { return folhaCol(r, ['NOME','NOME_FUNCIONARIO','FUNCIONARIO']); }
+function folhaGetArea(r)     { return folhaCol(r, ['AREA','SETOR','DEPARTAMENTO']); }
+function folhaGetCargo(r)    { return folhaCol(r, ['CARGO','FUNCAO']); }
+function folhaGetTipo(r)     { return folhaCol(r, ['TIPO','TIPO_CONTRATO','VINCULO']); }
+function folhaGetPeriodo(r)  { return String(r.PERIODO||'').trim(); }
+function folhaNum(v){ return parseFloat(String(v||0).replace(',','.')) || 0; }
 function folhaTotal(r){
-  var t=0;
-  FOLHA_VERBAS.forEach(function(k){ var found=Object.keys(r).find(function(rk){ return rk.toUpperCase()===k; }); if(found) t+=folhaNum(r[found]); });
-  if(t===0){ var v=folhaNum(r['valor']||r['VALOR']||0); if(v>0) t=v; }
-  return t;
+var t = 0;
+FOLHA_VERBAS.forEach(function(k){ t += folhaNum(r[k]); });
+return t;
 }
-
+function folhaBrl(v){
+return 'R$ '+Math.round(v).toLocaleString('pt-BR');
+}
 function openFolhaModule(){
-  var home=document.getElementById('homeScreen'); if(home) home.style.display='none';
-  var appEl=document.querySelector('.app'); if(appEl) appEl.style.display='none';
-  var dreScreen=document.getElementById('dreScreen'); if(dreScreen) dreScreen.style.display='none';
-  var fs=document.getElementById('folhaScreen'); if(fs) fs.style.display='flex';
-  if(FOLHA_LOADED&&FOLHA_RAW&&FOLHA_RAW.length>0){ initFolha(); return; }
-  folhaCarregarSupabase().then(function(payload){
-    if(payload&&payload.raw&&payload.raw.length>0){
-      FOLHA_RAW=payload.raw; FOLHA_LOADED=true;
-      initFolha();
-    } else {
-      var empty=document.getElementById('folhaEmpty'); if(empty) empty.style.display='flex';
-      var app=document.getElementById('folhaApp'); if(app) app.style.display='none';
-    }
-  });
+var home = document.getElementById('homeScreen');
+if (home) home.style.display = 'none';
+var appEl = document.querySelector('.app');
+if (appEl) appEl.style.display = 'none';
+var dreScreen = document.getElementById('dreScreen');
+if (dreScreen) dreScreen.style.display = 'none';
+var fs = document.getElementById('folhaScreen');
+if (fs) fs.style.display = 'flex';
+try{
+var dt = localStorage.getItem('folha_last_saved');
+var lbl = document.getElementById('folhaSavedLabel');
+if (dt && lbl) lbl.textContent = dt;
+}catch(e){}
+if (FOLHA_LOADED){ initFolha(); return; }
+folhaCarregarSupabase().then(function(payload){
+if (payload && payload.raw && payload.raw.length > 0){
+FOLHA_RAW = payload.raw;
+var dt2 = payload.savedAt ? new Date(payload.savedAt).toLocaleString('pt-BR') : '';
+var lbl2 = document.getElementById('folhaSavedLabel');
+if (lbl2 && dt2) lbl2.textContent = dt2;
+var meta = document.getElementById('folhaHeaderMeta');
+if (meta) meta.innerHTML = '<strong>'+FOLHA_RAW.length.toLocaleString("pt-BR")+' registros</strong><br>Carregado do Supabase';
+FOLHA_LOADED = true;
+initFolha();
+} else {
+var empty = document.getElementById('folhaEmpty');
+var app   = document.getElementById('folhaApp');
+if (empty) empty.style.display = 'flex';
+if (app)   app.style.display   = 'none';
+}
+});
 }
 function showHomeFolha(){
-  var fs=document.getElementById('folhaScreen'); if(fs) fs.style.display='none';
-  var home=document.getElementById('homeScreen'); if(home) home.style.display='flex';
+var fs = document.getElementById('folhaScreen');
+if (fs) fs.style.display = 'none';
+var home = document.getElementById('homeScreen');
+if (home) home.style.display = 'flex';
 }
 async function folhaCarregarSupabase(){
-  try{
-    var r=await fetch(SUPA_URL+'/rest/v1/'+SUPA_TABLE+'?key=eq.'+SUPA_ROW_KEY_FOLHA+'&select=value',{headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Accept':'application/json'}});
-    if(!r.ok) return null; var rows=await r.json();
-    if(rows&&rows.length>0) return JSON.parse(rows[0].value); return null;
-  }catch(e){ return null; }
+try{
+var r = await fetch(SUPA_URL+'/rest/v1/'+SUPA_TABLE+'?key=eq.'+SUPA_ROW_KEY_FOLHA+'&select=value',{
+headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Accept':'application/json'}
+});
+if (!r.ok) return null;
+var rows = await r.json();
+if (rows && rows.length > 0) return JSON.parse(rows[0].value);
+return null;
+}catch(e){ return null; }
 }
-
+async function folhaSalvar(btn){
+if (!FOLHA_LOADED){ toast('Sem dados para salvar.',true); return; }
+if (btn){ btn.disabled=true; btn.textContent='......'; }
+try{
+var payload = JSON.stringify({ version:'1', savedAt:new Date().toISOString(), raw:FOLHA_RAW });
+var r = await fetch(SUPA_URL+'/rest/v1/'+SUPA_TABLE,{
+method:'POST',
+headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'},
+body: JSON.stringify({key:SUPA_ROW_KEY_FOLHA, value:payload})
+});
+if (!r.ok) throw new Error('Supabase '+r.status);
+var dt = new Date().toLocaleString('pt-BR');
+var lbl = document.getElementById('folhaSavedLabel');
+if (lbl) lbl.textContent = dt;
+try{ localStorage.setItem('folha_last_saved', dt); }catch(e){}
+if (btn){ btn.disabled=false; btn.textContent='[OK] Salvo!'; setTimeout(function(){ btn.textContent='Salvar'; },2000); }
+toast('[OK] Folha salva em '+dt);
+}catch(err){
+if (btn){ btn.disabled=false; btn.textContent='Salvar'; }
+toast('Erro ao salvar Folha: '+err.message,true);
+}
+}
 function initFolha(){
-  if(!FOLHA_RAW||!FOLHA_RAW.length){
-    var empty=document.getElementById('folhaEmpty'); if(empty) empty.style.display='flex';
-    var app=document.getElementById('folhaApp'); if(app) app.style.display='none'; return;
-  }
-  var empty=document.getElementById('folhaEmpty'); if(empty) empty.style.display='none';
-  var app=document.getElementById('folhaApp'); if(app){ app.style.display='flex'; app.style.flexDirection='column'; }
-  var meta=document.getElementById('folhaHeaderMeta');
-  if(meta) meta.innerHTML='<strong>'+FOLHA_RAW.length.toLocaleString('pt-BR')+' registros</strong>';
-  _folhaInjectStyles();
-  _folhaBuildLayout();
-  _folhaPopulateFilters();
-  _folhaRenderAll();
+if (!FOLHA_RAW || !FOLHA_RAW.length){
+document.getElementById('folhaEmpty').style.display = 'flex';
+document.getElementById('folhaApp').style.display   = 'none';
+return;
 }
-
-function _folhaInjectStyles(){
-  if(document.getElementById('folhaPivotCss')) return;
-  var s=document.createElement('style'); s.id='folhaPivotCss';
-  s.textContent=
-    '#folhaApp{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0}'
-   +'#folhaPivotWrap{display:flex;flex:1;overflow:hidden;min-height:0}'
-   +'#folhaSidebar{width:160px;min-width:160px;flex-shrink:0;background:#fff;border-right:1px solid #dde3f0;padding:12px 10px;overflow-y:auto;display:flex;flex-direction:column;gap:14px}'
-   +'.fp-fl{display:flex;flex-direction:column;gap:4px}'
-   +'.fp-fl label{font-size:10px;font-weight:700;color:#1a2236;letter-spacing:.6px;text-transform:uppercase}'
-   +'.fp-fl select{width:100%;font-size:11px;padding:4px 6px;border:1px solid #c8d0e0;border-radius:4px;background:#f7f9fc;color:#1a2236;cursor:pointer;outline:none}'
-   +'.fp-fl select:focus{border-color:#7b2d8b}'
-   +'#folhaMain{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0}'
-   +'#folhaTabsBar{display:flex;align-items:center;background:#fff;border-bottom:2px solid #dde3f0;flex-shrink:0}'
-   +'.fp-tab{font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:12px 22px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;font-family:inherit;transition:color .15s}'
-   +'.fp-tab:hover{color:#7b2d8b}'
-   +'.fp-tab.active{color:#7b2d8b;border-bottom-color:#7b2d8b;font-weight:700}'
-   +'#folhaTablesArea{flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 16px;display:flex;flex-direction:column;gap:18px;background:#f4f5f7}'
-   +'.fp-sec{display:flex;flex-direction:column;gap:6px}'
-   +'.fp-sec-title{font-size:11px;font-weight:700;color:#1a2236;letter-spacing:.5px;text-transform:uppercase;display:flex;align-items:center;gap:6px}'
-   +'.fp-sec-title::before{content:"";display:inline-block;width:3px;height:14px;background:#7b2d8b;border-radius:2px}'
-   +'.fp-scroll{overflow-x:auto;border-radius:4px;border:1px solid #dde3f0;background:#fff}'
-   +'.fp-tbl{border-collapse:collapse;font-size:11.5px;width:100%;white-space:nowrap;font-variant-numeric:tabular-nums}'
-   +'.fp-tbl thead tr{background:#1a2236;color:#fff}'
-   +'.fp-th-dim{padding:7px 12px;text-align:left;font-weight:700;font-size:11px;position:sticky;left:0;z-index:3;background:#1a2236;min-width:180px;border-right:1px solid rgba(255,255,255,.15)}'
-   +'.fp-th-m{padding:7px 10px;text-align:center;font-weight:700;font-size:10px;min-width:76px;letter-spacing:.3px;border-left:1px solid rgba(255,255,255,.08)}'
-   +'.fp-td-dim{padding:5px 12px;font-size:11.5px;color:#1a2236;font-weight:500;position:sticky;left:0;z-index:1;background:#fff;border-right:1px solid #dde3f0;border-bottom:1px solid #eef0f6}'
-   +'.fp-td-val{padding:5px 10px;text-align:center;color:#222;border-bottom:1px solid #eef0f6;border-left:1px solid #f0f2f7;font-size:11.5px}'
-   +'.fp-td-val.z{color:#ccc}'
-   +'.fp-tbl tbody tr:nth-child(even) .fp-td-dim{background:#f9fafb}'
-   +'.fp-tbl tbody tr:nth-child(even) .fp-td-val{background:#f9fafb}'
-   +'.fp-tbl tbody tr:hover .fp-td-dim,.fp-tbl tbody tr:hover .fp-td-val{background:#f0eaf5!important}'
-   +'.fp-tot .fp-td-dim,.fp-tot .fp-td-val{background:#1a2236!important;color:#fff!important;font-weight:700;border-top:2px solid #7b2d8b}';
-  document.head.appendChild(s);
+document.getElementById('folhaEmpty').style.display = 'none';
+document.getElementById('folhaApp').style.display   = 'block';
+var meta = document.getElementById('folhaHeaderMeta');
+if (meta) meta.innerHTML = '<strong>'+FOLHA_RAW.length.toLocaleString("pt-BR")+' registros</strong>';
+var dims = folhaDims(FOLHA_RAW);
+var tabsList = [
+{ id:'periodo',  label:'[data] Periodo',   show:dims.periodo },
+{ id:'area',     label:' Area',       show:dims.area    },
+{ id:'cargo',    label:'? Cargo',      show:dims.cargo   },
+{ id:'pessoa',   label:'? Pessoa',     show:dims.nome    },
+{ id:'tipo',     label:'? Tipo',       show:dims.tipo    },
+].filter(function(t){ return t.show !== false; });
+var bar = document.getElementById('folhaTabsBar');
+bar.innerHTML = tabsList.map(function(t){
+return '<button onclick="folhaSwitchTab('+t.id+')" id="folhaTab-'+t.id+'" style="font-family:inherit;font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap">'+t.label+'</button>';
+}).join('');
+var periodos  = ['TODOS'].concat(Array.from(new Set(FOLHA_RAW.map(folhaGetPeriodo).filter(Boolean)))).sort();
+var areas     = ['TODOS'].concat(Array.from(new Set(FOLHA_RAW.map(folhaGetArea).filter(function(a){ return a!=='-'; }))).sort());
+var cargos    = ['TODOS'].concat(Array.from(new Set(FOLHA_RAW.map(folhaGetCargo).filter(function(a){ return a!=='-'; }))).sort());
+var tipos     = ['TODOS'].concat(Array.from(new Set(FOLHA_RAW.map(folhaGetTipo).filter(function(a){ return a!=='-'; }))).sort());
+function sel(id,label,opts){
+return '<div style="display:flex;flex-direction:column;gap:4px">'
++'<div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">'+label+'</div>'
++'<select id="'+id+'" onchange="folhaRender()" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:6px;font-family:inherit;font-size:13px;cursor:pointer;min-width:100px">'
++opts.map(function(o){ return '<option value="'+o+'">'+o+'</option>'; }).join('')
++'</select></div>';
 }
-
-function _folhaBuildLayout(){
-  var app=document.getElementById('folhaApp'); if(!app) return;
-  app.innerHTML=
-    '<div id="folhaPivotWrap">'
-   +'<div id="folhaSidebar">'
-   +'<div class="fp-fl"><label>SITUACAO</label><select id="fpFS"><option>Todos</option></select></div>'
-   +'<div class="fp-fl"><label>TIPO</label><select id="fpFT"><option>Todos</option></select></div>'
-   +'<div class="fp-fl"><label>AREA</label><select id="fpFA"><option>Todos</option></select></div>'
-   +'<div class="fp-fl"><label>NOME</label><select id="fpFN"><option>Todos</option></select></div>'
-   +'<div class="fp-fl"><label>ANO</label><select id="fpFAno"><option>Todos</option></select></div>'
-   +'</div>'
-   +'<div id="folhaMain">'
-   +'<div id="folhaTabsBar">'
-   +'<button class="fp-tab active" id="fpTabArea"  onclick="folhaSwitchAba(\'area\')" >POR ÁREA / FUNÇÃO</button>'
-   +'<button class="fp-tab"        id="fpTabCargo" onclick="folhaSwitchAba(\'cargo\')">POR CARGO / FUNÇÃO</button>'
-   +'<button class="fp-tab"        id="fpTabNome"  onclick="folhaSwitchAba(\'nome\')" >POR NOME</button>'
-   +'</div>'
-   +'<div id="folhaTablesArea">'
-   +'<div class="fp-sec"><div class="fp-scroll" id="fpTblPrincipal"></div></div>'
-   +'</div>'
-   +'</div>'
-   +'</div>';
-
-  [['fpFS','situacao'],['fpFT','tipo'],['fpFA','area'],['fpFN','nome'],['fpFAno','ano']].forEach(function(p){
-    var el=document.getElementById(p[0]); if(!el) return;
-    el.addEventListener('change',function(){ FOLHA_FILTROS[p[1]]=el.value; _folhaRenderAll(); });
-  });
+var filtrosHtml = sel('flt-periodo','Periodo',periodos);
+if (dims.area)  filtrosHtml += sel('flt-area','Area',areas);
+if (dims.cargo) filtrosHtml += sel('flt-cargo','Cargo',cargos);
+if (dims.tipo)  filtrosHtml += sel('flt-tipo','Tipo',tipos);
+document.getElementById('folhaFiltros').innerHTML = filtrosHtml;
+folhaSwitchTab(tabsList[0].id);
 }
-
-function folhaSwitchAba(aba){
-  FOLHA_ABA=aba;
-  ['area','cargo','nome'].forEach(function(a){
-    var btn=document.getElementById('fpTab'+a.charAt(0).toUpperCase()+a.slice(1));
-    if(btn) btn.className='fp-tab'+(a===aba?' active':'');
-  });
-  _folhaRenderAll();
+function folhaSwitchTab(tab){
+FOLHA_TAB = tab;
+document.querySelectorAll('[id^="folhaTab-"]').forEach(function(b){
+var active = b.id === 'folhaTab-'+tab;
+b.style.color = active ? '#7b2d8b' : '#7a8ab0';
+b.style.borderBottomColor = active ? '#7b2d8b' : 'transparent';
+b.style.fontWeight = active ? '700' : '600';
+});
+folhaRender();
 }
-
-function _folhaPopulateFilters(){
-  function uv(fn){ var s={}; FOLHA_RAW.forEach(function(r){ var v=fn(r); if(v&&v.indexOf('(sem ')<0) s[v]=true; }); return Object.keys(s).sort(); }
-  function fill(id,vals,key){
-    var el=document.getElementById(id); if(!el) return;
-    var prev=FOLHA_FILTROS[key]||'Todos';
-    el.innerHTML='<option>Todos</option>';
-    vals.forEach(function(v){ var o=document.createElement('option'); o.value=v; o.textContent=v; el.appendChild(o); });
-    el.value=(vals.indexOf(prev)>=0)?prev:'Todos'; FOLHA_FILTROS[key]=el.value;
-  }
-  fill('fpFS',uv(folhaGetSituacao),'situacao');
-  fill('fpFT',uv(folhaGetTipo),'tipo');
-  fill('fpFA',uv(folhaGetArea),'area');
-  fill('fpFN',uv(folhaGetNome),'nome');
-  var anos={}; FOLHA_RAW.forEach(function(r){ var p=folhaGetPeriodo(r); if(p&&String(p).length>=4) anos[String(p).replace(/\D/g,'').slice(0,4)]=true; });
-  fill('fpFAno',Object.keys(anos).sort(),'ano');
+function folhaGv(id){ var el=document.getElementById(id); return el?el.value:'TODOS'; }
+function folhaFiltrar(){
+var p = folhaGv('flt-periodo');
+var a = folhaGv('flt-area');
+var car = folhaGv('flt-cargo');
+var t = folhaGv('flt-tipo');
+return FOLHA_RAW.filter(function(r){
+if (p   && p!=='TODOS'   && folhaGetPeriodo(r)!==p)   return false;
+if (a   && a!=='TODOS'   && folhaGetArea(r)!==a)      return false;
+if (car && car!=='TODOS' && folhaGetCargo(r)!==car)   return false;
+if (t   && t!=='TODOS'   && folhaGetTipo(r)!==t)      return false;
+return true;
+});
 }
-
-function _folhaFiltrar(){
-  return FOLHA_RAW.filter(function(r){
-    if(FOLHA_FILTROS.situacao!=='Todos'&&folhaGetSituacao(r)!==FOLHA_FILTROS.situacao) return false;
-    if(FOLHA_FILTROS.tipo!=='Todos'&&folhaGetTipo(r)!==FOLHA_FILTROS.tipo) return false;
-    if(FOLHA_FILTROS.area!=='Todos'&&folhaGetArea(r)!==FOLHA_FILTROS.area) return false;
-    if(FOLHA_FILTROS.nome!=='Todos'&&folhaGetNome(r)!==FOLHA_FILTROS.nome) return false;
-    if(FOLHA_FILTROS.ano!=='Todos'){
-      var p=String(folhaGetPeriodo(r)).replace(/\D/g,'').slice(0,4);
-      if(p!==FOLHA_FILTROS.ano) return false;
-    }
-    return true;
-  });
+function folhaRender(){
+var rows = folhaFiltrar();
+folhaRenderKpis(rows);
+if (FOLHA_TAB==='periodo') folhaRenderDim(rows, folhaGetPeriodo, 'Periodo');
+else if (FOLHA_TAB==='area')   folhaRenderDim(rows, folhaGetArea,   'Area');
+else if (FOLHA_TAB==='cargo')  folhaRenderDim(rows, folhaGetCargo,  'Cargo');
+else if (FOLHA_TAB==='pessoa') folhaRenderPessoa(rows);
+else if (FOLHA_TAB==='tipo')   folhaRenderDim(rows, folhaGetTipo,   'Tipo');
 }
-
-function _fpMeses(rows){
-  var s={}; rows.forEach(function(r){ var p=String(folhaGetPeriodo(r)).replace(/\D/g,'').slice(0,6); if(p.length===6) s[p]=true; }); return Object.keys(s).sort();
+function folhaRenderKpis(rows){
+var totalFolha=0, totalFuncs=new Set(), totalPeriodos=new Set();
+rows.forEach(function(r){
+totalFolha += folhaTotal(r);
+totalFuncs.add(folhaGetNome(r)!=='-' ? folhaGetNome(r) : String(r.MATRICULA||''));
+totalPeriodos.add(folhaGetPeriodo(r));
+});
+var totalMensal = totalPeriodos.size > 0 ? totalFolha/totalPeriodos.size : 0;
+var ticketMedio = totalFuncs.size > 0 ? totalFolha/totalFuncs.size : 0;
+function kpi(label,val,cor){
+return '<div style="background:#fff;border:1.5px solid #d0d8ee;border-radius:8px;padding:12px 14px;border-top:3px solid '+cor+';text-align:center;box-shadow:0 2px 8px rgba(26,42,108,.08)">'
++'<div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700;margin-bottom:6px">'+label+'</div>'
++'<div style="font-size:18px;font-weight:800;color:#0f1a3a;line-height:1">'+val+'</div>'
++'</div>';
 }
-function _fpMesLabel(am){
-  var n=['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];
-  return (n[parseInt(am.slice(4,6),10)-1]||am.slice(4))+'/'+am.slice(2,4);
+document.getElementById('folhaKpis').innerHTML =
+kpi('Total Folha',    folhaBrl(totalFolha),  '#7b2d8b')
++kpi('Media Mensal',   folhaBrl(totalMensal), '#1e3fa8')
++kpi('Funcionarios',   totalFuncs.size,       '#0b8a3e')
++kpi('Periodos',       totalPeriodos.size,    '#c48a00')
++kpi('Ticket Medio',   folhaBrl(ticketMedio), '#c8102e');
 }
-function _fpAgregar(rows,getFn){
-  var result={};
-  rows.forEach(function(r){
-    var dim=getFn(r)||'(outros)';
-    var am=String(folhaGetPeriodo(r)).replace(/\D/g,'').slice(0,6); if(am.length!==6) return;
-    var val=folhaTotal(r); if(!result[dim]) result[dim]={}; result[dim][am]=(result[dim][am]||0)+val;
-  });
-  return result;
+function folhaRenderDim(rows, getFn, dimLabel){
+var grupos = {};
+rows.forEach(function(r){
+var k = getFn(r) || '-';
+if (!grupos[k]) grupos[k] = { total:0, count:0, verbas:{} };
+grupos[k].total += folhaTotal(r);
+grupos[k].count++;
+FOLHA_VERBAS.forEach(function(v){ grupos[k].verbas[v] = (grupos[k].verbas[v]||0) + folhaNum(r[v]); });
+});
+var keys = Object.keys(grupos).sort(function(a,b){ return grupos[b].total - grupos[a].total; });
+var grandTotal = rows.reduce(function(s,r){ return s+folhaTotal(r); },0);
+var verbCols = FOLHA_VERBAS.filter(function(v){
+return keys.some(function(k){ return grupos[k].verbas[v] > 0; });
+});
+var html = '<table style="width:100%;border-collapse:separate;border-spacing:0;background:#fff;border-radius:10px;box-shadow:0 4px 20px rgba(26,42,108,.12);overflow:hidden;font-size:12px">';
+html += '<thead><tr>'
++'<th style="background:linear-gradient(135deg,#7b2d8b,#1a2547);color:#fff;padding:11px 14px;text-align:left;font-size:13px;font-weight:700;min-width:160px">'+dimLabel+'</th>'
++'<th style="background:linear-gradient(135deg,#7b2d8b,#1a2547);color:#fff;padding:11px 14px;text-align:center;font-size:13px">Registros</th>'
++'<th style="background:linear-gradient(135deg,#7b2d8b,#1a2547);color:#fff;padding:11px 14px;text-align:center;font-size:13px">Total</th>'
++'<th style="background:linear-gradient(135deg,#7b2d8b,#1a2547);color:#fff;padding:11px 14px;text-align:center;font-size:13px">% Total</th>'
++ verbCols.map(function(v){
+return '<th style="background:linear-gradient(135deg,#7b2d8b,#1a2547);color:#fff;padding:11px 10px;text-align:center;font-size:11px;white-space:nowrap">'+v.replace(/_/g,' ')+'</th>';
+}).join('')
++'</tr></thead><tbody>';
+keys.forEach(function(k, i){
+var g = grupos[k];
+var pct = grandTotal > 0 ? (g.total/grandTotal*100).toFixed(1)+'%' : '-';
+var bg = i%2===0 ? '#fff' : '#f8f9fc';
+html += '<tr style="background:'+bg+';border-bottom:1px solid #eef0f8">'
++'<td style="padding:9px 14px;font-weight:600;color:#0f1a3a;text-align:left">'+k+'</td>'
++'<td style="padding:9px 10px;text-align:center;color:#555">'+g.count.toLocaleString("pt-BR")+'</td>'
++'<td style="padding:9px 10px;text-align:center;font-weight:700;color:#1a2547">'+folhaBrl(g.total)+'</td>'
++'<td style="padding:9px 10px;text-align:center"><span style="background:rgba(123,45,139,.1);color:#7b2d8b;padding:2px 8px;border-radius:10px;font-weight:700;font-size:11px">'+pct+'</span></td>'
++ verbCols.map(function(v){
+var val = g.verbas[v]||0;
+return '<td style="padding:9px 10px;text-align:center;color:'+(val>0?'#0f1a3a':'#ccc')+'">'+
+(val>0 ? folhaBrl(val) : '-')+'</td>';
+}).join('')
++'</tr>';
+});
+var totVerbas = {};
+verbCols.forEach(function(v){
+totVerbas[v] = keys.reduce(function(s,k){ return s+(grupos[k].verbas[v]||0); },0);
+});
+html += '<tr style="background:#f0eaf5;border-top:2px solid #7b2d8b;font-weight:700">'
++'<td style="padding:10px 14px;color:#7b2d8b;font-size:13px">TOTAL</td>'
++'<td style="padding:10px;text-align:center;color:#7b2d8b">'+rows.length.toLocaleString("pt-BR")+'</td>'
++'<td style="padding:10px;text-align:center;color:#7b2d8b;font-size:13px">'+folhaBrl(grandTotal)+'</td>'
++'<td style="padding:10px;text-align:center;color:#7b2d8b">100%</td>'
++ verbCols.map(function(v){
+return '<td style="padding:10px;text-align:center;color:#7b2d8b">'+folhaBrl(totVerbas[v])+'</td>';
+}).join('')
++'</tr>';
+html += '</tbody></table>';
+document.getElementById('folhaPainel').innerHTML = html;
 }
-
-function _fpRenderTabela(cid,rows,getFn){
-  var c=document.getElementById(cid); if(!c) return;
-  var meses=_fpMeses(rows); var agg=_fpAgregar(rows,getFn); var dims=Object.keys(agg).sort();
-  if(!dims.length){ c.innerHTML='<div style="padding:20px;color:#999;font-size:12px;text-align:center">Sem dados</div>'; return; }
-  var totMes={}; meses.forEach(function(am){ totMes[am]=0; dims.forEach(function(d){ totMes[am]+=(agg[d][am]||0); }); });
-  var h='<table class="fp-tbl"><thead><tr><th class="fp-th-dim">Dimensão</th>';
-  meses.forEach(function(am){ h+='<th class="fp-th-m">'+_fpMesLabel(am)+'</th>'; });
-  h+='</tr></thead><tbody>';
-  dims.forEach(function(dim){
-    h+='<tr><td class="fp-td-dim">'+dim+'</td>';
-    meses.forEach(function(am){ var v=agg[dim][am]||0; h+='<td class="fp-td-val'+(v===0?' z':'')+'">'+( v?folhaBrl(v):'' )+'</td>'; });
-    h+='</tr>';
-  });
-  h+='<tr class="fp-tot"><td class="fp-td-dim">Total</td>';
-  meses.forEach(function(am){ h+='<td class="fp-td-val">'+folhaBrl(totMes[am])+'</td>'; });
-  h+='</tr></tbody></table>'; c.innerHTML=h;
+function folhaRenderPessoa(rows){
+var pessoas = {};
+rows.forEach(function(r){
+var mat  = String(r.MATRICULA||'').trim() || folhaGetNome(r);
+var nome = folhaGetNome(r);
+var area = folhaGetArea(r);
+var cargo= folhaGetCargo(r);
+var tipo = folhaGetTipo(r);
+if (!pessoas[mat]) pessoas[mat] = { nome:nome, area:area, cargo:cargo, tipo:tipo, total:0, periodos:0, verbas:{} };
+pessoas[mat].total += folhaTotal(r);
+pessoas[mat].periodos++;
+FOLHA_VERBAS.forEach(function(v){ pessoas[mat].verbas[v] = (pessoas[mat].verbas[v]||0) + folhaNum(r[v]); });
+});
+var keys = Object.keys(pessoas).sort(function(a,b){ return pessoas[b].total - pessoas[a].total; });
+var html = '<table style="width:100%;border-collapse:separate;border-spacing:0;background:#fff;border-radius:10px;box-shadow:0 4px 20px rgba(26,42,108,.12);overflow:hidden;font-size:12px">';
+html += '<thead><tr>'
++'<th style="background:linear-gradient(135deg,#7b2d8b,#1a2547);color:#fff;padding:11px 14px;text-align:left;font-size:13px;font-weight:700">Matricula</th>'
++'<th style="background:linear-gradient(135deg,#7b2d8b,#1a2547);color:#fff;padding:11px 14px;text-align:left;font-size:13px">Nome</th>'
++'<th style="background:linear-gradient(135deg,#7b2d8b,#1a2547);color:#fff;padding:11px 14px;text-align:center;font-size:13px">Area</th>'
++'<th style="background:linear-gradient(135deg,#7b2d8b,#1a2547);color:#fff;padding:11px 14px;text-align:center;font-size:13px">Cargo</th>'
++'<th style="background:linear-gradient(135deg,#7b2d8b,#1a2547);color:#fff;padding:11px 14px;text-align:center;font-size:13px">Tipo</th>'
++'<th style="background:linear-gradient(135deg,#7b2d8b,#1a2547);color:#fff;padding:11px 14px;text-align:center;font-size:13px">Periodos</th>'
++'<th style="background:linear-gradient(135deg,#7b2d8b,#1a2547);color:#fff;padding:11px 14px;text-align:center;font-size:13px">Total Acum</th>'
++'<th style="background:linear-gradient(135deg,#7b2d8b,#1a2547);color:#fff;padding:11px 14px;text-align:center;font-size:13px">Media Mensal</th>'
++'<th style="background:linear-gradient(135deg,#7b2d8b,#1a2547);color:#fff;padding:11px 14px;text-align:center;font-size:13px">Sal. Base</th>'
++'</tr></thead><tbody>';
+keys.forEach(function(mat, i){
+var p = pessoas[mat];
+var media = p.periodos > 0 ? p.total/p.periodos : 0;
+var salBase = p.verbas['SALARIO_BASE'] || 0;
+var bg = i%2===0 ? '#fff' : '#f8f9fc';
+html += '<tr style="background:'+bg+';border-bottom:1px solid #eef0f8">'
++'<td style="padding:9px 14px;font-weight:600;color:#7b2d8b;text-align:left">'+mat+'</td>'
++'<td style="padding:9px 14px;color:#0f1a3a;text-align:left;font-weight:500">'+p.nome+'</td>'
++'<td style="padding:9px 10px;text-align:center;color:#555">'+p.area+'</td>'
++'<td style="padding:9px 10px;text-align:center;color:#555">'+p.cargo+'</td>'
++'<td style="padding:9px 10px;text-align:center"><span style="background:#f0eaf5;color:#7b2d8b;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">'+p.tipo+'</span></td>'
++'<td style="padding:9px 10px;text-align:center;color:#555">'+p.periodos+'</td>'
++'<td style="padding:9px 10px;text-align:center;font-weight:700;color:#1a2547">'+folhaBrl(p.total)+'</td>'
++'<td style="padding:9px 10px;text-align:center;color:#0b8a3e;font-weight:600">'+folhaBrl(media)+'</td>'
++'<td style="padding:9px 10px;text-align:center;color:#555">'+folhaBrl(salBase)+'</td>'
++'</tr>';
+});
+html += '</tbody></table>';
+document.getElementById('folhaPainel').innerHTML = html;
 }
-
-function _folhaRenderAll(){
-  var rows=_folhaFiltrar();
-  var meta=document.getElementById('folhaHeaderMeta');
-  if(meta) meta.innerHTML='<strong>'+rows.length.toLocaleString('pt-BR')+' registros</strong>';
-  var getFn = FOLHA_ABA==='area' ? folhaGetArea : FOLHA_ABA==='cargo' ? folhaGetCargo : folhaGetNome;
-  _fpRenderTabela('fpTblPrincipal', rows, getFn);
-}
-
 function folhaProcessarDrive(fileInfo){
-  try{
-    var wb=XLSX.read(b64ToAB(fileInfo.data),{type:'array',cellDates:true});
-    FOLHA_RAW=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:null,raw:true});
-    FOLHA_LOADED=true;
-    var meta=document.getElementById('folhaHeaderMeta');
-    if(meta) meta.innerHTML='<strong>'+FOLHA_RAW.length.toLocaleString('pt-BR')+' registros</strong><br>'+fileInfo.name;
-    var fs=document.getElementById('folhaScreen');
-    if(fs&&fs.style.display!=='none') initFolha();
-  }catch(e){ console.warn('Erro BASE_FOLHA:',e.message); }
+try{
+var wb = XLSX.read(b64ToAB(fileInfo.data), {type:'array', cellDates:true});
+FOLHA_RAW = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], {defval:null, raw:true});
+FOLHA_LOADED = true;
+var meta = document.getElementById('folhaHeaderMeta');
+if (meta) meta.innerHTML = '<strong>'+FOLHA_RAW.length.toLocaleString("pt-BR")+' registros</strong><br>'+fileInfo.name;
+var fs = document.getElementById('folhaScreen');
+if (fs && fs.style.display !== 'none') initFolha();
+console.log('BASE_FOLHA: '+FOLHA_RAW.length+' registros');
+}catch(e){ console.warn('Erro ao processar BASE_FOLHA:', e.message); }
 }
 </script>
