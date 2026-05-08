@@ -154,14 +154,6 @@ function showHome(){
 
       </div>
       <div>
-        <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #eee">☁️ Supabase — Recarregar Dados</div>
-        <div style="font-size:12px;color:#555;line-height:1.8;background:#f5f7ff;border:1px solid #dde3f5;border-radius:6px;padding:12px 14px;margin-bottom:10px">
-          Busca os dados atualizados diretamente das tabelas do Supabase e reprocessa o dashboard.
-        </div>
-        <button id="gcBtnDrive" onclick="fecharConfiguracoes();loadFilesFromDrive();" style="width:100%;background:#0b8a3e;border:1.5px solid #086b30;color:#fff;padding:11px;border-radius:4px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Recarregar do Supabase</button>
-        <div id="gcDriveStatus" style="display:none;margin-top:8px;padding:10px 14px;border-radius:4px;font-size:12px;font-weight:600;text-align:center"></div>
-      </div>
-      <div>
         <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #eee">☁️ Supabase — Salvar para acesso rápido</div>
         <div style="font-size:12px;color:#555;line-height:1.6;margin-bottom:10px">
           Salva os dados processados no Supabase. Na próxima abertura, todos os módulos carregam instantaneamente sem precisar do Drive.
@@ -647,7 +639,22 @@ function fetchPage(tab,out,p){
   .then(function(rows){out.push.apply(out,rows);if(rows.length<P)return out;return fetchPage(tab,out,p+1);});
 }
 function selAll(tab){return fetchPage(tab,[],0);}
-function expRaw(rows){return rows.map(function(r){var m=Object.assign({},r.raw||{});if(r.canal)m.CANAL=r.canal;if(r.cluster)m.CLUSTER=r.cluster;if(r.rec_frete)m.REC_FRETE=r.rec_frete;if(r.custo_frete)m.CUSTO_FRETE=r.custo_frete;return m;});}
+function expRaw(rows){return rows.map(function(r){
+  var m=Object.assign({},r.raw||{});
+  // Garante que colunas do Supabase sobrescrevem raw se raw estiver vazio
+  if(r.ano_mes!=null && !m.ANO_MES) m.ANO_MES=r.ano_mes;
+  if(r.cod_produto!=null && !m.GRADE) m.GRADE=r.cod_produto;
+  if(r.estoque_qtd!=null && !m.ESTOQUE_QTD) m.ESTOQUE_QTD=r.estoque_qtd;
+  if(r.estoque_valor!=null && !m.ESTOQUE_VALOR) m.ESTOQUE_VALOR=r.estoque_valor;
+  if(r.quantidade!=null && !m.QUANTIDADE) m.QUANTIDADE=r.quantidade;
+  if(r.valor!=null && !m.VALOR) m.VALOR=r.valor;
+  if(r.qtd!=null && !m.QTD) m.QTD=r.qtd;
+  if(r.canal) m.CANAL=r.canal;
+  if(r.cluster) m.CLUSTER=r.cluster;
+  if(r.rec_frete) m.REC_FRETE=r.rec_frete;
+  if(r.custo_frete) m.CUSTO_FRETE=r.custo_frete;
+  return m;
+});}
 dbg('Carregando Supabase...');
 if(typeof setLoadingStep==='function'){setLoadingStep(1,'done');setLoadingStep(2,'active');}
 // Init status lines before starting
