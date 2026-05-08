@@ -2677,24 +2677,11 @@ return null;
 }
 function gcUploadDrive(btn){
   var statusEl = document.getElementById('gcUploadStatus');
-  var url = SCRIPT_URL;
-  if(!url){ alert('URL do Apps Script não configurada.'); return; }
-
-  // Grava timestamp de início no Supabase para detectar quando terminar
-  var startTime = new Date().toISOString();
-
+  if(!SCRIPT_URL){ alert('URL do Apps Script não configurada.'); return; }
   if(btn){ btn.disabled=true; btn.textContent='⏳ Enviando...'; }
 
-  function setStatus(bg, border, color, html){
-    if(!statusEl) return;
-    statusEl.style.display='block';
-    statusEl.style.background=bg;
-    statusEl.style.border='1px solid '+border;
-    statusEl.style.color=color;
-    statusEl.innerHTML=html;
-  }
-
-  // Passos visuais
+  var elapsed = 0;
+  var passoIdx = 0;
   var passos = [
     'BASE_STK_VENDA.XLSX',
     'BASE_CARTEIRA.XLSX',
@@ -2705,98 +2692,101 @@ function gcUploadDrive(btn){
     'Enviando para Supabase...',
     'Finalizando...'
   ];
-  var passoIdx = 0;
-  var elapsed = 0;
+
+  function setStatus(bg, border, color, inner){
+    if(!statusEl) return;
+    statusEl.style.display='block';
+    statusEl.style.background=bg;
+    statusEl.style.border='1px solid '+border;
+    statusEl.style.color=color;
+    statusEl.style.borderRadius='6px';
+    statusEl.style.padding='14px 16px';
+    statusEl.style.lineHeight='1.7';
+    statusEl.innerHTML=inner;
+  }
 
   function renderProgress(){
     var mins = Math.floor(elapsed/60);
     var secs = elapsed % 60;
     var tempoStr = mins > 0 ? mins+'m '+secs+'s' : secs+'s';
-    var itens = passos.map(function(p, i){
-      var ico = i < passoIdx ? '✅' : i === passoIdx ? '⏳' : '<span style="opacity:.35">○</span>';
-      var style = i < passoIdx ? 'color:#5cb85c' : i === passoIdx ? 'font-weight:700;color:#fff' : 'opacity:.45';
-      return '<div style="font-size:12px;margin:3px 0;'+style+'">'+ico+' '+p+'</div>';
+    var itens = passos.map(function(p,i){
+      var ico   = i < passoIdx ? '✅' : i===passoIdx ? '⏳' : '○';
+      var style = i < passoIdx ? 'color:#5cb85c' : i===passoIdx ? 'font-weight:700;color:#fff' : 'opacity:.4';
+      return '<div style="font-size:12px;margin:2px 0;'+style+'">'+ico+' '+p+'</div>';
     }).join('');
-    var btnManual = elapsed >= 120
-      ? '<button onclick="_concluirUpload()" style="width:100%;margin-top:10px;padding:9px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:4px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">✅ Já terminou — clique aqui</button>'
-      : '';
     setStatus('#1a2547','#3a4a7a','#fff',
-      '<div style="font-size:13px;font-weight:700;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid rgba(255,255,255,.15)">🔄 Sincronizando arquivos...</div>'
+      '<div style="font-size:13px;font-weight:700;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,.15)">🔄 Sincronizando arquivos...</div>'
       +itens
-      +'<div style="font-size:11px;opacity:.5;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.1)">⏱ '+tempoStr+' decorridos · verificando conclusão a cada 10s</div>'
-      +btnManual
+      +'<div style="font-size:11px;opacity:.5;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1)">⏱ '+tempoStr+' decorridos</div>'
+    );
+  }
+
+  function showDone(){
+    clearInterval(secTimer);
+    clearInterval(stepTimer);
+    if(btn){ btn.disabled=false; btn.textContent='📤 Enviar Drive → Supabase'; }
+    setStatus('#e8f5ee','#0b8a3e','#0b5c2a',
+      '<div style="font-size:14px;font-weight:700;margin-bottom:8px">✅ Upload concluído!</div>'
+      +'<div style="font-size:12px;margin-bottom:12px;opacity:.85">Os arquivos foram enviados ao Supabase com sucesso.</div>'
+      +'<button onclick="fecharConfiguracoes();loadFilesFromDrive();" '
+      +'style="width:100%;padding:11px;background:#0b8a3e;border:none;border-radius:4px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'
+      +'🔄 Recarregar do Supabase agora</button>'
     );
   }
 
   renderProgress();
 
-  // Avança passos a cada ~25s (estimativa de tempo por arquivo)
+  // Avança passos visualmente a cada 45s
   var stepTimer = setInterval(function(){
     if(passoIdx < passos.length - 1) passoIdx++;
     renderProgress();
   }, 45000);
 
-  // Ticker de segundos
+  // Contador de segundos
   var secTimer = setInterval(function(){
-    elapsed += 1;
+    elapsed++;
     renderProgress();
   }, 1000);
 
-  // Dispara o Apps Script (mode no-cors, sem aguardar resposta real)
-  fetch(url, {method:'GET', mode:'no-cors'}).catch(function(){});
+  // Dispara o Apps Script
+  fetch(SCRIPT_URL, {method:'GET', mode:'no-cors'}).catch(function(){});
 
-  // Polling no Supabase: verifica otb_sync_log a cada 10s
-  var _startMs = Date.now();
+  // Polling no otb_sync_log a cada 10s
+  var _startMs  = Date.now();
   var _pollDone = false;
   var pollTimer = setInterval(function(){
-    fetch(SUPA_URL+'/rest/v1/otb_sync_log?order=finalizado_em.desc&limit=10', {
+    fetch(SUPA_URL+'/rest/v1/otb_sync_log?order=finalizado_em.desc&limit=5',{
       headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Accept':'application/json'}
     })
     .then(function(r){ return r.json(); })
     .then(function(rows){
-      if(!rows||!rows.length||_pollDone) return;
-      var done = rows.find(function(r){
+      if(_pollDone||!rows||!rows.length) return;
+      var recent = rows.find(function(r){
         if(!r.finalizado_em) return false;
-        // Aceita logs dos últimos (elapsed + 120)s para cobrir diferença de timezone
-        var t = new Date(r.finalizado_em).getTime();
-        return t > (_startMs - 120000);
+        // Aceita logs criados DEPOIS do clique (com 3min de folga para timezone)
+        return new Date(r.finalizado_em).getTime() > (_startMs - 180000);
       });
-      if(done) _concluirUpload();
-    })
-    .catch(function(){});
+      if(recent){ _pollDone=true; clearInterval(pollTimer); showDone(); }
+    }).catch(function(){});
   }, 10000);
 
-  function _concluirUpload(){
-    if(_pollDone) return;
-    _pollDone = true;
-    clearInterval(pollTimer);
-    clearInterval(stepTimer);
-    clearInterval(secTimer);
-    if(btn){ btn.disabled=false; btn.textContent='📤 Enviar Drive → Supabase'; }
-    setStatus('#e8f5ee','#0b8a3e','#0b5c2a',
-      '<div style="font-size:14px;font-weight:700;margin-bottom:8px">✅ Upload concluído!</div>'
-      +'<div style="font-size:12px;margin-bottom:12px">Todos os arquivos foram enviados para o Supabase.</div>'
-      +'<button onclick="fecharConfiguracoes();loadFilesFromDrive();" '
-      +'style="width:100%;padding:10px;background:#0b8a3e;border:none;border-radius:4px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'
-      +'🔄 Recarregar do Supabase agora</button>'
-    );
-  }
-
-  // Timeout de segurança: 10 minutos
+  // Fallback: após 5 minutos mostra botão de conclusão manual
   setTimeout(function(){
+    if(_pollDone) return;
     clearInterval(pollTimer);
     clearInterval(stepTimer);
     clearInterval(secTimer);
     if(btn){ btn.disabled=false; btn.textContent='📤 Enviar Drive → Supabase'; }
     setStatus('#fff8e6','#f0c14b','#7a5800',
-      '<div style="font-size:13px;font-weight:700;margin-bottom:6px">⚠️ Tempo limite atingido</div>'
-      +'<div style="font-size:12px;margin-bottom:10px">O Apps Script pode ainda estar rodando em segundo plano.<br>Tente clicar em Recarregar do Supabase.</div>'
-      +'<button onclick="loadFilesFromDrive();" '
-      +'style="width:100%;padding:10px;background:#1a2547;border:none;border-radius:4px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'
-      +'🔄 Tentar Recarregar do Supabase</button>'
+      '<div style="font-size:13px;font-weight:700;margin-bottom:8px">⚠️ Verificação automática não confirmou</div>'
+      +'<div style="font-size:12px;margin-bottom:12px;opacity:.85">O Apps Script pode ter terminado mas o log não foi detectado.<br>Clique abaixo para recarregar os dados do Supabase.</div>'
+      +'<button onclick="fecharConfiguracoes();loadFilesFromDrive();" '
+      +'style="width:100%;padding:11px;background:#1a2547;border:none;border-radius:4px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'
+      +'🔄 Recarregar do Supabase assim mesmo</button>'
     );
-  }, 600000);
+  }, 300000);
 }
+
 function globalCarregarDrive(){
 var btn = document.getElementById('gcBtnDrive');
 var status = document.getElementById('gcDriveStatus');
