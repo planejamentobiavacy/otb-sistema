@@ -1038,7 +1038,7 @@ cell.otbCartRealVal || 0,
 return { saved_at: savedAt, rows };
 }
 var GS_KEY = 'otb-sheets-url';
-var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzwP-8ONSw5xJ7m3Z6bD6Ht_GijKI8BO6Okt9xGoi_ha0mZHZk6liFKFL-R_m30OPSv/exec';
+var SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzPtcFKRGVIWHurmjMdGrthLLKMcDQuq5HVJxQm_fO9pinzgqXCUXsVKTbznAfPFv0C/exec';
 function getScriptUrl(){
 var loc = window.location.href;
 if (loc.includes('script.google.com') || loc.includes('googleusercontent.com')){
@@ -2724,31 +2724,45 @@ function gcUploadDrive(btn){
   // Dispara Apps Script
   fetch(SCRIPT_URL,{method:'GET',mode:'no-cors'}).catch(function(){});
 
-  // Guarda timestamp do log mais recente ANTES do upload
-  var _lastLogId = -1;
-  fetch(SUPA_URL+'/rest/v1/otb_sync_log?order=id.desc&limit=1',{
+  // Guarda amostra dos dados atuais do otb_stk para detectar mudança
+  var _stkSample = null;
+  fetch(SUPA_URL+'/rest/v1/otb_stk?select=ano_mes,estoque_qtd&order=ano_mes.desc&limit=3',{
     headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Accept':'application/json'}
   }).then(function(r){ return r.json(); })
   .then(function(rows){
-    if(rows&&rows.length) _lastLogId=rows[0].id||0;
-    console.log('[OTB] Último log ID antes do upload:', _lastLogId);
+    _stkSample = JSON.stringify(rows);
+    console.log('[OTB] Amostra STK inicial:', _stkSample);
   }).catch(function(){});
 
-  // Polling a cada 12s — detecta log novo pelo ID
+  // Polling a cada 15s — compara amostra do STK
   var pollTimer=setInterval(function(){
     if(_pollDone) return;
-    fetch(SUPA_URL+'/rest/v1/otb_sync_log?order=id.desc&limit=1',{
+    fetch(SUPA_URL+'/rest/v1/otb_stk?select=ano_mes,estoque_qtd&order=ano_mes.desc&limit=3',{
       headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Accept':'application/json'}
     }).then(function(r){ return r.json(); })
     .then(function(rows){
-      if(_pollDone||!rows||!rows.length) return;
-      var newId=rows[0].id||0;
-      console.log('[OTB] Poll — ID atual:', newId, '| ID inicial:', _lastLogId, '| Elapsed:', elapsed+'s');
-      if(newId > _lastLogId) showDone();
-    }).catch(function(){});
-  },12000);
+      if(_pollDone) return;
+      var newSample = JSON.stringify(rows);
+      console.log('[OTB] Poll STK - elapsed:', elapsed+'s | mudou:', newSample!==_stkSample);
+      if(_stkSample && newSample !== _stkSample){ showDone(); return; }
 
-  // Fallback: após 5min mostra botão manual
+      // Também checa otb_venda (pode mudar mesmo que STK não mude)
+      fetch(SUPA_URL+'/rest/v1/otb_venda?select=ano_mes,quantidade&order=ano_mes.desc&limit=3',{
+        headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Accept':'application/json'}
+      }).then(function(r2){ return r2.json(); })
+      .then(function(rows2){
+        if(_pollDone) return;
+        // Se passou mais de 3min e temos dados, considera concluído
+        // (Apps Script geralmente termina em 3-4 min)
+        if(elapsed >= 180 && rows2 && rows2.length > 0){
+          console.log('[OTB] 3min passados com dados presentes — assumindo concluído');
+          showDone();
+        }
+      }).catch(function(){});
+    }).catch(function(){});
+  },15000);
+
+  // Fallback: após 6min mostra botão manual
   setTimeout(function(){
     if(_pollDone) return;
     clearInterval(pollTimer); clearInterval(stepTimer); clearInterval(secTimer);
@@ -2759,7 +2773,7 @@ function gcUploadDrive(btn){
       +'<button onclick="fecharConfiguracoes();loadFilesFromDrive();" '
       +'style="width:100%;padding:11px;background:#1a2547;border:none;border-radius:4px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'
       +'🔄 Recarregar do Supabase assim mesmo</button>');
-  },300000);
+  },360000);
 }
 function globalCarregarDrive(){
 var btn = document.getElementById('gcBtnDrive');
