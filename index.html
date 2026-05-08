@@ -2680,124 +2680,86 @@ function gcUploadDrive(btn){
   if(!SCRIPT_URL){ alert('URL do Apps Script não configurada.'); return; }
   if(btn){ btn.disabled=true; btn.textContent='⏳ Enviando...'; }
 
-  var elapsed = 0;
-  var passoIdx = 0;
-  var passos = [
-    'BASE_STK_VENDA.XLSX','BASE_CARTEIRA.XLSX','BASE_PRODUTO.XLSX',
+  var elapsed=0, passoIdx=0, _pollDone=false;
+  var _startMs = Date.now();
+  var passos=['BASE_STK_VENDA.XLSX','BASE_CARTEIRA.XLSX','BASE_PRODUTO.XLSX',
     'BASE_VENDA_DRE.XLSX','BASE_FRETE_DRE.XLSX','BASE_FOLHA.XLSX',
-    'Enviando para Supabase...','Finalizando...'
-  ];
+    'Enviando para Supabase...','Finalizando...'];
 
   function setStatus(bg,border,color,inner){
     if(!statusEl) return;
-    statusEl.style.display='block'; statusEl.style.background=bg;
-    statusEl.style.border='1px solid '+border; statusEl.style.color=color;
-    statusEl.style.borderRadius='6px'; statusEl.style.padding='14px 16px';
-    statusEl.style.lineHeight='1.7'; statusEl.innerHTML=inner;
+    statusEl.style.cssText='display:block;background:'+bg+';border:1px solid '+border
+      +';color:'+color+';border-radius:6px;padding:14px 16px;line-height:1.7';
+    statusEl.innerHTML=inner;
   }
 
   function renderProgress(){
-    var mins=Math.floor(elapsed/60), secs=elapsed%60;
-    var tempoStr=mins>0?mins+'m '+secs+'s':secs+'s';
+    var t=Math.floor(elapsed/60)+'m '+(elapsed%60)+'s';
     var itens=passos.map(function(p,i){
       var ico=i<passoIdx?'✅':i===passoIdx?'⏳':'○';
-      var style=i<passoIdx?'color:#5cb85c':i===passoIdx?'font-weight:700;color:#fff':'opacity:.4';
-      return '<div style="font-size:12px;margin:2px 0;'+style+'">'+ico+' '+p+'</div>';
+      var s=i<passoIdx?'color:#5cb85c':i===passoIdx?'font-weight:700;color:#fff':'opacity:.4';
+      return '<div style="font-size:12px;margin:2px 0;'+s+'">'+ico+' '+p+'</div>';
     }).join('');
     setStatus('#1a2547','#3a4a7a','#fff',
       '<div style="font-size:13px;font-weight:700;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,.15)">🔄 Sincronizando arquivos...</div>'
-      +itens
-      +'<div style="font-size:11px;opacity:.5;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1)">⏱ '+tempoStr+' decorridos</div>'
-    );
+      +itens+'<div style="font-size:11px;opacity:.5;margin-top:8px">⏱ '+t+' decorridos</div>');
   }
 
   function showDone(){
-    _pollDone=true;
+    if(_pollDone) return; _pollDone=true;
     clearInterval(pollTimer); clearInterval(stepTimer); clearInterval(secTimer);
     if(btn){ btn.disabled=false; btn.textContent='📤 Enviar Drive → Supabase'; }
     setStatus('#e8f5ee','#0b8a3e','#0b5c2a',
       '<div style="font-size:14px;font-weight:700;margin-bottom:8px">✅ Upload concluído!</div>'
-      +'<div style="font-size:12px;margin-bottom:12px;opacity:.85">Os arquivos foram enviados ao Supabase.</div>'
+      +'<div style="font-size:12px;margin-bottom:12px">Os arquivos foram enviados ao Supabase.</div>'
       +'<button onclick="fecharConfiguracoes();loadFilesFromDrive();" '
       +'style="width:100%;padding:11px;background:#0b8a3e;border:none;border-radius:4px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'
-      +'🔄 Recarregar do Supabase agora</button>'
-    );
+      +'🔄 Recarregar do Supabase agora</button>');
   }
 
   renderProgress();
-
-  var stepTimer = setInterval(function(){
-    if(passoIdx < passos.length-1) passoIdx++;
-    renderProgress();
-  }, 45000);
-
-  var secTimer = setInterval(function(){
-    elapsed++;
-    renderProgress();
-  }, 1000);
+  var stepTimer=setInterval(function(){ if(passoIdx<passos.length-1) passoIdx++; renderProgress(); },45000);
+  var secTimer =setInterval(function(){ elapsed++; renderProgress(); },1000);
 
   // Dispara Apps Script
-  fetch(SCRIPT_URL, {method:'GET', mode:'no-cors'}).catch(function(){});
+  fetch(SCRIPT_URL,{method:'GET',mode:'no-cors'}).catch(function(){});
 
-  // Guarda contagem atual do otb_stk para detectar mudança
-  var _startMs = Date.now();
-  var _pollDone = false;
-  var _initialCount = -1;
-  fetch(SUPA_URL+'/rest/v1/otb_stk?select=*&limit=1',{
-    method:'HEAD',
-    headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Prefer':'count=exact','Range':'0-0'}
-  }).then(function(r){
-    var ct=r.headers.get('content-range')||'';
-    var m=ct.match(/\/(\d+)/);
-    if(m) _initialCount=parseInt(m[1]);
-    console.log('[OTB] Contagem inicial STK:', _initialCount);
+  // Guarda timestamp do log mais recente ANTES do upload
+  var _lastLogId = -1;
+  fetch(SUPA_URL+'/rest/v1/otb_sync_log?order=id.desc&limit=1',{
+    headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Accept':'application/json'}
+  }).then(function(r){ return r.json(); })
+  .then(function(rows){
+    if(rows&&rows.length) _lastLogId=rows[0].id||0;
+    console.log('[OTB] Último log ID antes do upload:', _lastLogId);
   }).catch(function(){});
 
-  // Polling duplo a cada 12s
-  var pollTimer = setInterval(function(){
+  // Polling a cada 12s — detecta log novo pelo ID
+  var pollTimer=setInterval(function(){
     if(_pollDone) return;
-    var h={'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Accept':'application/json'};
-
-    // Estratégia 1: log mais recente que 6h E mais recente que 5min antes do clique
-    fetch(SUPA_URL+'/rest/v1/otb_sync_log?order=finalizado_em.desc&limit=1',{headers:h})
-    .then(function(r){ return r.json(); })
+    fetch(SUPA_URL+'/rest/v1/otb_sync_log?order=id.desc&limit=1',{
+      headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Accept':'application/json'}
+    }).then(function(r){ return r.json(); })
     .then(function(rows){
       if(_pollDone||!rows||!rows.length) return;
-      var t=new Date(rows[0].finalizado_em||0).getTime();
-      var limite=Math.max(_startMs-(5*60*1000), Date.now()-(6*60*60*1000));
-      console.log('[OTB] Log mais recente:', new Date(t).toISOString(), '| Limite:', new Date(limite).toISOString());
-      if(t>limite) showDone();
+      var newId=rows[0].id||0;
+      console.log('[OTB] Poll — ID atual:', newId, '| ID inicial:', _lastLogId, '| Elapsed:', elapsed+'s');
+      if(newId > _lastLogId) showDone();
     }).catch(function(){});
+  },12000);
 
-    // Estratégia 2: contagem de linhas no otb_stk mudou
-    if(_initialCount>0){
-      fetch(SUPA_URL+'/rest/v1/otb_stk?select=*&limit=1',{
-        method:'HEAD',
-        headers:Object.assign({},h,{'Prefer':'count=exact','Range':'0-0'})
-      }).then(function(r){
-        var ct=r.headers.get('content-range')||'';
-        var m=ct.match(/\/(\d+)/);
-        if(!m) return;
-        var newCount=parseInt(m[1]);
-        console.log('[OTB] Contagem STK agora:', newCount, '| Inicial:', _initialCount);
-        if(newCount!==_initialCount) showDone();
-      }).catch(function(){});
-    }
-  }, 12000);
-
-  // Fallback 5 minutos
+  // Fallback: após 5min mostra botão manual
   setTimeout(function(){
     if(_pollDone) return;
     clearInterval(pollTimer); clearInterval(stepTimer); clearInterval(secTimer);
     if(btn){ btn.disabled=false; btn.textContent='📤 Enviar Drive → Supabase'; }
     setStatus('#fff8e6','#f0c14b','#7a5800',
       '<div style="font-size:13px;font-weight:700;margin-bottom:8px">⚠️ Não foi possível confirmar automaticamente</div>'
-      +'<div style="font-size:12px;margin-bottom:12px;opacity:.85">O upload pode ter terminado. Clique abaixo para verificar.</div>'
+      +'<div style="font-size:12px;margin-bottom:12px">O upload pode ter terminado. Clique abaixo para verificar.</div>'
       +'<button onclick="fecharConfiguracoes();loadFilesFromDrive();" '
       +'style="width:100%;padding:11px;background:#1a2547;border:none;border-radius:4px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'
-      +'🔄 Recarregar do Supabase assim mesmo</button>'
-    );
-  }, 300000);
+      +'🔄 Recarregar do Supabase assim mesmo</button>');
+  },300000);
 }
 function globalCarregarDrive(){
 var btn = document.getElementById('gcBtnDrive');
