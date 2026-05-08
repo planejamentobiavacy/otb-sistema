@@ -157,7 +157,7 @@ function showHome(){
         <div style="font-size:12px;color:#555;line-height:1.8;background:#f5f7ff;border:1px solid #dde3f5;border-radius:6px;padding:12px 14px;margin-bottom:10px">
           Busca os dados atualizados diretamente das tabelas do Supabase e reprocessa o dashboard.
         </div>
-        <button onclick="fecharConfiguracoes();loadFilesFromDrive();" style="width:100%;background:#0b8a3e;border:1.5px solid #086b30;color:#fff;padding:11px;border-radius:4px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Recarregar do Supabase</button>
+        <button onclick="gcRecarregarSupabase(this)" style="width:100%;background:#0b8a3e;border:1.5px solid #086b30;color:#fff;padding:11px;border-radius:4px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Recarregar do Supabase</button>
       </div>
       <div>
         <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #eee">☁️ Supabase — Salvar para acesso rápido</div>
@@ -2799,6 +2799,19 @@ function gcUploadDrive(btn){
       +'🔄 Tentar Recarregar do Supabase</button>'
     );
   }, 600000);
+}
+function gcRecarregarSupabase(btn){
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Carregando...'; }
+  fecharConfiguracoes();
+  // Mostra tela de loading
+  var ls = document.getElementById('loadingScreen');
+  var lm = document.getElementById('loadingMsg');
+  if(ls){ ls.style.display='flex'; ls.style.opacity='1'; ls.classList.remove('fade-out'); }
+  if(lm) lm.textContent='Carregando dados do Supabase...';
+  setTimeout(function(){
+    loadFilesFromDrive();
+    if(btn){ btn.disabled=false; btn.textContent='🔄 Recarregar do Supabase'; }
+  }, 200);
 }
 function globalCarregarDrive(){
 var btn = document.getElementById('gcBtnDrive');
