@@ -48,7 +48,58 @@ function showHome(){
 </head>
 <body>
 
-<div id="homeScreen">
+<div id="loginScreen" style="position:fixed;inset:0;background:#0f1830;z-index:99999;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:Segoe UI,'Helvetica Neue',Arial,sans-serif">
+  <div style="width:100%;max-width:380px;padding:0 24px">
+    <!-- Logo -->
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:36px;justify-content:center">
+      <div style="width:52px;height:52px;background:#c8102e;border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;color:#fff;flex-shrink:0">OTB</div>
+      <div>
+        <div style="font-size:20px;font-weight:700;color:#fff;letter-spacing:.3px">Sistema de Planejamento</div>
+        <div style="font-size:12px;color:rgba(255,255,255,.45);margin-top:2px">AVACY · Acesso restrito</div>
+      </div>
+    </div>
+    <!-- Card -->
+    <div style="background:#1a2547;border-radius:12px;padding:32px 28px;box-shadow:0 24px 64px rgba(0,0,0,.4)">
+      <div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:6px">Entrar</div>
+      <div style="font-size:13px;color:rgba(255,255,255,.45);margin-bottom:24px">Informe suas credenciais para acessar</div>
+      <!-- Usuário -->
+      <div style="margin-bottom:16px">
+        <label style="display:block;font-size:11px;font-weight:600;color:rgba(255,255,255,.6);letter-spacing:.8px;text-transform:uppercase;margin-bottom:6px">Usuário</label>
+        <input id="loginUser" type="text" placeholder="seu usuário" autocomplete="username"
+          style="width:100%;padding:11px 14px;background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.12);border-radius:6px;color:#fff;font-size:14px;font-family:inherit;outline:none;box-sizing:border-box;transition:border .15s"
+          onfocus="this.style.borderColor='#c8102e'" onblur="this.style.borderColor='rgba(255,255,255,.12)'"
+          onkeydown="if(event.key==='Enter')document.getElementById('loginPass').focus()">
+      </div>
+      <!-- Senha -->
+      <div style="margin-bottom:10px">
+        <label style="display:block;font-size:11px;font-weight:600;color:rgba(255,255,255,.6);letter-spacing:.8px;text-transform:uppercase;margin-bottom:6px">Senha</label>
+        <div style="position:relative">
+          <input id="loginPass" type="password" placeholder="sua senha" autocomplete="current-password"
+            style="width:100%;padding:11px 42px 11px 14px;background:rgba(255,255,255,.07);border:1.5px solid rgba(255,255,255,.12);border-radius:6px;color:#fff;font-size:14px;font-family:inherit;outline:none;box-sizing:border-box;transition:border .15s"
+            onfocus="this.style.borderColor='#c8102e'" onblur="this.style.borderColor='rgba(255,255,255,.12)'"
+            onkeydown="if(event.key==='Enter')doLogin()">
+          <button onclick="var i=document.getElementById('loginPass');i.type=i.type==='password'?'text':'password';this.textContent=i.type==='password'?'👁':'🙈'"
+            style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:16px;color:rgba(255,255,255,.4);padding:0;line-height:1">👁</button>
+        </div>
+      </div>
+      <!-- Erro -->
+      <div id="loginError" style="display:none;background:rgba(200,16,46,.15);border:1px solid rgba(200,16,46,.4);border-radius:6px;padding:10px 14px;font-size:12px;color:#ff6b7a;margin-bottom:16px">
+        ❌ Usuário ou senha incorretos
+      </div>
+      <!-- Botão -->
+      <button id="loginBtn" onclick="doLogin()"
+        style="width:100%;padding:13px;background:#c8102e;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:.3px;transition:background .15s;margin-top:8px"
+        onmouseover="this.style.background='#a00d26'" onmouseout="this.style.background='#c8102e'">
+        Entrar
+      </button>
+    </div>
+    <div style="text-align:center;margin-top:20px;font-size:11px;color:rgba(255,255,255,.2)">
+      Sistema OTB · AVACY · Acesso monitorado
+    </div>
+  </div>
+</div>
+
+<div id="homeScreen" style="display:none">
   <div class="home-logo">
     <div class="mark">OTB</div>
   <div style="font-size:9px;color:#aaa;position:absolute;top:4px;right:8px">v8-FINAL</div>
@@ -79,7 +130,7 @@ function showHome(){
       <div style="font-size:12px;color:rgba(255,255,255,.5)">RH · Pagamento<br>Área · Cargo · Pessoa</div>
     </button>
   </div>
-  <button onclick="abrirConfiguracoes()" style="margin-top:16px;background:transparent;border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.6);padding:8px 28px;border-radius:4px;cursor:pointer;font-size:12px;font-family:inherit;letter-spacing:.5px">⚙️ Configurações</button>
+  <div style="display:flex;gap:10px;margin-top:16px"><button onclick="abrirConfiguracoes()" style="background:transparent;border:1px solid rgba(255,255,255,.25);color:rgba(255,255,255,.6);padding:8px 28px;border-radius:4px;cursor:pointer;font-size:12px;font-family:inherit;letter-spacing:.5px">⚙️ Configurações</button><button onclick="doLogout()" style="background:transparent;border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.4);padding:8px 20px;border-radius:4px;cursor:pointer;font-size:12px;font-family:inherit;letter-spacing:.5px">🚪 Sair</button></div>
 </div>
 <div id="globalConfigOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;align-items:center;justify-content:center" onclick="if(event.target===this)fecharConfiguracoes()">
   <div style="background:#fff;border-radius:8px;width:min(520px,94vw);box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden">
@@ -1373,7 +1424,7 @@ console.log('Distribuicao por fornecedor:', (state.prodDiag && state.prodDiag.su
 console.log('Amostra de valores FORNECEDOR encontrados:', (state.prodDiag && state.prodDiag.rawFornecedorSamples));
 state.diagnostics = [];
 var stkAgg = aggregate(state.stk, {
-date: ['ANO_MES','DATA','MES','PERIODO','DT_ESTOQUE','DATA_ESTOQUE','DT','ANOMES','MES_ANO'],
+date: ['DATA','MES','PERIODO','ANO_MES','DT_ESTOQUE','DATA_ESTOQUE','DT','ANOMES','MES_ANO'],
 qty:  ['ESTOQUE_QTD','QUANTIDADE','QTD_ESTOQUE','QTD','QT_ESTOQUE','QT','UNIDADES','SALDO','ESTOQUE'],
 val:  ['ESTOQUE_VALOR','VALOR','VL_ESTOQUE','VALOR_ESTOQUE','VLR','VL_TOTAL','VL_CUSTO','CUSTO','VL']
 }, 'stk');
@@ -2483,6 +2534,89 @@ _bindCards();
     </div>
   </div>
 </div>
+
+<script>
+// ── Credenciais ── altere aqui para configurar usuários ──────
+var LOGIN_USERS = {
+  'avacy':  'otb@2025',
+  'admin':  'admin@2025',
+};
+var LOGIN_SESSION_KEY = 'otb_auth_v1';
+var LOGIN_SESSION_HOURS = 8; // sessão expira em 8 horas
+
+function _loginCheck(){
+  try{
+    var s = sessionStorage.getItem(LOGIN_SESSION_KEY);
+    if(!s) return false;
+    var d = JSON.parse(s);
+    if(!d || !d.user || !d.exp) return false;
+    if(Date.now() > d.exp){ sessionStorage.removeItem(LOGIN_SESSION_KEY); return false; }
+    return true;
+  }catch(e){ return false; }
+}
+
+function doLogin(){
+  var user = (document.getElementById('loginUser').value||'').trim().toLowerCase();
+  var pass = (document.getElementById('loginPass').value||'').trim();
+  var errEl = document.getElementById('loginError');
+  var btn   = document.getElementById('loginBtn');
+
+  if(!user || !pass){ errEl.style.display='block'; return; }
+
+  var ok = LOGIN_USERS[user] && LOGIN_USERS[user] === pass;
+  if(!ok){
+    errEl.style.display='block';
+    document.getElementById('loginPass').value='';
+    document.getElementById('loginPass').focus();
+    // Shake animation
+    var card = document.getElementById('loginError').parentElement;
+    card.style.animation='none'; card.offsetHeight;
+    card.style.animation='loginShake .4s ease';
+    return;
+  }
+
+  // Salvar sessão
+  var exp = Date.now() + LOGIN_SESSION_HOURS * 60 * 60 * 1000;
+  sessionStorage.setItem(LOGIN_SESSION_KEY, JSON.stringify({user:user, exp:exp}));
+
+  // Animação de entrada
+  var screen = document.getElementById('loginScreen');
+  screen.style.transition='opacity .4s ease';
+  screen.style.opacity='0';
+  setTimeout(function(){
+    screen.style.display='none';
+    document.getElementById('homeScreen').style.display='flex';
+  }, 400);
+}
+
+function doLogout(){
+  sessionStorage.removeItem(LOGIN_SESSION_KEY);
+  location.reload();
+}
+
+// Verificar ao carregar
+window.addEventListener('DOMContentLoaded', function(){
+  if(_loginCheck()){
+    document.getElementById('loginScreen').style.display='none';
+    document.getElementById('homeScreen').style.display='flex';
+  } else {
+    document.getElementById('loginScreen').style.display='flex';
+    document.getElementById('homeScreen').style.display='none';
+    setTimeout(function(){ document.getElementById('loginUser').focus(); }, 100);
+  }
+});
+</script>
+
+<style>
+@keyframes loginShake {
+  0%,100%{transform:translateX(0)}
+  20%{transform:translateX(-8px)}
+  40%{transform:translateX(8px)}
+  60%{transform:translateX(-6px)}
+  80%{transform:translateX(6px)}
+}
+#loginPass::placeholder,#loginUser::placeholder{ color:rgba(255,255,255,.25); }
+</style>
 
 </body>
 </html>
