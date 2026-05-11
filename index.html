@@ -794,8 +794,9 @@ async function gcTabela(key,modo,btn){
     if(statusEl) statusEl.textContent='❌';
     toast('Erro: '+err.message,true); console.error(err);
   }
-  if(btn){ btn.disabled=false; btn.textContent=origText; }
-});}
+  if(btn){ btn.disabled=false; 
+btn.textContent=origText; }
+}
 dbg('Carregando Supabase...');
 if(typeof setLoadingStep==='function'){setLoadingStep(1,'done');setLoadingStep(2,'active');}
 // Init status lines before starting
@@ -3746,9 +3747,9 @@ function _folhaBuildLayout(){
    +'</div>'
    +'<div id="folhaMain">'
    +'<div id="folhaTabsBar">'
-   +'<button class="fp-tab active" id="fpTabArea"  onclick="folhaSwitchAba('area')" >POR ÁREA / FUNÇÃO</button>'
-   +'<button class="fp-tab"        id="fpTabCargo" onclick="folhaSwitchAba('cargo')">POR CARGO / FUNÇÃO</button>'
-   +'<button class="fp-tab"        id="fpTabNome"  onclick="folhaSwitchAba('nome')" >POR NOME</button>'
+   +'<button class="fp-tab active" id="fpTabArea"  onclick="folhaSwitchAba(&apos;area&apos;)" >POR ÁREA / FUNÇÃO</button>'
+   +'<button class="fp-tab"        id="fpTabCargo" onclick="folhaSwitchAba(&apos;cargo&apos;)">POR CARGO / FUNÇÃO</button>'
+   +'<button class="fp-tab"        id="fpTabNome"  onclick="folhaSwitchAba(&apos;nome&apos;)" >POR NOME</button>'
    +'</div>'
    +'<div id="folhaTablesArea">'
    +'<div class="fp-scroll"><div id="fpTblPrincipal"></div></div>'
