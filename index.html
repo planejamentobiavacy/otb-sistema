@@ -174,10 +174,14 @@ rows=await gcFetchAll(tabName,nextAm>0?'&ano_mes=gte.'+nextAm:'');
     if(modo==='atualizar' && (!state.prod||state.prod.length===0)){
       console.warn('[OTB] state.prod vazio — carregue o cache ou recarregue Produtos primeiro');
       toast('⚠️ Dados atualizados mas sem produtos em memória. Recarregue a tabela Produtos.',true);
-      if(btn){ btn.disabled=false; btn.textContent=origText; } return;
+      // Não interrompe: renderiza com o que há disponível
     }
     if(state.prod&&state.prod.length>0){
       buildGradeMap();processAll();buildAvacyMatrix();renderTabs();renderTable();
+    } else {
+      // Sem prod: tenta ao menos renderizar/atualizar telas parciais
+      try{ if(typeof renderTabs==='function') renderTabs(); }catch(e){}
+      try{ if(typeof renderTable==='function') renderTable(); }catch(e){}
     }
     toast('[OK] '+tabName+' '+(modo==='atualizar'?'atualizado':'recarregado')+' ('+count.toLocaleString('pt-BR')+')');
   }catch(err){
@@ -1195,6 +1199,10 @@ months: state.months,
 edits: state.edits,
 matrices: matricesExport,
 gradeMap: state.gradeMap,
+rawStk:  state.stk  || [],
+rawVenda: state.venda || [],
+rawCart: state.cart || [],
+rawProd: state.prod || [],
 };
 }
 function buildTabularRows(){
@@ -1343,6 +1351,11 @@ state.edits          = payload.edits          || {};
 state.collapsedYears = payload.collapsedYears || {};
 state.activeSupplier = payload.activeSupplier || 'AVACY';
 if (payload.months)       state.months       = payload.months;
+// Restaura dados brutos salvos no cache (necessário para "Atualizar" funcionar após reload)
+if (payload.rawProd  && payload.rawProd.length  > 0) state.prod  = payload.rawProd;
+if (payload.rawStk   && payload.rawStk.length   > 0) state.stk   = payload.rawStk;
+if (payload.rawVenda && payload.rawVenda.length > 0) state.venda = payload.rawVenda;
+if (payload.rawCart  && payload.rawCart.length  > 0) state.cart  = payload.rawCart;
 if (payload.currentMonth) state.currentMonth = payload.currentMonth;
 if (payload.matrices && Object.keys(payload.matrices).length > 0){
 state.matrices = {};
