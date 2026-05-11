@@ -77,6 +77,22 @@ async function gcCarregarCache(btn){
 // ── Tabela update functions (defined here, use expRaw at runtime) ─
 var GC_TABLES_WITH_ANOMES=['stk','venda','carteira','venda_dre','folha'];
 var GC_STATE_MAP={stk:'stk',venda:'venda',carteira:'cart',produto:'prod',venda_dre:'vendaDre',frete_dre:'frete'};
+function expRaw(rows){return rows.map(function(r){
+  var m=Object.assign({},r.raw||{});
+  if(r.ano_mes!=null&&!m.ANO_MES) m.ANO_MES=r.ano_mes;
+  if(r.cod_produto!=null&&!m.GRADE) m.GRADE=r.cod_produto;
+  if(r.estoque_qtd!=null&&!m.ESTOQUE_QTD) m.ESTOQUE_QTD=r.estoque_qtd;
+  if(r.estoque_valor!=null&&!m.ESTOQUE_VALOR) m.ESTOQUE_VALOR=r.estoque_valor;
+  if(r.quantidade!=null&&!m.QUANTIDADE) m.QUANTIDADE=r.quantidade;
+  if(r.valor!=null&&!m.VALOR) m.VALOR=r.valor;
+  if(r.qtd!=null&&!m.QTD) m.QTD=r.qtd;
+  if(r.canal) m.CANAL=r.canal;
+  if(r.cluster) m.CLUSTER=r.cluster;
+  if(r.rec_frete) m.REC_FRETE=r.rec_frete;
+  if(r.custo_frete) m.CUSTO_FRETE=r.custo_frete;
+  return m;
+});}
+
 function gcFetchAll(tab,extraFilter){
   var SD=SUPA_KEY,P2=1000;
   var base=SUPA_URL+'/rest/v1/'+tab+'?select=*'+extraFilter;
