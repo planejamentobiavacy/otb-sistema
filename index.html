@@ -725,6 +725,7 @@ function expRaw(rows){return rows.map(function(r){
   if(r.rec_frete) m.REC_FRETE=r.rec_frete;
   if(r.custo_frete) m.CUSTO_FRETE=r.custo_frete;
   return m;
+});
 }
 // ── Atualizar / Recarregar tabelas individuais ────────────────
 var GC_TABLES_WITH_ANOMES=['stk','venda','carteira','venda_dre','folha'];
@@ -3745,9 +3746,9 @@ function _folhaBuildLayout(){
    +'</div>'
    +'<div id="folhaMain">'
    +'<div id="folhaTabsBar">'
-   +'<button class="fp-tab active" id="fpTabArea"  onclick="folhaSwitchAba(\'area\')" >POR ÁREA / FUNÇÃO</button>'
-   +'<button class="fp-tab"        id="fpTabCargo" onclick="folhaSwitchAba(\'cargo\')">POR CARGO / FUNÇÃO</button>'
-   +'<button class="fp-tab"        id="fpTabNome"  onclick="folhaSwitchAba(\'nome\')" >POR NOME</button>'
+   +'<button class="fp-tab active" id="fpTabArea"  onclick="folhaSwitchAba('area')" >POR ÁREA / FUNÇÃO</button>'
+   +'<button class="fp-tab"        id="fpTabCargo" onclick="folhaSwitchAba('cargo')">POR CARGO / FUNÇÃO</button>'
+   +'<button class="fp-tab"        id="fpTabNome"  onclick="folhaSwitchAba('nome')" >POR NOME</button>'
    +'</div>'
    +'<div id="folhaTablesArea">'
    +'<div class="fp-scroll"><div id="fpTblPrincipal"></div></div>'
