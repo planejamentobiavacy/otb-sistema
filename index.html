@@ -183,13 +183,15 @@ rows=await gcFetchAll(tabName,nextAm>0?'&ano_mes=gte.'+nextAm:'');
     }
     count=rows?rows.length:0;
     if(statusEl) statusEl.textContent=count.toLocaleString('pt-BR');
-    // Garante que state.prod existe antes de processar
-    if(!state.prod||state.prod.length===0){
-      console.warn('[OTB] state.prod vazio — carregue o cache primeiro para processar corretamente');
-      toast('⚠️ Tabela atualizada mas sem produtos em memória. Clique em ⚡ Carregar Cache primeiro.',true);
+    // Avisa se prod ainda não foi carregado (só no atualizar, não no recarregar)
+    if(modo==='atualizar' && (!state.prod||state.prod.length===0)){
+      console.warn('[OTB] state.prod vazio — carregue o cache ou recarregue Produtos primeiro');
+      toast('⚠️ Dados atualizados mas sem produtos em memória. Recarregue a tabela Produtos.',true);
       if(btn){ btn.disabled=false; btn.textContent=origText; } return;
     }
-    buildGradeMap();processAll();buildAvacyMatrix();renderTabs();renderTable();
+    if(state.prod&&state.prod.length>0){
+      buildGradeMap();processAll();buildAvacyMatrix();renderTabs();renderTable();
+    }
     toast('[OK] '+tabName+' '+(modo==='atualizar'?'atualizado':'recarregado')+' ('+count.toLocaleString('pt-BR')+')');
   }catch(err){
     if(statusEl) statusEl.textContent='❌';
