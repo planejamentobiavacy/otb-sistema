@@ -22,28 +22,7 @@ function fecharConfiguracoes(){
   var el=document.getElementById('globalConfigOverlay');
   if(el) el.style.display='none';
 }
-function openModule(mod){
-var home = document.getElementById('homeScreen');
-if (home) home.style.display = 'none';
-if (mod === 'otb'){
-var appEl = document.querySelector('.app');
-if (appEl) appEl.style.display = 'flex';
-if (typeof state !== 'undefined' && state.matrices &&
-Object.keys(state.matrices).length > 0 && state.matrices['AVACY']){
-if (typeof renderTabs === 'function') renderTabs();
-if (typeof renderTable === 'function') renderTable();
-return;
-}
-if (typeof renderTabs === 'function') renderTabs();
-toast('Sem dados. Use Configuracoes -> Carregar Cache.');
-} else if (mod === 'dre'){
-if (typeof openDreModule === 'function') openDreModule();
-} else if (mod === 'budget'){
-if (typeof openBudgetModule === 'function') openBudgetModule();
-} else if (mod === 'folha'){
-if (typeof openFolhaModule === 'function') openFolhaModule();
-}
-}
+// openModule defined in main script below
 function showHome(){
 var appEl = document.querySelector('.app');
 if (appEl) appEl.style.display = 'none';
