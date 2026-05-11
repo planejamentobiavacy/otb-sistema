@@ -45,11 +45,19 @@ async function gcCarregarCache(btn){
       if(payload&&payload.matrices&&Object.keys(payload.matrices).length>0){
         importPayload(payload,false);
         if(btn){ btn.disabled=false; btn.textContent='⚡ Carregar Cache (rápido)'; }
-        if(statusEl){ statusEl.style.background='#e8f5ee'; statusEl.style.border='1px solid #0b8a3e'; statusEl.style.color='#0b5c2a'; statusEl.innerHTML='✅ Cache carregado! Agora use ↑ Atualizar ou ↺ Recarregar nas tabelas.'; }
+        if(statusEl){ statusEl.style.background='#e8f5ee'; statusEl.style.border='1px solid #0b8a3e'; statusEl.style.color='#0b5c2a'; statusEl.innerHTML='✅ Cache carregado! Feche e clique em OTB, ou use ↑ Atualizar para dados novos.'; }
         // Update status indicators
-        if(state.stk) { var el=document.getElementById('tbl_status_stk'); if(el) el.textContent=state.stk.length.toLocaleString('pt-BR'); }
-        if(state.venda){ var el=document.getElementById('tbl_status_venda'); if(el) el.textContent=state.venda.length.toLocaleString('pt-BR'); }
-        if(state.prod) { var el=document.getElementById('tbl_status_produto'); if(el) el.textContent=state.prod.length.toLocaleString('pt-BR'); }
+        if(state.stk&&state.stk.length) { var el=document.getElementById('tbl_status_stk'); if(el) el.textContent=state.stk.length.toLocaleString('pt-BR'); }
+        if(state.venda&&state.venda.length){ var el=document.getElementById('tbl_status_venda'); if(el) el.textContent=state.venda.length.toLocaleString('pt-BR'); }
+        if(state.prod&&state.prod.length) { var el=document.getElementById('tbl_status_produto'); if(el) el.textContent=state.prod.length.toLocaleString('pt-BR'); }
+        // Show OTB automatically after 1s
+        setTimeout(function(){
+          fecharConfiguracoes();
+          var home=document.getElementById('homeScreen');
+          if(home) home.style.display='none';
+          var appEl=document.querySelector('.app');
+          if(appEl){ appEl.style.display='flex'; renderTabs(); renderTable(); }
+        }, 800);
         return;
       }
     }
