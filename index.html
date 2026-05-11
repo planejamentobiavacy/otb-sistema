@@ -348,7 +348,8 @@ rows=await gcFetchAll(tabName,nextAm>0?'&ano_mes=gte.'+nextAm:'');
         <div style="font-size:11px;color:#888;text-align:center;margin-bottom:4px">Carrega o último estado salvo — instantâneo</div>
         <div id="gcDriveStatus" style="display:none;margin-top:8px;padding:10px 14px;border-radius:4px;font-size:12px;font-weight:600;text-align:center"></div>
       </div>
-      <div>tter-spacing:.8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #eee">☁️ Supabase — Salvar para acesso rápido</div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #eee">☁️ Supabase — Salvar para acesso rápido</div>
         <div style="font-size:12px;color:#555;line-height:1.6;margin-bottom:10px">
           Salva os dados processados no Supabase. Na próxima abertura, todos os módulos carregam instantaneamente sem precisar do Drive.
         </div>
@@ -586,7 +587,7 @@ var SUPA_URL     = 'https://svqxupjtqgzziedgmxaq.supabase.co';
 var SUPA_KEY     = 'sb_publishable_cuAk4XUIPMKybEkTJDE9mQ_SOR3g4SV';
 var SUPA_TABLE   = 'otb_simulations';
 var OTB_TABLES = (function(){
-  var d={stk:'otb_stk',venda:'otb_venda',carteira:'otb_carteira',produto:'otb_produto',
+  var d={stk:'dw_otb_stk',venda:'dw_otb_venda',carteira:'otb_carteira',produto:'otb_produto',
     venda_dre:'otb_venda_dre',frete_dre:'otb_frete_dre',canais:'otb_canais',
     cluster:'otb_cluster',folha:'otb_folha'};
   try{ Object.keys(d).forEach(function(k){ var v=localStorage.getItem('otb_tbl_'+k); if(v) d[k]=v; }); }catch(e){}
