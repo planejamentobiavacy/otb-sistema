@@ -739,20 +739,27 @@ if (payload.matrices && Object.keys(payload.matrices).length > 0){
 var dt = payload.exportedAt
 ? new Date(payload.exportedAt).toLocaleString('pt-BR') : '-';
 console.log('Dados completos carregados do Supabase - salvo em:', dt);
-// Se logado (sessão ativa), mostra OTB direto sem passar pelo Home
-try{
-  var _sess=JSON.parse(sessionStorage.getItem('otb_auth_v1')||'null');
-  if(_sess && _sess.exp && Date.now() < _sess.exp){
+// Abre OTB automaticamente se o usuário já passou pelo login
+// setTimeout garante que o DOMContentLoaded (login check) já rodou
+setTimeout(function(){
+  try{
     var loginEl=document.getElementById('loginScreen');
     var homeEl=document.getElementById('homeScreen');
     var appEl=document.querySelector('.app');
-    if(loginEl) loginEl.style.display='none';
-    if(homeEl)  homeEl.style.display='none';
-    if(appEl){  appEl.style.display='flex'; }
-    if(typeof renderTabs==='function')  renderTabs();
-    if(typeof renderTable==='function') renderTable();
-  }
-}catch(_e){}
+    var dreEl=document.getElementById('dreScreen');
+    var loginVisible = loginEl && loginEl.style.display !== 'none';
+    var appVisible   = appEl   && appEl.style.display   === 'flex';
+    var dreVisible   = dreEl   && dreEl.style.display   === 'flex';
+    // Só abre OTB se: já logado (login oculto) E nenhum módulo aberto ainda
+    if(!loginVisible && !appVisible && !dreVisible){
+      if(loginEl) loginEl.style.display='none';
+      if(homeEl)  homeEl.style.display='none';
+      if(appEl){  appEl.style.display='flex'; }
+      if(typeof renderTabs==='function')  renderTabs();
+      if(typeof renderTable==='function') renderTable();
+    }
+  }catch(_e){}
+}, 100);
 }
 }
 }
