@@ -752,8 +752,9 @@ window._otbCacheLoaded = true; // flag: cache com matrizes carregado
     console.log('[OTB-DEBUG] Abrindo OTB automaticamente');
     if(_home) _home.style.display='none';
     _app.style.display='flex';
-    if(typeof renderTabs==='function')  renderTabs();
-    if(typeof renderTable==='function') renderTable();
+    try{ if(typeof renderTabs==='function')  renderTabs(); }catch(e){ console.error('[OTB-DEBUG] renderTabs erro:',e); }
+    try{ if(typeof renderTable==='function') renderTable(); }catch(e){ console.error('[OTB-DEBUG] renderTable erro:',e); }
+    console.log('[OTB-DEBUG] state.months:', state&&state.months&&state.months.length, '| matrices:', state&&state.matrices&&Object.keys(state.matrices));
   }
 })();
 }
