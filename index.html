@@ -22,115 +22,98 @@ function gcSaveTable(key,value){
   OTB_TABLES[key]=v;
   try{ localStorage.setItem('otb_tbl_'+key,v); }catch(e){}
 }
-
-// ⚡ Rápido: carrega cache processado
 async function gcCarregarCache(btn){
   fecharConfiguracoes();
   if(btn){ btn.disabled=true; btn.textContent='⏳ Carregando...'; }
   try{
-    var data = await supaGet();
-    if(data && data.value){
-      var payload = JSON.parse(data.value);
-      if(payload && payload.matrices && Object.keys(payload.matrices).length>0){
-        importPayload(payload, false);
+    var data=await supaGet();
+    if(data&&data.value){
+      var payload=JSON.parse(data.value);
+      if(payload&&payload.matrices&&Object.keys(payload.matrices).length>0){
+        importPayload(payload,false);
         if(btn){ btn.disabled=false; btn.textContent='⚡ Carregar Cache (rápido)'; }
         return;
       }
     }
-    toast('Cache não encontrado. Use "Atualizar meses novos".', true);
-  }catch(e){ toast('Erro: '+e.message, true); }
+    toast('Cache não encontrado. Use "Atualizar meses novos".',true);
+  }catch(e){ toast('Erro: '+e.message,true); }
   if(btn){ btn.disabled=false; btn.textContent='⚡ Carregar Cache (rápido)'; }
 }
-
-// 🔄 Incremental: só baixa meses não presentes no cache
 async function gcRecarregarIncremental(btn){
   fecharConfiguracoes();
   if(btn){ btn.disabled=true; btn.textContent='⏳ Buscando novos...'; }
-  // Descobre o mês mais recente já no cache
-  var fromAnoMes = null;
+  var fromAnoMes=null;
   try{
-    var data = await supaGet();
-    if(data && data.value){
-      var payload = JSON.parse(data.value);
-      if(payload && payload.months && payload.months.length>0){
-        // Pega o último mês do cache no formato YYYYMM
-        var lastYm = payload.months[payload.months.length-1]; // '2026-02'
-        fromAnoMes = lastYm.replace('-',''); // '202602'
-        console.log('[OTB] Incremental: buscando a partir de', fromAnoMes);
+    var data=await supaGet();
+    if(data&&data.value){
+      var payload=JSON.parse(data.value);
+      if(payload&&payload.months&&payload.months.length>0){
+        fromAnoMes=payload.months[payload.months.length-1].replace('-','');
+        console.log('[OTB] Incremental a partir de:',fromAnoMes);
       }
     }
   }catch(e){}
-  if(!fromAnoMes){
-    // Sem cache — faz completo
-    gcRecarregarRaw(btn);
-    return;
-  }
+  if(!fromAnoMes){ gcRecarregarRaw(btn); return; }
   var ls=document.getElementById('loadingScreen');
   var lm=document.getElementById('loadingMsg');
   if(ls){ ls.style.display='flex'; ls.style.opacity='1'; ls.classList.remove('fade-out'); }
-  if(lm) lm.textContent='Buscando dados de '+fromAnoMes+' em diante...';
-  // Carrega dados novos + dados fixos (produto, canais, cluster, frete)
-  var SDATA2 = (function(){ var s='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN2cXh1cGp0cWd6emllZGdteGFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwNDQzMTEsImV4cCI6MjA5MjYyMDMxMX0.dhaZF6l2XxnKtc6SFflJW0PSG6rGz-doZ2G7evKOglo'; return s; })();
-  function fetchFrom(tab, from){
-    var filter = from ? '?ano_mes=gte.'+from+'&select=*' : '?select=*';
+  if(lm) lm.textContent='Buscando dados novos ('+fromAnoMes+' em diante)...';
+  var SD=SUPA_KEY;
+  var fromNum=parseInt(fromAnoMes);
+  // fetchFrom: sem order, usa paginação simples com filtro gte
+  function fetchFrom(tab,from){
     var P2=1000;
+    var base=SUPA_URL+'/rest/v1/'+tab+'?select=*'+(from?'&ano_mes=gte.'+from:'');
     function pg(out,p){
-      var de=p*P2, ate=de+P2-1;
-      return fetch(SUPA_URL+'/rest/v1/'+tab+filter+(filter.includes('?')?'&':'?')+'order=ano_mes.asc',{
-        headers:{'apikey':SDATA2,'Authorization':'Bearer '+SDATA2,'Range':de+'-'+ate,'Range-Unit':'items'}
-      }).then(function(r){ return r.json(); })
-      .then(function(rows){ out.push.apply(out,rows); if(rows.length<P2) return out; return pg(out,p+1); });
+      var de=p*P2,ate=de+P2-1;
+      return fetch(base,{headers:{'apikey':SD,'Authorization':'Bearer '+SD,'Range':de+'-'+ate,'Range-Unit':'items'}})
+      .then(function(r){ return r.json(); })
+      .then(function(rows){
+        if(!Array.isArray(rows)) return out;
+        out.push.apply(out,rows);
+        if(rows.length<P2) return out;
+        return pg(out,p+1);
+      }).catch(function(){ return out; });
     }
     return pg([],0);
   }
-  Promise.all([
-    fetchFrom(OTB_TABLES.stk,      fromAnoMes),
-    fetchFrom(OTB_TABLES.venda,    fromAnoMes),
-    fetchFrom(OTB_TABLES.carteira, fromAnoMes),
-    fetchFrom(OTB_TABLES.produto,  null),        // sempre completo
-    fetchFrom(OTB_TABLES.venda_dre,fromAnoMes),
-    fetchFrom(OTB_TABLES.frete_dre,null),        // sempre completo
-    fetchFrom(OTB_TABLES.canais,   null),        // sempre completo
-    fetchFrom(OTB_TABLES.cluster,  null),        // sempre completo
-    fetchFrom(OTB_TABLES.folha,    fromAnoMes),
-  ]).then(function(res){
-    var newStk=expRaw(res[0]), newVenda=expRaw(res[1]), newCart=expRaw(res[2]);
-    var newProd=expRaw(res[3]);
-    console.log('[OTB] Incremental — novos registros: STK='+newStk.length+' VENDA='+newVenda.length+' CART='+newCart.length);
-    // Mescla com dados existentes (mantém histórico, adiciona/atualiza novos)
-    if(state.stk && state.stk.length>0){
-      // Remove registros antigos do mesmo periodo e adiciona novos
-      var fromNum = parseInt(fromAnoMes);
-      state.stk   = state.stk.filter(function(r){ return parseInt(String(r.ANO_MES||0))<fromNum; }).concat(newStk);
-      state.venda = state.venda.filter(function(r){ return parseInt(String(r.ANO_MES||0))<fromNum; }).concat(newVenda);
-      state.cart  = state.cart.filter(function(r){ return parseInt(String(r.ANO_MES||0))<fromNum; }).concat(newCart);
-    } else {
-      state.stk=newStk; state.venda=newVenda; state.cart=newCart;
-    }
-    state.prod=newProd;
+  try{
+    var res=await Promise.all([
+      fetchFrom(OTB_TABLES.stk,      fromAnoMes),
+      fetchFrom(OTB_TABLES.venda,    fromAnoMes),
+      fetchFrom(OTB_TABLES.carteira, fromAnoMes),
+      fetchFrom(OTB_TABLES.produto,  null),
+      fetchFrom(OTB_TABLES.venda_dre,fromAnoMes),
+      fetchFrom(OTB_TABLES.frete_dre,null),
+      fetchFrom(OTB_TABLES.canais,   null),
+      fetchFrom(OTB_TABLES.cluster,  null),
+      fetchFrom(OTB_TABLES.folha,    fromAnoMes),
+    ]);
+    var nStk=expRaw(res[0]),nVenda=expRaw(res[1]),nCart=expRaw(res[2]),nProd=expRaw(res[3]);
+    console.log('[OTB] Incremental — STK:'+nStk.length+' VENDA:'+nVenda.length+' CART:'+nCart.length);
+    if(state.stk&&state.stk.length>0){
+      state.stk  =state.stk.filter(function(r){ return parseInt(String(r.ANO_MES||0))<fromNum; }).concat(nStk);
+      state.venda=state.venda.filter(function(r){ return parseInt(String(r.ANO_MES||0))<fromNum; }).concat(nVenda);
+      state.cart =state.cart.filter(function(r){ return parseInt(String(r.ANO_MES||0))<fromNum; }).concat(nCart);
+    } else { state.stk=nStk; state.venda=nVenda; state.cart=nCart; }
+    state.prod=nProd;
     state.vendaDre=expRaw(res[4]); state.frete=expRaw(res[5]);
     state.canaisMap={}; res[6].forEach(function(r){ var a=String(r.ano_mes||'').trim(),v=String(r.cod_vendedor||'').trim(),c=String(r.canal||'').trim(); if(a&&v&&c) state.canaisMap[a+'_'+v]=c; });
     state.clusterMap={}; res[7].forEach(function(r){ var k=String(r.cod_cliente||'').trim(),c=String(r.cluster||'').trim(); if(k&&c) state.clusterMap[k]=c; });
     if(typeof FOLHA_RAW!=='undefined'){ FOLHA_RAW=expRaw(res[8]); FOLHA_LOADED=FOLHA_RAW.length>0; }
     if(lm) lm.textContent='Recalculando matrizes...';
-    return new Promise(function(r){ setTimeout(r,50); });
-  }).then(function(){
+    await new Promise(function(r){ setTimeout(r,50); });
     buildGradeMap(); processAll(); buildAvacyMatrix();
-    return supaGet();
-  }).then(function(saved){
-    if(saved&&saved.value){ try{ var pl=JSON.parse(saved.value); if(pl&&pl.matrices){ importPayload(pl); return; }}catch(e){} }
-    toast('[OK] Dados atualizados!');
+    toast('[OK] Dados atualizados com meses novos!');
     if(typeof hideLoading==='function') setTimeout(hideLoading,300);
     renderTabs(); renderTable();
-  }).catch(function(err){
+  }catch(err){
     console.error(err);
-    toast('Erro incremental: '+err.message, true);
+    toast('Erro incremental: '+err.message,true);
     if(typeof hideLoading==='function') hideLoading();
-  });
+  }
   if(btn){ btn.disabled=false; btn.textContent='🔄 Atualizar meses novos'; }
 }
-
-// 🗄️ Completo: baixa tudo
 function gcRecarregarRaw(btn){
   if(btn){ btn.disabled=true; btn.textContent='⏳ Baixando tudo...'; }
   fecharConfiguracoes();
@@ -303,7 +286,7 @@ function showHome(){
           <button onclick="gcRecarregarIncremental(this)" style="flex:1;background:#1e5bb8;border:1.5px solid #164a99;color:#fff;padding:10px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Atualizar meses novos</button>
           <button onclick="gcRecarregarRaw(this)" style="flex:1;background:#1a2547;border:1.5px solid #0f1830;color:#fff;padding:10px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">🗄️ Recarregar tudo</button>
         </div>
-        <div style="font-size:11px;color:#888;text-align:center;margin-bottom:4px">Incremental: só meses novos · Completo: baixa tudo</div>
+        <div style="font-size:11px;color:#888;text-align:center;margin-bottom:4px">Incremental: só meses novos &nbsp;·&nbsp; Completo: baixa tudo</div>
         <div id="gcDriveStatus" style="display:none;margin-top:8px;padding:10px 14px;border-radius:4px;font-size:12px;font-weight:600;text-align:center"></div>
       </div>
       <div>
@@ -784,18 +767,6 @@ function fetchPage(tab,out,p){
   .then(function(rows){out.push.apply(out,rows);if(rows.length<P)return out;return fetchPage(tab,out,p+1);});
 }
 function selAll(tab){return fetchPage(tab,[],0);}
-// Busca somente registros com ano_mes >= filtro (ex: '202603')
-function selFrom(tab, fromAnoMes){
-  if(!fromAnoMes) return selAll(tab);
-  // Tabelas com coluna ano_mes
-  var tabsComAnoMes = ['otb_stk','otb_venda','otb_carteira','otb_folha'];
-  var hasAnoMes = tabsComAnoMes.some(function(t){ return tab.indexOf(t.replace('otb_',''))>=0 || tab===t; });
-  if(!hasAnoMes) return selAll(tab); // produto, canais, cluster, frete_dre: sempre completo
-  var filter = '?ano_mes=gte.'+fromAnoMes+'&select=*';
-  return fetch(SUPA_URL+'/rest/v1/'+tab+filter,{
-    headers:{'apikey':SDATA,'Authorization':'Bearer '+SDATA,'Range':'0-9999','Range-Unit':'items'}
-  }).then(function(r){ return r.json(); }).then(function(rows){ return rows||[]; });
-}
 function expRaw(rows){return rows.map(function(r){
   var m=Object.assign({},r.raw||{});
   if(r.ano_mes!=null&&!m.ANO_MES) m.ANO_MES=r.ano_mes;
