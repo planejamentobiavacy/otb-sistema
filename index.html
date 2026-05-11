@@ -739,27 +739,15 @@ if (payload.matrices && Object.keys(payload.matrices).length > 0){
 var dt = payload.exportedAt
 ? new Date(payload.exportedAt).toLocaleString('pt-BR') : '-';
 console.log('Dados completos carregados do Supabase - salvo em:', dt);
-// Abre OTB automaticamente se o usuário já passou pelo login
-// setTimeout garante que o DOMContentLoaded (login check) já rodou
-setTimeout(function(){
-  try{
-    var loginEl=document.getElementById('loginScreen');
-    var homeEl=document.getElementById('homeScreen');
-    var appEl=document.querySelector('.app');
-    var dreEl=document.getElementById('dreScreen');
-    var loginVisible = loginEl && loginEl.style.display !== 'none';
-    var appVisible   = appEl   && appEl.style.display   === 'flex';
-    var dreVisible   = dreEl   && dreEl.style.display   === 'flex';
-    // Só abre OTB se: já logado (login oculto) E nenhum módulo aberto ainda
-    if(!loginVisible && !appVisible && !dreVisible){
-      if(loginEl) loginEl.style.display='none';
-      if(homeEl)  homeEl.style.display='none';
-      if(appEl){  appEl.style.display='flex'; }
-      if(typeof renderTabs==='function')  renderTabs();
-      if(typeof renderTable==='function') renderTable();
-    }
-  }catch(_e){}
-}, 100);
+// Se homeScreen está visível = sessão válida, usuário no menu → abre OTB direto
+var _home=document.getElementById('homeScreen');
+var _app=document.querySelector('.app');
+if(_home && _home.style.display==='flex' && _app && _app.style.display!=='flex'){
+  _home.style.display='none';
+  _app.style.display='flex';
+  if(typeof renderTabs==='function')  renderTabs();
+  if(typeof renderTable==='function') renderTable();
+}
 }
 }
 }
@@ -2819,7 +2807,16 @@ function doLogin(){
   screen.style.opacity='0';
   setTimeout(function(){
     screen.style.display='none';
-    document.getElementById('homeScreen').style.display='flex';
+    // Se cache já carregou matrizes, abre OTB direto; senão mostra o menu home
+    var _app=document.querySelector('.app');
+    if(state && state.matrices && Object.keys(state.matrices).length>0 && state.matrices['AVACY']){
+      document.getElementById('homeScreen').style.display='none';
+      if(_app){ _app.style.display='flex'; }
+      if(typeof renderTabs==='function')  renderTabs();
+      if(typeof renderTable==='function') renderTable();
+    } else {
+      document.getElementById('homeScreen').style.display='flex';
+    }
   }, 400);
 }
 
@@ -2832,6 +2829,7 @@ function doLogout(){
 window.addEventListener('DOMContentLoaded', function(){
   if(_loginCheck()){
     document.getElementById('loginScreen').style.display='none';
+    // Mostra home por enquanto; o window.load vai abrir OTB depois se houver cache
     document.getElementById('homeScreen').style.display='flex';
   } else {
     document.getElementById('loginScreen').style.display='flex';
