@@ -739,15 +739,23 @@ if (payload.matrices && Object.keys(payload.matrices).length > 0){
 var dt = payload.exportedAt
 ? new Date(payload.exportedAt).toLocaleString('pt-BR') : '-';
 console.log('Dados completos carregados do Supabase - salvo em:', dt);
-// Se homeScreen está visível = sessão válida, usuário no menu → abre OTB direto
-var _home=document.getElementById('homeScreen');
-var _app=document.querySelector('.app');
-if(_home && _home.style.display==='flex' && _app && _app.style.display!=='flex'){
-  _home.style.display='none';
-  _app.style.display='flex';
-  if(typeof renderTabs==='function')  renderTabs();
-  if(typeof renderTable==='function') renderTable();
-}
+window._otbCacheLoaded = true; // flag: cache com matrizes carregado
+// Tenta abrir OTB — funciona se loginScreen já foi escondido (sessão válida)
+// Se não funcionou agora, doLogin() vai verificar esta flag ao entrar
+(function tryOpenOTB(){
+  var _login=document.getElementById('loginScreen');
+  var _home=document.getElementById('homeScreen');
+  var _app=document.querySelector('.app');
+  console.log('[OTB-DEBUG] loginScreen:', _login&&_login.style.display, '| homeScreen:', _home&&_home.style.display, '| app:', _app&&_app.style.display);
+  // Usuário logado = loginScreen oculto E app ainda não aberto
+  if(_login && _login.style.display==='none' && _app && _app.style.display!=='flex'){
+    console.log('[OTB-DEBUG] Abrindo OTB automaticamente');
+    if(_home) _home.style.display='none';
+    _app.style.display='flex';
+    if(typeof renderTabs==='function')  renderTabs();
+    if(typeof renderTable==='function') renderTable();
+  }
+})();
 }
 }
 }
@@ -2829,8 +2837,15 @@ function doLogout(){
 window.addEventListener('DOMContentLoaded', function(){
   if(_loginCheck()){
     document.getElementById('loginScreen').style.display='none';
-    // Mostra home por enquanto; o window.load vai abrir OTB depois se houver cache
-    document.getElementById('homeScreen').style.display='flex';
+    // Se cache já carregou antes do DOMContentLoaded (raro mas possível), abre OTB
+    if(window._otbCacheLoaded && state && state.matrices && Object.keys(state.matrices).length>0){
+      document.getElementById('homeScreen').style.display='none';
+      var _a=document.querySelector('.app'); if(_a) _a.style.display='flex';
+      if(typeof renderTabs==='function')  renderTabs();
+      if(typeof renderTable==='function') renderTable();
+    } else {
+      document.getElementById('homeScreen').style.display='flex';
+    }
   } else {
     document.getElementById('loginScreen').style.display='flex';
     document.getElementById('homeScreen').style.display='none';
