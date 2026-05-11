@@ -755,6 +755,8 @@ window._otbCacheLoaded = true; // flag: cache com matrizes carregado
     try{ if(typeof renderTabs==='function')  renderTabs(); }catch(e){ console.error('[OTB-DEBUG] renderTabs erro:',e); }
     try{ if(typeof renderTable==='function') renderTable(); }catch(e){ console.error('[OTB-DEBUG] renderTable erro:',e); }
     console.log('[OTB-DEBUG] state.months:', state&&state.months&&state.months.length, '| matrices:', state&&state.matrices&&Object.keys(state.matrices));
+    console.log('[OTB-DEBUG] activeSupplier:', state&&state.activeSupplier, '| currentMonth:', state&&state.currentMonth, '| tableWrap innerHTML len:', document.getElementById('tableWrap')&&document.getElementById('tableWrap').innerHTML.length);
+    console.log('[OTB-DEBUG] DEPOIS: homeScreen:', _home&&_home.style.display, '| app:', _app&&_app.style.display, '| loginScreen:', _login&&_login.style.display);
   }
 })();
 }
