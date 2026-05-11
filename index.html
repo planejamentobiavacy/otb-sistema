@@ -11,11 +11,12 @@ function abrirConfiguracoes(){
   var el=document.getElementById('globalConfigOverlay');
   if(el) el.style.display='flex';
   setTimeout(function(){
+    if(typeof OTB_TABLES==='undefined') return;
     Object.keys(OTB_TABLES).forEach(function(k){
       var inp=document.getElementById('tbl_'+k);
       if(inp) inp.value=OTB_TABLES[k];
     });
-  },50);
+  },100);
 }
 function fecharConfiguracoes(){
   var el=document.getElementById('globalConfigOverlay');
@@ -24,8 +25,6 @@ function fecharConfiguracoes(){
 function openModule(mod){
 var home = document.getElementById('homeScreen');
 if (home) home.style.display = 'none';
-var driveLoaded = typeof state !== 'undefined' && state.stk && state.stk.length > 0;
-var dreLoaded   = typeof state !== 'undefined' && state.vendaDre && state.vendaDre.length > 0;
 if (mod === 'otb'){
 var appEl = document.querySelector('.app');
 if (appEl) appEl.style.display = 'flex';
@@ -36,7 +35,7 @@ if (typeof renderTable === 'function') renderTable();
 return;
 }
 if (typeof renderTabs === 'function') renderTabs();
-toast('Sem dados. Use Configuracoes -> Carregar Cache ou Atualizar tabelas.');
+toast('Sem dados. Use Configuracoes -> Carregar Cache.');
 } else if (mod === 'dre'){
 if (typeof openDreModule === 'function') openDreModule();
 } else if (mod === 'budget'){
@@ -53,76 +52,8 @@ if (home) home.style.display = 'flex';
 }
 function gcSaveTable(key,value){
   var v=(value||'').trim(); if(!v) return;
-  OTB_TABLES[key]=v;
+  if(typeof OTB_TABLES!=='undefined') OTB_TABLES[key]=v;
   try{ localStorage.setItem('otb_tbl_'+key,v); }catch(e){}
-}
-var GC_TABLES_WITH_ANOMES=['stk','venda','carteira','venda_dre','folha'];
-var GC_STATE_MAP={stk:'stk',venda:'venda',carteira:'cart',produto:'prod',venda_dre:'vendaDre',frete_dre:'frete'};
-function gcFetchAll(tab,extraFilter){
-  var SD=SUPA_KEY,P2=1000;
-  var base=SUPA_URL+'/rest/v1/'+tab+'?select=*'+extraFilter;
-  function pg(out,p){
-    var de=p*P2,ate=de+P2-1;
-    return fetch(base,{headers:{'apikey':SD,'Authorization':'Bearer '+SD,'Range':de+'-'+ate,'Range-Unit':'items'}})
-    .then(function(r){ return r.json(); })
-    .then(function(r){ if(!Array.isArray(r)) return out; out.push.apply(out,r); if(r.length<P2) return out; return pg(out,p+1); })
-    .catch(function(){ return out; });
-  }
-  return pg([],0);
-}
-async function gcTabela(key,modo,btn){
-  var tabName=OTB_TABLES[key];
-  var statusEl=document.getElementById('tbl_status_'+key);
-  var origText=btn?btn.textContent:'';
-  if(btn){ btn.disabled=true; btn.textContent='⏳'; }
-  if(statusEl) statusEl.textContent='...';
-  try{
-    var rows,count=0;
-    var hasAnoMes=GC_TABLES_WITH_ANOMES.indexOf(key)>=0;
-    var stateKey=GC_STATE_MAP[key];
-    if(modo==='atualizar'&&hasAnoMes){
-      var existing=stateKey?(state[stateKey]||[]):[];
-      var lastAm=0;
-      existing.forEach(function(r){ var am=parseInt(String(r.ANO_MES||r.ano_mes||0)); if(am>lastAm) lastAm=am; });
-      rows=await gcFetchAll(tabName,lastAm>0?'&ano_mes=gte.'+lastAm:'');
-      var nr=expRaw(rows);
-      if(stateKey){
-        if(lastAm>0) state[stateKey]=(state[stateKey]||[]).filter(function(r){ return parseInt(String(r.ANO_MES||r.ano_mes||0))<lastAm; }).concat(nr);
-        else state[stateKey]=nr;
-      }
-      if(key==='folha'&&typeof FOLHA_RAW!=='undefined'){ FOLHA_RAW=nr; FOLHA_LOADED=nr.length>0; }
-    } else if(modo==='atualizar'&&!hasAnoMes){
-      rows=await gcFetchAll(tabName,'');
-      var ar=expRaw(rows);
-      if(key==='produto'){
-        var eg=new Set((state.prod||[]).map(function(r){ return String(r.GRADE||r.cod_produto||''); }));
-        var novos=ar.filter(function(r){ return !eg.has(String(r.GRADE||r.cod_produto||'')); });
-        state.prod=(state.prod||[]).concat(novos);
-        count=novos.length;
-        if(statusEl) statusEl.textContent='+'+count;
-        buildGradeMap();processAll();buildAvacyMatrix();renderTabs();renderTable();
-        toast('[OK] '+novos.length+' produtos novos');
-        if(btn){ btn.disabled=false; btn.textContent=origText; } return;
-      } else if(key==='canais'){ state.canaisMap={}; ar.forEach(function(r){ var a=String(r.ANO_MES||'').trim(),v=String(r.COD_VENDEDOR||'').trim(),c=String(r.CANAL||'').trim(); if(a&&v&&c) state.canaisMap[a+'_'+v]=c; }); }
-      else if(key==='cluster'){ state.clusterMap={}; ar.forEach(function(r){ var k=String(r.GRADE||r.cod_cliente||'').trim(),c=String(r.CLUSTER||'').trim(); if(k&&c) state.clusterMap[k]=c; }); }
-      else if(key==='frete_dre'){ state.frete=ar; }
-    } else {
-      rows=await gcFetchAll(tabName,'');
-      var ar2=expRaw(rows);
-      if(stateKey) state[stateKey]=ar2;
-      if(key==='canais'){ state.canaisMap={}; ar2.forEach(function(r){ var a=String(r.ANO_MES||'').trim(),v=String(r.COD_VENDEDOR||'').trim(),c=String(r.CANAL||'').trim(); if(a&&v&&c) state.canaisMap[a+'_'+v]=c; }); }
-      else if(key==='cluster'){ state.clusterMap={}; ar2.forEach(function(r){ var k=String(r.GRADE||r.cod_cliente||'').trim(),c=String(r.CLUSTER||'').trim(); if(k&&c) state.clusterMap[k]=c; }); }
-      else if(key==='folha'&&typeof FOLHA_RAW!=='undefined'){ FOLHA_RAW=ar2; FOLHA_LOADED=ar2.length>0; }
-    }
-    count=rows?rows.length:0;
-    if(statusEl) statusEl.textContent=count.toLocaleString('pt-BR');
-    buildGradeMap();processAll();buildAvacyMatrix();renderTabs();renderTable();
-    toast('[OK] '+tabName+' '+(modo==='atualizar'?'atualizado':'recarregado')+' ('+count.toLocaleString('pt-BR')+')');
-  }catch(err){
-    if(statusEl) statusEl.textContent='❌';
-    toast('Erro: '+err.message,true); console.error(err);
-  }
-  if(btn){ btn.disabled=false; btn.textContent=origText; }
 }
 async function gcCarregarCache(btn){
   fecharConfiguracoes();
@@ -794,6 +725,75 @@ function expRaw(rows){return rows.map(function(r){
   if(r.rec_frete) m.REC_FRETE=r.rec_frete;
   if(r.custo_frete) m.CUSTO_FRETE=r.custo_frete;
   return m;
+}
+// ── Atualizar / Recarregar tabelas individuais ────────────────
+var GC_TABLES_WITH_ANOMES=['stk','venda','carteira','venda_dre','folha'];
+var GC_STATE_MAP={stk:'stk',venda:'venda',carteira:'cart',produto:'prod',venda_dre:'vendaDre',frete_dre:'frete'};
+function gcFetchAll(tab,extraFilter){
+  var SD=SUPA_KEY,P2=1000;
+  var base=SUPA_URL+'/rest/v1/'+tab+'?select=*'+extraFilter;
+  function pg(out,p){
+    var de=p*P2,ate=de+P2-1;
+    return fetch(base,{headers:{'apikey':SD,'Authorization':'Bearer '+SD,'Range':de+'-'+ate,'Range-Unit':'items'}})
+    .then(function(r){ return r.json(); })
+    .then(function(r){ if(!Array.isArray(r)) return out; out.push.apply(out,r); if(r.length<P2) return out; return pg(out,p+1); })
+    .catch(function(){ return out; });
+  }
+  return pg([],0);
+}
+async function gcTabela(key,modo,btn){
+  var tabName=OTB_TABLES[key];
+  var statusEl=document.getElementById('tbl_status_'+key);
+  var origText=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='⏳'; }
+  if(statusEl) statusEl.textContent='...';
+  try{
+    var rows,count=0;
+    var hasAnoMes=GC_TABLES_WITH_ANOMES.indexOf(key)>=0;
+    var stateKey=GC_STATE_MAP[key];
+    if(modo==='atualizar'&&hasAnoMes){
+      var existing=stateKey?(state[stateKey]||[]):[];
+      var lastAm=0;
+      existing.forEach(function(r){ var am=parseInt(String(r.ANO_MES||r.ano_mes||0)); if(am>lastAm) lastAm=am; });
+      rows=await gcFetchAll(tabName,lastAm>0?'&ano_mes=gte.'+lastAm:'');
+      var nr=expRaw(rows);
+      if(stateKey){
+        if(lastAm>0) state[stateKey]=(state[stateKey]||[]).filter(function(r){ return parseInt(String(r.ANO_MES||r.ano_mes||0))<lastAm; }).concat(nr);
+        else state[stateKey]=nr;
+      }
+      if(key==='folha'&&typeof FOLHA_RAW!=='undefined'){ FOLHA_RAW=nr; FOLHA_LOADED=nr.length>0; }
+    } else if(modo==='atualizar'&&!hasAnoMes){
+      rows=await gcFetchAll(tabName,'');
+      var ar=expRaw(rows);
+      if(key==='produto'){
+        var eg=new Set((state.prod||[]).map(function(r){ return String(r.GRADE||r.cod_produto||''); }));
+        var novos=ar.filter(function(r){ return !eg.has(String(r.GRADE||r.cod_produto||'')); });
+        state.prod=(state.prod||[]).concat(novos);
+        count=novos.length;
+        if(statusEl) statusEl.textContent='+'+count;
+        buildGradeMap();processAll();buildAvacyMatrix();renderTabs();renderTable();
+        toast('[OK] '+novos.length+' produtos novos');
+        if(btn){ btn.disabled=false; btn.textContent=origText; } return;
+      } else if(key==='canais'){ state.canaisMap={}; ar.forEach(function(r){ var a=String(r.ANO_MES||'').trim(),v=String(r.COD_VENDEDOR||'').trim(),c=String(r.CANAL||'').trim(); if(a&&v&&c) state.canaisMap[a+'_'+v]=c; }); }
+      else if(key==='cluster'){ state.clusterMap={}; ar.forEach(function(r){ var k=String(r.GRADE||r.cod_cliente||'').trim(),c=String(r.CLUSTER||'').trim(); if(k&&c) state.clusterMap[k]=c; }); }
+      else if(key==='frete_dre'){ state.frete=ar; }
+    } else {
+      rows=await gcFetchAll(tabName,'');
+      var ar2=expRaw(rows);
+      if(stateKey) state[stateKey]=ar2;
+      if(key==='canais'){ state.canaisMap={}; ar2.forEach(function(r){ var a=String(r.ANO_MES||'').trim(),v=String(r.COD_VENDEDOR||'').trim(),c=String(r.CANAL||'').trim(); if(a&&v&&c) state.canaisMap[a+'_'+v]=c; }); }
+      else if(key==='cluster'){ state.clusterMap={}; ar2.forEach(function(r){ var k=String(r.GRADE||r.cod_cliente||'').trim(),c=String(r.CLUSTER||'').trim(); if(k&&c) state.clusterMap[k]=c; }); }
+      else if(key==='folha'&&typeof FOLHA_RAW!=='undefined'){ FOLHA_RAW=ar2; FOLHA_LOADED=ar2.length>0; }
+    }
+    count=rows?rows.length:0;
+    if(statusEl) statusEl.textContent=count.toLocaleString('pt-BR');
+    buildGradeMap();processAll();buildAvacyMatrix();renderTabs();renderTable();
+    toast('[OK] '+tabName+' '+(modo==='atualizar'?'atualizado':'recarregado')+' ('+count.toLocaleString('pt-BR')+')');
+  }catch(err){
+    if(statusEl) statusEl.textContent='❌';
+    toast('Erro: '+err.message,true); console.error(err);
+  }
+  if(btn){ btn.disabled=false; btn.textContent=origText; }
 });}
 dbg('Carregando Supabase...');
 if(typeof setLoadingStep==='function'){setLoadingStep(1,'done');setLoadingStep(2,'active');}
