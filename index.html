@@ -17,10 +17,112 @@ function abrirConfiguracoes(){
     });
   },50);
 }
+function fecharConfiguracoes(){
+  var el=document.getElementById('globalConfigOverlay');
+  if(el) el.style.display='none';
+}
+function openModule(mod){
+var home = document.getElementById('homeScreen');
+if (home) home.style.display = 'none';
+var driveLoaded = typeof state !== 'undefined' && state.stk && state.stk.length > 0;
+var dreLoaded   = typeof state !== 'undefined' && state.vendaDre && state.vendaDre.length > 0;
+if (mod === 'otb'){
+var appEl = document.querySelector('.app');
+if (appEl) appEl.style.display = 'flex';
+if (typeof state !== 'undefined' && state.matrices &&
+Object.keys(state.matrices).length > 0 && state.matrices['AVACY']){
+if (typeof renderTabs === 'function') renderTabs();
+if (typeof renderTable === 'function') renderTable();
+return;
+}
+if (typeof renderTabs === 'function') renderTabs();
+toast('Sem dados. Use Configuracoes -> Carregar Cache ou Atualizar tabelas.');
+} else if (mod === 'dre'){
+if (typeof openDreModule === 'function') openDreModule();
+} else if (mod === 'budget'){
+if (typeof openBudgetModule === 'function') openBudgetModule();
+} else if (mod === 'folha'){
+if (typeof openFolhaModule === 'function') openFolhaModule();
+}
+}
+function showHome(){
+var appEl = document.querySelector('.app');
+if (appEl) appEl.style.display = 'none';
+var home = document.getElementById('homeScreen');
+if (home) home.style.display = 'flex';
+}
 function gcSaveTable(key,value){
   var v=(value||'').trim(); if(!v) return;
   OTB_TABLES[key]=v;
   try{ localStorage.setItem('otb_tbl_'+key,v); }catch(e){}
+}
+var GC_TABLES_WITH_ANOMES=['stk','venda','carteira','venda_dre','folha'];
+var GC_STATE_MAP={stk:'stk',venda:'venda',carteira:'cart',produto:'prod',venda_dre:'vendaDre',frete_dre:'frete'};
+function gcFetchAll(tab,extraFilter){
+  var SD=SUPA_KEY,P2=1000;
+  var base=SUPA_URL+'/rest/v1/'+tab+'?select=*'+extraFilter;
+  function pg(out,p){
+    var de=p*P2,ate=de+P2-1;
+    return fetch(base,{headers:{'apikey':SD,'Authorization':'Bearer '+SD,'Range':de+'-'+ate,'Range-Unit':'items'}})
+    .then(function(r){ return r.json(); })
+    .then(function(r){ if(!Array.isArray(r)) return out; out.push.apply(out,r); if(r.length<P2) return out; return pg(out,p+1); })
+    .catch(function(){ return out; });
+  }
+  return pg([],0);
+}
+async function gcTabela(key,modo,btn){
+  var tabName=OTB_TABLES[key];
+  var statusEl=document.getElementById('tbl_status_'+key);
+  var origText=btn?btn.textContent:'';
+  if(btn){ btn.disabled=true; btn.textContent='⏳'; }
+  if(statusEl) statusEl.textContent='...';
+  try{
+    var rows,count=0;
+    var hasAnoMes=GC_TABLES_WITH_ANOMES.indexOf(key)>=0;
+    var stateKey=GC_STATE_MAP[key];
+    if(modo==='atualizar'&&hasAnoMes){
+      var existing=stateKey?(state[stateKey]||[]):[];
+      var lastAm=0;
+      existing.forEach(function(r){ var am=parseInt(String(r.ANO_MES||r.ano_mes||0)); if(am>lastAm) lastAm=am; });
+      rows=await gcFetchAll(tabName,lastAm>0?'&ano_mes=gte.'+lastAm:'');
+      var nr=expRaw(rows);
+      if(stateKey){
+        if(lastAm>0) state[stateKey]=(state[stateKey]||[]).filter(function(r){ return parseInt(String(r.ANO_MES||r.ano_mes||0))<lastAm; }).concat(nr);
+        else state[stateKey]=nr;
+      }
+      if(key==='folha'&&typeof FOLHA_RAW!=='undefined'){ FOLHA_RAW=nr; FOLHA_LOADED=nr.length>0; }
+    } else if(modo==='atualizar'&&!hasAnoMes){
+      rows=await gcFetchAll(tabName,'');
+      var ar=expRaw(rows);
+      if(key==='produto'){
+        var eg=new Set((state.prod||[]).map(function(r){ return String(r.GRADE||r.cod_produto||''); }));
+        var novos=ar.filter(function(r){ return !eg.has(String(r.GRADE||r.cod_produto||'')); });
+        state.prod=(state.prod||[]).concat(novos);
+        count=novos.length;
+        if(statusEl) statusEl.textContent='+'+count;
+        buildGradeMap();processAll();buildAvacyMatrix();renderTabs();renderTable();
+        toast('[OK] '+novos.length+' produtos novos');
+        if(btn){ btn.disabled=false; btn.textContent=origText; } return;
+      } else if(key==='canais'){ state.canaisMap={}; ar.forEach(function(r){ var a=String(r.ANO_MES||'').trim(),v=String(r.COD_VENDEDOR||'').trim(),c=String(r.CANAL||'').trim(); if(a&&v&&c) state.canaisMap[a+'_'+v]=c; }); }
+      else if(key==='cluster'){ state.clusterMap={}; ar.forEach(function(r){ var k=String(r.GRADE||r.cod_cliente||'').trim(),c=String(r.CLUSTER||'').trim(); if(k&&c) state.clusterMap[k]=c; }); }
+      else if(key==='frete_dre'){ state.frete=ar; }
+    } else {
+      rows=await gcFetchAll(tabName,'');
+      var ar2=expRaw(rows);
+      if(stateKey) state[stateKey]=ar2;
+      if(key==='canais'){ state.canaisMap={}; ar2.forEach(function(r){ var a=String(r.ANO_MES||'').trim(),v=String(r.COD_VENDEDOR||'').trim(),c=String(r.CANAL||'').trim(); if(a&&v&&c) state.canaisMap[a+'_'+v]=c; }); }
+      else if(key==='cluster'){ state.clusterMap={}; ar2.forEach(function(r){ var k=String(r.GRADE||r.cod_cliente||'').trim(),c=String(r.CLUSTER||'').trim(); if(k&&c) state.clusterMap[k]=c; }); }
+      else if(key==='folha'&&typeof FOLHA_RAW!=='undefined'){ FOLHA_RAW=ar2; FOLHA_LOADED=ar2.length>0; }
+    }
+    count=rows?rows.length:0;
+    if(statusEl) statusEl.textContent=count.toLocaleString('pt-BR');
+    buildGradeMap();processAll();buildAvacyMatrix();renderTabs();renderTable();
+    toast('[OK] '+tabName+' '+(modo==='atualizar'?'atualizado':'recarregado')+' ('+count.toLocaleString('pt-BR')+')');
+  }catch(err){
+    if(statusEl) statusEl.textContent='❌';
+    toast('Erro: '+err.message,true); console.error(err);
+  }
+  if(btn){ btn.disabled=false; btn.textContent=origText; }
 }
 async function gcCarregarCache(btn){
   fecharConfiguracoes();
@@ -35,128 +137,9 @@ async function gcCarregarCache(btn){
         return;
       }
     }
-    toast('Cache não encontrado. Use "Atualizar meses novos".',true);
+    toast('Cache não encontrado.',true);
   }catch(e){ toast('Erro: '+e.message,true); }
   if(btn){ btn.disabled=false; btn.textContent='⚡ Carregar Cache (rápido)'; }
-}
-async function gcRecarregarIncremental(btn){
-  fecharConfiguracoes();
-  if(btn){ btn.disabled=true; btn.textContent='⏳ Buscando novos...'; }
-  var fromAnoMes=null;
-  try{
-    var data=await supaGet();
-    if(data&&data.value){
-      var payload=JSON.parse(data.value);
-      if(payload&&payload.months&&payload.months.length>0){
-        fromAnoMes=payload.months[payload.months.length-1].replace('-','');
-        console.log('[OTB] Incremental a partir de:',fromAnoMes);
-      }
-    }
-  }catch(e){}
-  if(!fromAnoMes){ gcRecarregarRaw(btn); return; }
-  var ls=document.getElementById('loadingScreen');
-  var lm=document.getElementById('loadingMsg');
-  if(ls){ ls.style.display='flex'; ls.style.opacity='1'; ls.classList.remove('fade-out'); }
-  if(lm) lm.textContent='Buscando dados novos ('+fromAnoMes+' em diante)...';
-  var SD=SUPA_KEY;
-  var fromNum=parseInt(fromAnoMes);
-  // fetchFrom: sem order, usa paginação simples com filtro gte
-  function fetchFrom(tab,from){
-    var P2=1000;
-    var base=SUPA_URL+'/rest/v1/'+tab+'?select=*'+(from?'&ano_mes=gte.'+from:'');
-    function pg(out,p){
-      var de=p*P2,ate=de+P2-1;
-      return fetch(base,{headers:{'apikey':SD,'Authorization':'Bearer '+SD,'Range':de+'-'+ate,'Range-Unit':'items'}})
-      .then(function(r){ return r.json(); })
-      .then(function(rows){
-        if(!Array.isArray(rows)) return out;
-        out.push.apply(out,rows);
-        if(rows.length<P2) return out;
-        return pg(out,p+1);
-      }).catch(function(){ return out; });
-    }
-    return pg([],0);
-  }
-  try{
-    var res=await Promise.all([
-      fetchFrom(OTB_TABLES.stk,      fromAnoMes),
-      fetchFrom(OTB_TABLES.venda,    fromAnoMes),
-      fetchFrom(OTB_TABLES.carteira, fromAnoMes),
-      fetchFrom(OTB_TABLES.produto,  null),
-      fetchFrom(OTB_TABLES.venda_dre,fromAnoMes),
-      fetchFrom(OTB_TABLES.frete_dre,null),
-      fetchFrom(OTB_TABLES.canais,   null),
-      fetchFrom(OTB_TABLES.cluster,  null),
-      fetchFrom(OTB_TABLES.folha,    fromAnoMes),
-    ]);
-    var nStk=expRaw(res[0]),nVenda=expRaw(res[1]),nCart=expRaw(res[2]),nProd=expRaw(res[3]);
-    console.log('[OTB] Incremental — STK:'+nStk.length+' VENDA:'+nVenda.length+' CART:'+nCart.length);
-    if(state.stk&&state.stk.length>0){
-      state.stk  =state.stk.filter(function(r){ return parseInt(String(r.ANO_MES||0))<fromNum; }).concat(nStk);
-      state.venda=state.venda.filter(function(r){ return parseInt(String(r.ANO_MES||0))<fromNum; }).concat(nVenda);
-      state.cart =state.cart.filter(function(r){ return parseInt(String(r.ANO_MES||0))<fromNum; }).concat(nCart);
-    } else { state.stk=nStk; state.venda=nVenda; state.cart=nCart; }
-    state.prod=nProd;
-    state.vendaDre=expRaw(res[4]); state.frete=expRaw(res[5]);
-    state.canaisMap={}; res[6].forEach(function(r){ var a=String(r.ano_mes||'').trim(),v=String(r.cod_vendedor||'').trim(),c=String(r.canal||'').trim(); if(a&&v&&c) state.canaisMap[a+'_'+v]=c; });
-    state.clusterMap={}; res[7].forEach(function(r){ var k=String(r.cod_cliente||'').trim(),c=String(r.cluster||'').trim(); if(k&&c) state.clusterMap[k]=c; });
-    if(typeof FOLHA_RAW!=='undefined'){ FOLHA_RAW=expRaw(res[8]); FOLHA_LOADED=FOLHA_RAW.length>0; }
-    if(lm) lm.textContent='Recalculando matrizes...';
-    await new Promise(function(r){ setTimeout(r,50); });
-    buildGradeMap(); processAll(); buildAvacyMatrix();
-    toast('[OK] Dados atualizados com meses novos!');
-    if(typeof hideLoading==='function') setTimeout(hideLoading,300);
-    renderTabs(); renderTable();
-  }catch(err){
-    console.error(err);
-    toast('Erro incremental: '+err.message,true);
-    if(typeof hideLoading==='function') hideLoading();
-  }
-  if(btn){ btn.disabled=false; btn.textContent='🔄 Atualizar meses novos'; }
-}
-function gcRecarregarRaw(btn){
-  if(btn){ btn.disabled=true; btn.textContent='⏳ Baixando tudo...'; }
-  fecharConfiguracoes();
-  var ls=document.getElementById('loadingScreen');
-  var lm=document.getElementById('loadingMsg');
-  if(ls){ ls.style.display='flex'; ls.style.opacity='1'; ls.classList.remove('fade-out'); }
-  if(lm) lm.textContent='Baixando todos os dados do Supabase...';
-  setTimeout(function(){
-    loadFilesFromDrive();
-    if(btn){ btn.disabled=false; btn.textContent='🗄️ Recarregar tudo'; }
-  },200);
-}
-function fecharConfiguracoes(){
-  var el=document.getElementById('globalConfigOverlay');
-  if(el) el.style.display='none';
-}
-function openModule(mod){
-  var home=document.getElementById('homeScreen');
-  if(home) home.style.display='none';
-  if(mod==='otb'){
-    var app=document.querySelector('.app');
-    if(app) app.style.display='flex';
-    if(typeof state!=='undefined'&&state.matrices&&Object.keys(state.matrices).length>0&&state.matrices['AVACY']){
-      if(typeof renderTabs==='function') renderTabs();
-      if(typeof renderTable==='function') renderTable();
-      return;
-    }
-    if(typeof showLoading==='function') showLoading('Buscando arquivos no Google Drive...');
-    if(typeof setLoadingStep==='function'){setLoadingStep(1,'done');setLoadingStep(2,'active');}
-    if(typeof loadFilesFromDrive==='function') loadFilesFromDrive();
-  } else if(mod==='dre'){
-    if(typeof openDreModule==='function') openDreModule();
-  } else if(mod==='budget'){
-    if(typeof openBudgetModule==='function') openBudgetModule();
-  } else if(mod==='folha'){
-    if(typeof openFolhaModule==='function') openFolhaModule();
-  }
-}
-function showHome(){
-  var app=document.querySelector('.app');
-  if(app) app.style.display='none';
-  var home=document.getElementById('homeScreen');
-  if(home) home.style.display='flex';
 }
 // v8-FINAL carregado OK
 </script>
@@ -258,39 +241,69 @@ function showHome(){
     </div>
     <div style="padding:22px;display:flex;flex-direction:column;gap:16px">
       <div>
-        <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #eee">☁️ Supabase — Tabelas de Dados</div>
-        <div style="font-size:11px;color:#888;margin-bottom:8px">Edite os nomes conforme configurado no seu Supabase.</div>
-        <div style="display:grid;grid-template-columns:auto 1fr;gap:5px 10px;align-items:center;background:#f5f7ff;border:1px solid #dde3f5;border-radius:6px;padding:12px 14px;margin-bottom:12px">
-          <span style="font-size:11px;color:#555;white-space:nowrap">📦 Estoque</span>
-          <input id="tbl_stk"       oninput="gcSaveTable('stk',this.value)"       style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
-          <span style="font-size:11px;color:#555;white-space:nowrap">📈 Vendas</span>
-          <input id="tbl_venda"     oninput="gcSaveTable('venda',this.value)"     style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
-          <span style="font-size:11px;color:#555;white-space:nowrap">🛒 Carteira</span>
-          <input id="tbl_carteira"  oninput="gcSaveTable('carteira',this.value)"  style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
-          <span style="font-size:11px;color:#555;white-space:nowrap">🏷️ Produtos</span>
-          <input id="tbl_produto"   oninput="gcSaveTable('produto',this.value)"   style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
-          <span style="font-size:11px;color:#555;white-space:nowrap">📊 DRE Vendas</span>
-          <input id="tbl_venda_dre" oninput="gcSaveTable('venda_dre',this.value)" style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
-          <span style="font-size:11px;color:#555;white-space:nowrap">🚚 DRE Frete</span>
-          <input id="tbl_frete_dre" oninput="gcSaveTable('frete_dre',this.value)" style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
-          <span style="font-size:11px;color:#555;white-space:nowrap">📡 Canais</span>
-          <input id="tbl_canais"    oninput="gcSaveTable('canais',this.value)"    style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
-          <span style="font-size:11px;color:#555;white-space:nowrap">🔗 Cluster</span>
-          <input id="tbl_cluster"   oninput="gcSaveTable('cluster',this.value)"   style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
-          <span style="font-size:11px;color:#555;white-space:nowrap">👥 Folha RH</span>
-          <input id="tbl_folha"     oninput="gcSaveTable('folha',this.value)"     style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
+        <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #eee">☁️ Supabase — Tabelas de Dados</div>
+        <div style="font-size:11px;color:#888;margin-bottom:8px"><b style="color:#1e5bb8">↑ Atualizar</b> — só dados novos (rápido) &nbsp;·&nbsp; <b style="color:#555">↺ Recarregar</b> — tabela completa (lento)</div>
+        <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:10px">
+          <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;padding:6px 8px;background:#f5f7ff;border:1px solid #dde3f5;border-radius:4px">
+            <div><span style="font-size:12px;font-weight:600;color:#1a2236">📦 Estoque</span><input id="tbl_stk" oninput="gcSaveTable('stk',this.value)" style="display:inline-block;margin-left:8px;width:130px;padding:2px 6px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff"></div>
+            <button onclick="gcTabela('stk','atualizar',this)" style="padding:5px 10px;background:#1e5bb8;border:1px solid #164a99;color:#fff;border-radius:3px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">↑ Atualizar</button>
+            <button onclick="gcTabela('stk','recarregar',this)" style="padding:5px 10px;background:#555;border:1px solid #333;color:#fff;border-radius:3px;font-size:11px;font-weight:500;cursor:pointer;font-family:inherit;white-space:nowrap">↺ Recarregar</button>
+            <span id="tbl_status_stk" style="font-size:10px;color:#888;min-width:55px;text-align:right;white-space:nowrap"></span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;padding:6px 8px;background:#f5f7ff;border:1px solid #dde3f5;border-radius:4px">
+            <div><span style="font-size:12px;font-weight:600;color:#1a2236">📈 Vendas</span><input id="tbl_venda" oninput="gcSaveTable('venda',this.value)" style="display:inline-block;margin-left:8px;width:130px;padding:2px 6px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff"></div>
+            <button onclick="gcTabela('venda','atualizar',this)" style="padding:5px 10px;background:#1e5bb8;border:1px solid #164a99;color:#fff;border-radius:3px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">↑ Atualizar</button>
+            <button onclick="gcTabela('venda','recarregar',this)" style="padding:5px 10px;background:#555;border:1px solid #333;color:#fff;border-radius:3px;font-size:11px;font-weight:500;cursor:pointer;font-family:inherit;white-space:nowrap">↺ Recarregar</button>
+            <span id="tbl_status_venda" style="font-size:10px;color:#888;min-width:55px;text-align:right;white-space:nowrap"></span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;padding:6px 8px;background:#f5f7ff;border:1px solid #dde3f5;border-radius:4px">
+            <div><span style="font-size:12px;font-weight:600;color:#1a2236">🛒 Carteira</span><input id="tbl_carteira" oninput="gcSaveTable('carteira',this.value)" style="display:inline-block;margin-left:8px;width:130px;padding:2px 6px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff"></div>
+            <button onclick="gcTabela('carteira','atualizar',this)" style="padding:5px 10px;background:#1e5bb8;border:1px solid #164a99;color:#fff;border-radius:3px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">↑ Atualizar</button>
+            <button onclick="gcTabela('carteira','recarregar',this)" style="padding:5px 10px;background:#555;border:1px solid #333;color:#fff;border-radius:3px;font-size:11px;font-weight:500;cursor:pointer;font-family:inherit;white-space:nowrap">↺ Recarregar</button>
+            <span id="tbl_status_carteira" style="font-size:10px;color:#888;min-width:55px;text-align:right;white-space:nowrap"></span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;padding:6px 8px;background:#f5f7ff;border:1px solid #dde3f5;border-radius:4px">
+            <div><span style="font-size:12px;font-weight:600;color:#1a2236">🏷️ Produtos</span><input id="tbl_produto" oninput="gcSaveTable('produto',this.value)" style="display:inline-block;margin-left:8px;width:130px;padding:2px 6px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff"></div>
+            <button onclick="gcTabela('produto','atualizar',this)" style="padding:5px 10px;background:#1e5bb8;border:1px solid #164a99;color:#fff;border-radius:3px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">↑ Atualizar</button>
+            <button onclick="gcTabela('produto','recarregar',this)" style="padding:5px 10px;background:#555;border:1px solid #333;color:#fff;border-radius:3px;font-size:11px;font-weight:500;cursor:pointer;font-family:inherit;white-space:nowrap">↺ Recarregar</button>
+            <span id="tbl_status_produto" style="font-size:10px;color:#888;min-width:55px;text-align:right;white-space:nowrap"></span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;padding:6px 8px;background:#f5f7ff;border:1px solid #dde3f5;border-radius:4px">
+            <div><span style="font-size:12px;font-weight:600;color:#1a2236">📊 DRE Vendas</span><input id="tbl_venda_dre" oninput="gcSaveTable('venda_dre',this.value)" style="display:inline-block;margin-left:8px;width:130px;padding:2px 6px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff"></div>
+            <button onclick="gcTabela('venda_dre','atualizar',this)" style="padding:5px 10px;background:#1e5bb8;border:1px solid #164a99;color:#fff;border-radius:3px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">↑ Atualizar</button>
+            <button onclick="gcTabela('venda_dre','recarregar',this)" style="padding:5px 10px;background:#555;border:1px solid #333;color:#fff;border-radius:3px;font-size:11px;font-weight:500;cursor:pointer;font-family:inherit;white-space:nowrap">↺ Recarregar</button>
+            <span id="tbl_status_venda_dre" style="font-size:10px;color:#888;min-width:55px;text-align:right;white-space:nowrap"></span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;padding:6px 8px;background:#f5f7ff;border:1px solid #dde3f5;border-radius:4px">
+            <div><span style="font-size:12px;font-weight:600;color:#1a2236">🚚 DRE Frete</span><input id="tbl_frete_dre" oninput="gcSaveTable('frete_dre',this.value)" style="display:inline-block;margin-left:8px;width:130px;padding:2px 6px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff"></div>
+            <button onclick="gcTabela('frete_dre','atualizar',this)" style="padding:5px 10px;background:#1e5bb8;border:1px solid #164a99;color:#fff;border-radius:3px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">↑ Atualizar</button>
+            <button onclick="gcTabela('frete_dre','recarregar',this)" style="padding:5px 10px;background:#555;border:1px solid #333;color:#fff;border-radius:3px;font-size:11px;font-weight:500;cursor:pointer;font-family:inherit;white-space:nowrap">↺ Recarregar</button>
+            <span id="tbl_status_frete_dre" style="font-size:10px;color:#888;min-width:55px;text-align:right;white-space:nowrap"></span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;padding:6px 8px;background:#f5f7ff;border:1px solid #dde3f5;border-radius:4px">
+            <div><span style="font-size:12px;font-weight:600;color:#1a2236">📡 Canais</span><input id="tbl_canais" oninput="gcSaveTable('canais',this.value)" style="display:inline-block;margin-left:8px;width:130px;padding:2px 6px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff"></div>
+            <button onclick="gcTabela('canais','atualizar',this)" style="padding:5px 10px;background:#1e5bb8;border:1px solid #164a99;color:#fff;border-radius:3px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">↑ Atualizar</button>
+            <button onclick="gcTabela('canais','recarregar',this)" style="padding:5px 10px;background:#555;border:1px solid #333;color:#fff;border-radius:3px;font-size:11px;font-weight:500;cursor:pointer;font-family:inherit;white-space:nowrap">↺ Recarregar</button>
+            <span id="tbl_status_canais" style="font-size:10px;color:#888;min-width:55px;text-align:right;white-space:nowrap"></span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;padding:6px 8px;background:#f5f7ff;border:1px solid #dde3f5;border-radius:4px">
+            <div><span style="font-size:12px;font-weight:600;color:#1a2236">🔗 Cluster</span><input id="tbl_cluster" oninput="gcSaveTable('cluster',this.value)" style="display:inline-block;margin-left:8px;width:130px;padding:2px 6px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff"></div>
+            <button onclick="gcTabela('cluster','atualizar',this)" style="padding:5px 10px;background:#1e5bb8;border:1px solid #164a99;color:#fff;border-radius:3px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">↑ Atualizar</button>
+            <button onclick="gcTabela('cluster','recarregar',this)" style="padding:5px 10px;background:#555;border:1px solid #333;color:#fff;border-radius:3px;font-size:11px;font-weight:500;cursor:pointer;font-family:inherit;white-space:nowrap">↺ Recarregar</button>
+            <span id="tbl_status_cluster" style="font-size:10px;color:#888;min-width:55px;text-align:right;white-space:nowrap"></span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:6px;align-items:center;padding:6px 8px;background:#f5f7ff;border:1px solid #dde3f5;border-radius:4px">
+            <div><span style="font-size:12px;font-weight:600;color:#1a2236">👥 Folha RH</span><input id="tbl_folha" oninput="gcSaveTable('folha',this.value)" style="display:inline-block;margin-left:8px;width:130px;padding:2px 6px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff"></div>
+            <button onclick="gcTabela('folha','atualizar',this)" style="padding:5px 10px;background:#1e5bb8;border:1px solid #164a99;color:#fff;border-radius:3px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;white-space:nowrap">↑ Atualizar</button>
+            <button onclick="gcTabela('folha','recarregar',this)" style="padding:5px 10px;background:#555;border:1px solid #333;color:#fff;border-radius:3px;font-size:11px;font-weight:500;cursor:pointer;font-family:inherit;white-space:nowrap">↺ Recarregar</button>
+            <span id="tbl_status_folha" style="font-size:10px;color:#888;min-width:55px;text-align:right;white-space:nowrap"></span>
+          </div>
         </div>
-        <button onclick="gcCarregarCache(this)" style="width:100%;background:#0b8a3e;border:1.5px solid #086b30;color:#fff;padding:11px;border-radius:4px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:6px">⚡ Carregar Cache (rápido)</button>
-        <div style="font-size:11px;color:#888;text-align:center;margin-bottom:10px">Carrega o último estado salvo — instantâneo</div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-          <button onclick="gcRecarregarIncremental(this)" style="flex:1;background:#1e5bb8;border:1.5px solid #164a99;color:#fff;padding:10px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Atualizar meses novos</button>
-          <button onclick="gcRecarregarRaw(this)" style="flex:1;background:#1a2547;border:1.5px solid #0f1830;color:#fff;padding:10px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">🗄️ Recarregar tudo</button>
-        </div>
-        <div style="font-size:11px;color:#888;text-align:center;margin-bottom:4px">Incremental: só meses novos &nbsp;·&nbsp; Completo: baixa tudo</div>
+        <button onclick="gcCarregarCache(this)" style="width:100%;background:#0b8a3e;border:1.5px solid #086b30;color:#fff;padding:11px;border-radius:4px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:4px">⚡ Carregar Cache (rápido)</button>
+        <div style="font-size:11px;color:#888;text-align:center;margin-bottom:4px">Carrega o último estado salvo — instantâneo</div>
         <div id="gcDriveStatus" style="display:none;margin-top:8px;padding:10px 14px;border-radius:4px;font-size:12px;font-weight:600;text-align:center"></div>
       </div>
-      <div>
-        <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #eee">☁️ Supabase — Salvar para acesso rápido</div>
+      <div>tter-spacing:.8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #eee">☁️ Supabase — Salvar para acesso rápido</div>
         <div style="font-size:12px;color:#555;line-height:1.6;margin-bottom:10px">
           Salva os dados processados no Supabase. Na próxima abertura, todos os módulos carregam instantaneamente sem precisar do Drive.
         </div>
