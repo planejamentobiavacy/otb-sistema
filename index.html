@@ -10,6 +10,138 @@
 function abrirConfiguracoes(){
   var el=document.getElementById('globalConfigOverlay');
   if(el) el.style.display='flex';
+  setTimeout(function(){
+    Object.keys(OTB_TABLES).forEach(function(k){
+      var inp=document.getElementById('tbl_'+k);
+      if(inp) inp.value=OTB_TABLES[k];
+    });
+  },50);
+}
+function gcSaveTable(key,value){
+  var v=(value||'').trim(); if(!v) return;
+  OTB_TABLES[key]=v;
+  try{ localStorage.setItem('otb_tbl_'+key,v); }catch(e){}
+}
+
+// ⚡ Rápido: carrega cache processado
+async function gcCarregarCache(btn){
+  fecharConfiguracoes();
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Carregando...'; }
+  try{
+    var data = await supaGet();
+    if(data && data.value){
+      var payload = JSON.parse(data.value);
+      if(payload && payload.matrices && Object.keys(payload.matrices).length>0){
+        importPayload(payload, false);
+        if(btn){ btn.disabled=false; btn.textContent='⚡ Carregar Cache (rápido)'; }
+        return;
+      }
+    }
+    toast('Cache não encontrado. Use "Atualizar meses novos".', true);
+  }catch(e){ toast('Erro: '+e.message, true); }
+  if(btn){ btn.disabled=false; btn.textContent='⚡ Carregar Cache (rápido)'; }
+}
+
+// 🔄 Incremental: só baixa meses não presentes no cache
+async function gcRecarregarIncremental(btn){
+  fecharConfiguracoes();
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Buscando novos...'; }
+  // Descobre o mês mais recente já no cache
+  var fromAnoMes = null;
+  try{
+    var data = await supaGet();
+    if(data && data.value){
+      var payload = JSON.parse(data.value);
+      if(payload && payload.months && payload.months.length>0){
+        // Pega o último mês do cache no formato YYYYMM
+        var lastYm = payload.months[payload.months.length-1]; // '2026-02'
+        fromAnoMes = lastYm.replace('-',''); // '202602'
+        console.log('[OTB] Incremental: buscando a partir de', fromAnoMes);
+      }
+    }
+  }catch(e){}
+  if(!fromAnoMes){
+    // Sem cache — faz completo
+    gcRecarregarRaw(btn);
+    return;
+  }
+  var ls=document.getElementById('loadingScreen');
+  var lm=document.getElementById('loadingMsg');
+  if(ls){ ls.style.display='flex'; ls.style.opacity='1'; ls.classList.remove('fade-out'); }
+  if(lm) lm.textContent='Buscando dados de '+fromAnoMes+' em diante...';
+  // Carrega dados novos + dados fixos (produto, canais, cluster, frete)
+  var SDATA2 = (function(){ var s='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN2cXh1cGp0cWd6emllZGdteGFxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcwNDQzMTEsImV4cCI6MjA5MjYyMDMxMX0.dhaZF6l2XxnKtc6SFflJW0PSG6rGz-doZ2G7evKOglo'; return s; })();
+  function fetchFrom(tab, from){
+    var filter = from ? '?ano_mes=gte.'+from+'&select=*' : '?select=*';
+    var P2=1000;
+    function pg(out,p){
+      var de=p*P2, ate=de+P2-1;
+      return fetch(SUPA_URL+'/rest/v1/'+tab+filter+(filter.includes('?')?'&':'?')+'order=ano_mes.asc',{
+        headers:{'apikey':SDATA2,'Authorization':'Bearer '+SDATA2,'Range':de+'-'+ate,'Range-Unit':'items'}
+      }).then(function(r){ return r.json(); })
+      .then(function(rows){ out.push.apply(out,rows); if(rows.length<P2) return out; return pg(out,p+1); });
+    }
+    return pg([],0);
+  }
+  Promise.all([
+    fetchFrom(OTB_TABLES.stk,      fromAnoMes),
+    fetchFrom(OTB_TABLES.venda,    fromAnoMes),
+    fetchFrom(OTB_TABLES.carteira, fromAnoMes),
+    fetchFrom(OTB_TABLES.produto,  null),        // sempre completo
+    fetchFrom(OTB_TABLES.venda_dre,fromAnoMes),
+    fetchFrom(OTB_TABLES.frete_dre,null),        // sempre completo
+    fetchFrom(OTB_TABLES.canais,   null),        // sempre completo
+    fetchFrom(OTB_TABLES.cluster,  null),        // sempre completo
+    fetchFrom(OTB_TABLES.folha,    fromAnoMes),
+  ]).then(function(res){
+    var newStk=expRaw(res[0]), newVenda=expRaw(res[1]), newCart=expRaw(res[2]);
+    var newProd=expRaw(res[3]);
+    console.log('[OTB] Incremental — novos registros: STK='+newStk.length+' VENDA='+newVenda.length+' CART='+newCart.length);
+    // Mescla com dados existentes (mantém histórico, adiciona/atualiza novos)
+    if(state.stk && state.stk.length>0){
+      // Remove registros antigos do mesmo periodo e adiciona novos
+      var fromNum = parseInt(fromAnoMes);
+      state.stk   = state.stk.filter(function(r){ return parseInt(String(r.ANO_MES||0))<fromNum; }).concat(newStk);
+      state.venda = state.venda.filter(function(r){ return parseInt(String(r.ANO_MES||0))<fromNum; }).concat(newVenda);
+      state.cart  = state.cart.filter(function(r){ return parseInt(String(r.ANO_MES||0))<fromNum; }).concat(newCart);
+    } else {
+      state.stk=newStk; state.venda=newVenda; state.cart=newCart;
+    }
+    state.prod=newProd;
+    state.vendaDre=expRaw(res[4]); state.frete=expRaw(res[5]);
+    state.canaisMap={}; res[6].forEach(function(r){ var a=String(r.ano_mes||'').trim(),v=String(r.cod_vendedor||'').trim(),c=String(r.canal||'').trim(); if(a&&v&&c) state.canaisMap[a+'_'+v]=c; });
+    state.clusterMap={}; res[7].forEach(function(r){ var k=String(r.cod_cliente||'').trim(),c=String(r.cluster||'').trim(); if(k&&c) state.clusterMap[k]=c; });
+    if(typeof FOLHA_RAW!=='undefined'){ FOLHA_RAW=expRaw(res[8]); FOLHA_LOADED=FOLHA_RAW.length>0; }
+    if(lm) lm.textContent='Recalculando matrizes...';
+    return new Promise(function(r){ setTimeout(r,50); });
+  }).then(function(){
+    buildGradeMap(); processAll(); buildAvacyMatrix();
+    return supaGet();
+  }).then(function(saved){
+    if(saved&&saved.value){ try{ var pl=JSON.parse(saved.value); if(pl&&pl.matrices){ importPayload(pl); return; }}catch(e){} }
+    toast('[OK] Dados atualizados!');
+    if(typeof hideLoading==='function') setTimeout(hideLoading,300);
+    renderTabs(); renderTable();
+  }).catch(function(err){
+    console.error(err);
+    toast('Erro incremental: '+err.message, true);
+    if(typeof hideLoading==='function') hideLoading();
+  });
+  if(btn){ btn.disabled=false; btn.textContent='🔄 Atualizar meses novos'; }
+}
+
+// 🗄️ Completo: baixa tudo
+function gcRecarregarRaw(btn){
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Baixando tudo...'; }
+  fecharConfiguracoes();
+  var ls=document.getElementById('loadingScreen');
+  var lm=document.getElementById('loadingMsg');
+  if(ls){ ls.style.display='flex'; ls.style.opacity='1'; ls.classList.remove('fade-out'); }
+  if(lm) lm.textContent='Baixando todos os dados do Supabase...';
+  setTimeout(function(){
+    loadFilesFromDrive();
+    if(btn){ btn.disabled=false; btn.textContent='🗄️ Recarregar tudo'; }
+  },200);
 }
 function fecharConfiguracoes(){
   var el=document.getElementById('globalConfigOverlay');
@@ -143,42 +275,42 @@ function showHome(){
     </div>
     <div style="padding:22px;display:flex;flex-direction:column;gap:16px">
       <div>
-        <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #eee">📤 Google Drive → Supabase</div>
-        <div style="font-size:12px;color:#555;line-height:1.8;background:#f5f7ff;border:1px solid #dde3f5;border-radius:6px;padding:12px 14px;margin-bottom:10px">
-          Executa o Apps Script que lê os arquivos do Google Drive e envia para o Supabase.<br>
-          <b>BASE_STK_VENDA · BASE_CARTEIRA · BASE_PRODUTO · BASE_VENDA_DRE · BASE_FRETE_DRE · BASE_FOLHA</b>
+        <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #eee">☁️ Supabase — Tabelas de Dados</div>
+        <div style="font-size:11px;color:#888;margin-bottom:8px">Edite os nomes conforme configurado no seu Supabase.</div>
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:5px 10px;align-items:center;background:#f5f7ff;border:1px solid #dde3f5;border-radius:6px;padding:12px 14px;margin-bottom:12px">
+          <span style="font-size:11px;color:#555;white-space:nowrap">📦 Estoque</span>
+          <input id="tbl_stk"       oninput="gcSaveTable('stk',this.value)"       style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
+          <span style="font-size:11px;color:#555;white-space:nowrap">📈 Vendas</span>
+          <input id="tbl_venda"     oninput="gcSaveTable('venda',this.value)"     style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
+          <span style="font-size:11px;color:#555;white-space:nowrap">🛒 Carteira</span>
+          <input id="tbl_carteira"  oninput="gcSaveTable('carteira',this.value)"  style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
+          <span style="font-size:11px;color:#555;white-space:nowrap">🏷️ Produtos</span>
+          <input id="tbl_produto"   oninput="gcSaveTable('produto',this.value)"   style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
+          <span style="font-size:11px;color:#555;white-space:nowrap">📊 DRE Vendas</span>
+          <input id="tbl_venda_dre" oninput="gcSaveTable('venda_dre',this.value)" style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
+          <span style="font-size:11px;color:#555;white-space:nowrap">🚚 DRE Frete</span>
+          <input id="tbl_frete_dre" oninput="gcSaveTable('frete_dre',this.value)" style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
+          <span style="font-size:11px;color:#555;white-space:nowrap">📡 Canais</span>
+          <input id="tbl_canais"    oninput="gcSaveTable('canais',this.value)"    style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
+          <span style="font-size:11px;color:#555;white-space:nowrap">🔗 Cluster</span>
+          <input id="tbl_cluster"   oninput="gcSaveTable('cluster',this.value)"   style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
+          <span style="font-size:11px;color:#555;white-space:nowrap">👥 Folha RH</span>
+          <input id="tbl_folha"     oninput="gcSaveTable('folha',this.value)"     style="width:100%;padding:4px 8px;border:1px solid #c8d0e0;border-radius:3px;font-size:11px;font-family:monospace;background:#fff">
         </div>
-        <button id="gcBtnUpload" onclick="gcUploadDrive(this)" style="width:100%;background:#1a2547;border:1.5px solid #0f1830;color:#fff;padding:11px;border-radius:4px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">📤 Enviar Drive → Supabase</button>
-        <div id="gcUploadStatus" style="display:none;margin-top:8px;padding:12px 16px;border-radius:6px;font-size:12px;line-height:1.7"></div>
-        <div style="height:18px"></div>
-      </div>
-      <div>
-        <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #eee">☁️ Supabase — Recarregar Dados</div>
-        <div style="font-size:12px;color:#555;line-height:1.8;background:#f5f7ff;border:1px solid #dde3f5;border-radius:6px;padding:12px 14px;margin-bottom:10px">
-          Busca os dados atualizados diretamente das tabelas do Supabase e reprocessa o dashboard.
+        <button onclick="gcCarregarCache(this)" style="width:100%;background:#0b8a3e;border:1.5px solid #086b30;color:#fff;padding:11px;border-radius:4px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:6px">⚡ Carregar Cache (rápido)</button>
+        <div style="font-size:11px;color:#888;text-align:center;margin-bottom:10px">Carrega o último estado salvo — instantâneo</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <button onclick="gcRecarregarIncremental(this)" style="flex:1;background:#1e5bb8;border:1.5px solid #164a99;color:#fff;padding:10px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Atualizar meses novos</button>
+          <button onclick="gcRecarregarRaw(this)" style="flex:1;background:#1a2547;border:1.5px solid #0f1830;color:#fff;padding:10px;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit">🗄️ Recarregar tudo</button>
         </div>
-        <button onclick="gcRecarregarSupabase(this)" style="width:100%;background:#0b8a3e;border:1.5px solid #086b30;color:#fff;padding:11px;border-radius:4px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">🔄 Recarregar do Supabase</button>
+        <div style="font-size:11px;color:#888;text-align:center;margin-bottom:4px">Incremental: só meses novos · Completo: baixa tudo</div>
+        <div id="gcDriveStatus" style="display:none;margin-top:8px;padding:10px 14px;border-radius:4px;font-size:12px;font-weight:600;text-align:center"></div>
       </div>
       <div>
         <div style="font-size:11px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #eee">☁️ Supabase — Salvar para acesso rápido</div>
         <div style="font-size:12px;color:#555;line-height:1.6;margin-bottom:10px">
           Salva os dados processados no Supabase. Na próxima abertura, todos os módulos carregam instantaneamente sem precisar do Drive.
         </div>
-        <div style="display:flex;gap:8px">
-          <div style="flex:1;display:flex;flex-direction:column;gap:4px">
-            <button onclick="globalSalvarOTB(this)" style="width:100%;background:#0b8a3e;color:#fff;border:none;padding:11px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">💾 Salvar OTB</button>
-            <span id="gcSavedOTB" style="font-size:10px;color:#888;text-align:center"></span>
-          </div>
-          <div style="flex:1;display:flex;flex-direction:column;gap:4px">
-            <button onclick="globalSalvarDRE(this)" style="width:100%;background:#1e3fa8;color:#fff;border:none;padding:11px;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">💾 Salvar DRE</button>
-            <span id="gcSavedDRE" style="font-size:10px;color:#888;text-align:center"></span>
-          </div>
-        </div>
-        <button onclick="globalSalvarTudo(this)" style="width:100%;margin-top:8px;background:#1a2547;color:#fff;border:none;padding:12px;border-radius:4px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:.3px">💾 Salvar Tudo (OTB + DRE)</button>
-        <span id="gcSavedTudo" style="font-size:11px;color:#555;text-align:center;display:block;margin-top:6px"></span>
-      </div>
-
-    </div>
     <div style="padding:12px 22px;background:#f8f9fc;border-top:1px solid #eee;display:flex;justify-content:flex-end">
       <button onclick="fecharConfiguracoes()" style="background:#eee;border:none;padding:8px 20px;border-radius:4px;font-size:12px;cursor:pointer;font-family:inherit">Fechar</button>
     </div>
@@ -412,6 +544,13 @@ if (home) home.style.display = 'flex';
 var SUPA_URL     = 'https://svqxupjtqgzziedgmxaq.supabase.co';
 var SUPA_KEY     = 'sb_publishable_cuAk4XUIPMKybEkTJDE9mQ_SOR3g4SV';
 var SUPA_TABLE   = 'otb_simulations';
+var OTB_TABLES = (function(){
+  var d={stk:'otb_stk',venda:'otb_venda',carteira:'otb_carteira',produto:'otb_produto',
+    venda_dre:'otb_venda_dre',frete_dre:'otb_frete_dre',canais:'otb_canais',
+    cluster:'otb_cluster',folha:'otb_folha'};
+  try{ Object.keys(d).forEach(function(k){ var v=localStorage.getItem('otb_tbl_'+k); if(v) d[k]=v; }); }catch(e){}
+  return d;
+})();
 var SUPA_ROW_KEY     = 'otb_current';
 var SUPA_ROW_KEY_DRE = 'dre_current';
 var STORAGE_KEY  = 'otb-simulation-v1';
@@ -645,16 +784,27 @@ function fetchPage(tab,out,p){
   .then(function(rows){out.push.apply(out,rows);if(rows.length<P)return out;return fetchPage(tab,out,p+1);});
 }
 function selAll(tab){return fetchPage(tab,[],0);}
+// Busca somente registros com ano_mes >= filtro (ex: '202603')
+function selFrom(tab, fromAnoMes){
+  if(!fromAnoMes) return selAll(tab);
+  // Tabelas com coluna ano_mes
+  var tabsComAnoMes = ['otb_stk','otb_venda','otb_carteira','otb_folha'];
+  var hasAnoMes = tabsComAnoMes.some(function(t){ return tab.indexOf(t.replace('otb_',''))>=0 || tab===t; });
+  if(!hasAnoMes) return selAll(tab); // produto, canais, cluster, frete_dre: sempre completo
+  var filter = '?ano_mes=gte.'+fromAnoMes+'&select=*';
+  return fetch(SUPA_URL+'/rest/v1/'+tab+filter,{
+    headers:{'apikey':SDATA,'Authorization':'Bearer '+SDATA,'Range':'0-9999','Range-Unit':'items'}
+  }).then(function(r){ return r.json(); }).then(function(rows){ return rows||[]; });
+}
 function expRaw(rows){return rows.map(function(r){
   var m=Object.assign({},r.raw||{});
-  // Garante que colunas do Supabase sobrescrevem raw se raw estiver vazio
-  if(r.ano_mes!=null && !m.ANO_MES) m.ANO_MES=r.ano_mes;
-  if(r.cod_produto!=null && !m.GRADE) m.GRADE=r.cod_produto;
-  if(r.estoque_qtd!=null && !m.ESTOQUE_QTD) m.ESTOQUE_QTD=r.estoque_qtd;
-  if(r.estoque_valor!=null && !m.ESTOQUE_VALOR) m.ESTOQUE_VALOR=r.estoque_valor;
-  if(r.quantidade!=null && !m.QUANTIDADE) m.QUANTIDADE=r.quantidade;
-  if(r.valor!=null && !m.VALOR) m.VALOR=r.valor;
-  if(r.qtd!=null && !m.QTD) m.QTD=r.qtd;
+  if(r.ano_mes!=null&&!m.ANO_MES) m.ANO_MES=r.ano_mes;
+  if(r.cod_produto!=null&&!m.GRADE) m.GRADE=r.cod_produto;
+  if(r.estoque_qtd!=null&&!m.ESTOQUE_QTD) m.ESTOQUE_QTD=r.estoque_qtd;
+  if(r.estoque_valor!=null&&!m.ESTOQUE_VALOR) m.ESTOQUE_VALOR=r.estoque_valor;
+  if(r.quantidade!=null&&!m.QUANTIDADE) m.QUANTIDADE=r.quantidade;
+  if(r.valor!=null&&!m.VALOR) m.VALOR=r.valor;
+  if(r.qtd!=null&&!m.QTD) m.QTD=r.qtd;
   if(r.canal) m.CANAL=r.canal;
   if(r.cluster) m.CLUSTER=r.cluster;
   if(r.rec_frete) m.REC_FRETE=r.rec_frete;
@@ -2799,19 +2949,6 @@ function gcUploadDrive(btn){
       +'🔄 Tentar Recarregar do Supabase</button>'
     );
   }, 600000);
-}
-function gcRecarregarSupabase(btn){
-  if(btn){ btn.disabled=true; btn.textContent='⏳ Carregando...'; }
-  fecharConfiguracoes();
-  // Mostra tela de loading
-  var ls = document.getElementById('loadingScreen');
-  var lm = document.getElementById('loadingMsg');
-  if(ls){ ls.style.display='flex'; ls.style.opacity='1'; ls.classList.remove('fade-out'); }
-  if(lm) lm.textContent='Carregando dados do Supabase...';
-  setTimeout(function(){
-    loadFilesFromDrive();
-    if(btn){ btn.disabled=false; btn.textContent='🔄 Recarregar do Supabase'; }
-  }, 200);
 }
 function globalCarregarDrive(){
 var btn = document.getElementById('gcBtnDrive');
