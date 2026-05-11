@@ -27,9 +27,8 @@ function showHome(){
 var appEl = document.querySelector('.app');
 if (appEl) appEl.style.display = 'none';
 var home = document.getElementById('homeScreen');
-if (home) home.style.display = 'flex';
-}
-function gcSaveTable(key,value){
+if (home){ home.style.display = 'flex'; home.style.visibility=''; home.style.zIndex=''; }
+}(key,value){
   var v=(value||'').trim(); if(!v) return;
   if(typeof OTB_TABLES!=='undefined') OTB_TABLES[key]=v;
   try{ localStorage.setItem('otb_tbl_'+key,v); }catch(e){}
@@ -584,7 +583,7 @@ function showHome(){
 var appEl = document.querySelector('.app');
 if (appEl) appEl.style.display = 'none';
 var home = document.getElementById('homeScreen');
-if (home) home.style.display = 'flex';
+if (home){ home.style.display = 'flex'; home.style.visibility=''; home.style.zIndex=''; }
 }
 var SUPA_URL     = 'https://svqxupjtqgzziedgmxaq.supabase.co';
 var SUPA_KEY     = 'sb_publishable_cuAk4XUIPMKybEkTJDE9mQ_SOR3g4SV';
@@ -750,8 +749,8 @@ window._otbCacheLoaded = true; // flag: cache com matrizes carregado
   // Usuário logado = loginScreen oculto E app ainda não aberto
   if(_login && _login.style.display==='none' && _app && _app.style.display!=='flex'){
     console.log('[OTB-DEBUG] Abrindo OTB automaticamente');
-    if(_home) _home.style.display='none';
-    _app.style.display='flex';
+    if(_home){ _home.style.display='none'; _home.style.visibility='hidden'; _home.style.zIndex='-1'; }
+    _app.style.display='flex'; _app.style.zIndex='1';
     // Aguarda o browser pintar o .app antes de renderizar a tabela
     requestAnimationFrame(function(){
       requestAnimationFrame(function(){
