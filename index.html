@@ -119,12 +119,28 @@ async function gcTabela(key,modo,btn){
       var existing=stateKey?(state[stateKey]||[]):[];
       var lastAm=0;
       existing.forEach(function(r){ var am=parseInt(String(r.ANO_MES||r.ano_mes||0)); if(am>lastAm) lastAm=am; });
+      // Se não há dados em memória, tenta buscar do cache salvo primeiro
+      if(lastAm===0 && stateKey){
+        try{
+          var cached=await supaGet();
+          if(cached&&cached.value){
+            var cp=JSON.parse(cached.value);
+            if(cp&&cp.months&&cp.months.length>0){
+              var lastYm=cp.months[cp.months.length-1];
+              lastAm=parseInt(lastYm.replace('-',''));
+              console.log('[OTB] gcTabela: lastAm do cache =',lastAm);
+            }
+          }
+        }catch(e){}
+      }
       rows=await gcFetchAll(tabName,lastAm>0?'&ano_mes=gte.'+lastAm:'');
       var nr=expRaw(rows);
+      console.log('[OTB] gcTabela '+key+': baixou '+rows.length+' linhas, lastAm='+lastAm);
       if(stateKey){
         if(lastAm>0) state[stateKey]=(state[stateKey]||[]).filter(function(r){ return parseInt(String(r.ANO_MES||r.ano_mes||0))<lastAm; }).concat(nr);
         else state[stateKey]=nr;
       }
+      console.log('[OTB] state.'+stateKey+' agora tem '+(state[stateKey]||[]).length+' linhas');
       if(key==='folha'&&typeof FOLHA_RAW!=='undefined'){ FOLHA_RAW=nr; FOLHA_LOADED=nr.length>0; }
     } else if(modo==='atualizar'&&!hasAnoMes){
       rows=await gcFetchAll(tabName,'');
@@ -151,6 +167,12 @@ async function gcTabela(key,modo,btn){
     }
     count=rows?rows.length:0;
     if(statusEl) statusEl.textContent=count.toLocaleString('pt-BR');
+    // Garante que state.prod existe antes de processar
+    if(!state.prod||state.prod.length===0){
+      console.warn('[OTB] state.prod vazio — carregue o cache primeiro para processar corretamente');
+      toast('⚠️ Tabela atualizada mas sem produtos em memória. Clique em ⚡ Carregar Cache primeiro.',true);
+      if(btn){ btn.disabled=false; btn.textContent=origText; } return;
+    }
     buildGradeMap();processAll();buildAvacyMatrix();renderTabs();renderTable();
     toast('[OK] '+tabName+' '+(modo==='atualizar'?'atualizado':'recarregado')+' ('+count.toLocaleString('pt-BR')+')');
   }catch(err){
