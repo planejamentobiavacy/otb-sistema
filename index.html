@@ -133,7 +133,13 @@ async function gcTabela(key,modo,btn){
           }
         }catch(e){}
       }
-      rows=await gcFetchAll(tabName,lastAm>0?'&ano_mes=gte.'+lastAm:'');
+      // Use next month as filter to avoid re-downloading last month
+var nextAm = lastAm > 0 ? (function(){
+  var y=Math.floor(lastAm/100), m=lastAm%100;
+  if(m===12){ y++; m=1; } else { m++; }
+  return y*100 + m;
+})() : 0;
+rows=await gcFetchAll(tabName,nextAm>0?'&ano_mes=gte.'+nextAm:'');
       var nr=expRaw(rows);
       console.log('[OTB] gcTabela '+key+': baixou '+rows.length+' linhas, lastAm='+lastAm);
       if(stateKey){
