@@ -1036,7 +1036,6 @@ var findCol = function(sample,candidates){
 function buildGradeMap(){
   if(!state.prod||!state.prod.length) return;
   var sample=state.prod[0], ov=state.mapping.prod||{};
-  // otb_produto usa: cod_produto, fornecedor, categoria
   var colGrade=ov.grade     ||findCol(sample,['cod_produto','GRADE','GRADE_ID','COD_GRADE','CODIGO_GRADE','SKU']);
   var colForn =ov.fornecedor||findCol(sample,['fornecedor','FORNECEDOR','SUPPLIER','FABRICANTE']);
   var colMarca=ov.marca     ||findCol(sample,['marca','MARCA','BRAND']);
@@ -1045,13 +1044,19 @@ function buildGradeMap(){
   state.gradeMap={};
   state.prod.forEach(function(r){
     var g=r[colGrade]; if(g===null||g===undefined||g==='') return;
-    var key=String(g).trim();
-    state.gradeMap[key]={
+    var raw=String(g).trim();
+    // Normaliza: remove zeros à esquerda para EANs numéricos
+    // Assim '07890541753342' e '7890541753342' mapeiam para a mesma chave
+    var key = /^\d+$/.test(raw) ? String(parseInt(raw,10)) : raw;
+    var info={
       fornecedor:colForn?String(r[colForn]||'').trim().toUpperCase():'',
       marca:colMarca?String(r[colMarca]||'').trim().toUpperCase():'',
       categoria:colCateg?String(r[colCateg]||'').trim():'',
       segmento:colSeg?String(r[colSeg]||'').trim():'',
     };
+    state.gradeMap[key]=info;
+    // Também indexa com o valor original para cobrir casos sem zero
+    if(key!==raw) state.gradeMap[raw]=info;
   });
 }
 
@@ -1077,10 +1082,12 @@ function aggregate(rows,useCols,sourceName){
   var out={}; state.suppliers.forEach(function(sup){out[sup]={};});
   rows.forEach(function(r){
     var g=colGrade?String(r[colGrade]!=null?r[colGrade]:'').trim():'';
+    // Normaliza zeros à esquerda para EANs numéricos
+    var gKey = g && /^\d+$/.test(g) ? String(parseInt(g,10)) : g;
     var rawDate=colDate?r[colDate]:null; var ym=monthFromDate(rawDate);
-    if(!ym){diag.rowsWithNoDate++;return;} if(!g){diag.rowsWithNoGrade++;return;}
+    if(!ym){diag.rowsWithNoDate++;return;} if(!gKey){diag.rowsWithNoGrade++;return;}
     var q=parseNum(colQty?r[colQty]:0), v=parseNum(colVal?r[colVal]:0);
-    var info=state.gradeMap[g];
+    var info=state.gradeMap[gKey]||state.gradeMap[g];
     if(!info&&diag.missingGradeSamples.length<5) diag.missingGradeSamples.push(g);
     if(!info) diag.rowsWithNoMatchInProd++;
     var sup=supplierFromFornecedor(info?info.fornecedor:'');
