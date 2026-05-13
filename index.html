@@ -980,12 +980,6 @@ function importOtbPayload(p){
   if(p.activeSupplier) state.activeSupplier = p.activeSupplier;
   if(p.collapsedYears) state.collapsedYears = p.collapsedYears;
   if(p.gradeMap) state.gradeMap = p.gradeMap;
-  // Dados brutos (se salvos)
-  if(p.rawStk  && p.rawStk.length)  { state.stk   = p.rawStk;  }
-  if(p.rawVenda && p.rawVenda.length){ state.venda = p.rawVenda; }
-  if(p.rawCart && p.rawCart.length)  { state.cart  = p.rawCart; }
-  if(p.rawProd && p.rawProd.length)  { state.prod  = p.rawProd; }
-  updateOtbStatus();
   document.getElementById('btnSaveOtb').disabled = false;
   if(p.exportedAt){
     document.getElementById('otbLastSaved').textContent = new Date(p.exportedAt).toLocaleString('pt-BR');
@@ -1112,7 +1106,7 @@ function buildOtbPayload(){
     matrices[sup] = compact;
   });
   return {
-    version: '9',
+    version: '10',
     exportedAt: new Date().toISOString(),
     activeSupplier: state.activeSupplier,
     collapsedYears: state.collapsedYears || {},
@@ -1121,10 +1115,7 @@ function buildOtbPayload(){
     edits: state.edits,
     matrices: matrices,
     gradeMap: state.gradeMap,
-    rawStk:   state.stk   || [],
-    rawVenda: state.venda || [],
-    rawCart:  state.cart  || [],
-    rawProd:  state.prod  || [],
+    // Não salva dados brutos (muito grandes) — recarregar via Configurações quando necessário
   };
 }
 
@@ -1364,8 +1355,43 @@ function recomputeFuture(sup){
 function buildAvacyMatrix(vendaAgg){
   var months=state.months,childSups=state.suppliers.filter(function(s){return s!=='AVACY';});
   var sumKeys=['stkQty','stkVal','vendaQty','vendaVal','cartFileQty','cartFileVal','cartQty','cartVal','fatQty','fatVal','estQty','estVal','otbQty','otbVal','otbCartRealQty','otbCartRealVal'];
-  // Vendas diretas AVACY (linhas sem grade na dw_otb_venda)
-  var avacyVendas = (vendaAgg && vendaAgg['AVACY']) || {};
+  var avacyVendas=(vendaAgg&&vendaAgg['AVACY'])||{};
+
+  // ── Distribui vendas AVACY (sem grade) proporcionalmente ao estoque de cada supplier ──
+  // Para cada mês realizado, divide fatQty/fatVal pelo share de estoque de cada filho
+  months.forEach(function(ym){
+    if(ym >= state.currentMonth) return; // só meses realizados
+    var avVenda=avacyVendas[ym]; if(!avVenda||(!avVenda.qty&&!avVenda.val)) return;
+    // Calcula total de estoque dos filhos nesse mês
+    var totalStk=0;
+    childSups.forEach(function(sup){
+      var c=state.matrices[sup]&&state.matrices[sup][ym]; if(!c) return;
+      totalStk+=c.stkQty||0;
+    });
+    if(totalStk<=0) return;
+    // Distribui proporcionalmente
+    childSups.forEach(function(sup){
+      var c=state.matrices[sup]&&state.matrices[sup][ym]; if(!c) return;
+      var share=(c.stkQty||0)/totalStk;
+      c.fatQty  = (c.fatQty||0)  + Math.round(avVenda.qty*share);
+      c.fatVal  = (c.fatVal||0)  + Math.round(avVenda.val*share);
+      c.vendaQty= (c.vendaQty||0)+ Math.round(avVenda.qty*share);
+      c.vendaVal= (c.vendaVal||0)+ Math.round(avVenda.val*share);
+    });
+  });
+
+  // ── Recalcula varLY para filhos após distribuição ──
+  childSups.forEach(function(sup){
+    var m=state.matrices[sup]; if(!m) return;
+    months.forEach(function(ym){
+      var cell=m[ym]; if(!cell) return;
+      var lyYm=(parseInt(ym.split('-')[0])-1)+'-'+ym.split('-')[1],ly=m[lyYm];
+      cell.varLyQty=(ly&&ly.fatQty>0)?(cell.fatQty/ly.fatQty-1)*100:null;
+      cell.varLyVal=(ly&&ly.fatVal>0)?(cell.fatVal/ly.fatVal-1)*100:null;
+    });
+  });
+
+  // ── Constrói AVACY como soma dos filhos (já com vendas distribuídas) ──
   var avacy={};
   months.forEach(function(ym){
     var cell={}; sumKeys.forEach(function(k){cell[k]=0;});
@@ -1373,17 +1399,6 @@ function buildAvacyMatrix(vendaAgg){
       var mA=state.matrices[sup]; if(!mA||!mA[ym]) return;
       var src=mA[ym]; sumKeys.forEach(function(k){var v=src[k];if(typeof v==='number'&&!isNaN(v))cell[k]+=v;});
     });
-    // Adiciona vendas diretas AVACY (sem grade) que não estão em nenhum supplier filho
-    var avVenda = avacyVendas[ym];
-    if(avVenda){
-      cell.vendaQty += avVenda.qty || 0;
-      cell.vendaVal += avVenda.val || 0;
-      // Para meses passados, fatQty também inclui essas vendas
-      if(ym < state.currentMonth){
-        cell.fatQty += avVenda.qty || 0;
-        cell.fatVal += avVenda.val || 0;
-      }
-    }
     var any=childSups.map(function(s){return state.matrices[s]&&state.matrices[s][ym];}).find(function(x){return x;});
     cell.isFuture=any?any.isFuture:(ym>=state.currentMonth);
     cell.precoVenda=cell.vendaQty>0?cell.vendaVal/cell.vendaQty:0;
