@@ -1043,6 +1043,8 @@ async function handleSaveAll(btn){
   }
   btn.disabled = false; btn.textContent = orig;
 }
+
+function buildOtbPayload(){
   var matrices = {};
   state.suppliers.forEach(function(sup){
     if(!state.matrices[sup]) return;
