@@ -428,8 +428,9 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       <div class="cfg-section">
         <h3>☁️ Tabelas Supabase — OTB</h3>
         <div style="font-size:11px;color:#888;margin-bottom:8px"><b style="color:var(--blue)">↑ Atualizar</b> — só dados novos (rápido) &nbsp;·&nbsp; <b style="color:#555">↺ Recarregar</b> — tabela completa</div>
-        <div style="margin-bottom:10px">
-          <button class="btn blue" style="width:100%;font-size:12px;padding:8px" onclick="handleReloadAll(this)">↺ Recarregar Tudo — OTB + DRE + Folha</button>
+        <div style="margin-bottom:8px;display:flex;gap:8px">
+          <button class="btn save" style="flex:2;font-size:12px;padding:8px" onclick="handleAtualizarTudo(this)">↑ Atualizar Tudo — só dados novos</button>
+          <button class="btn gray" style="flex:1;font-size:12px;padding:8px" onclick="handleReloadAll(this)">↺ Recarregar Tudo</button>
         </div>
         <div id="cfgOtbRows"></div>
       </div>
@@ -1013,6 +1014,37 @@ async function handleReloadAll(btn){
   btn.disabled = false; btn.textContent = orig;
 }
 
+async function handleAtualizarTudo(btn){
+  var orig = btn.textContent; btn.disabled = true;
+  var steps = [
+    {label:'Atualizando Estoque...', fn: async function(){
+      state.stk = await fetchNew(TBLS.stk, state.stk||[], 'ano_mes', 'stk');
+      var s=document.getElementById('cfg_status_stk'); if(s) s.textContent=state.stk.length+' linhas';
+    }},
+    {label:'Atualizando Vendas...', fn: async function(){
+      state.venda = await fetchNew(TBLS.venda, state.venda||[], 'ano_mes', 'venda');
+      var s=document.getElementById('cfg_status_venda'); if(s) s.textContent=state.venda.length+' linhas';
+    }},
+    {label:'Atualizando Carteira...', fn: async function(){
+      state.cart = await fetchNew(TBLS.carteira, state.cart||[], 'ano_mes', 'carteira');
+      var s=document.getElementById('cfg_status_carteira'); if(s) s.textContent=state.cart.length+' linhas';
+    }},
+  ];
+  var erros = [];
+  for(var i=0; i<steps.length; i++){
+    btn.textContent = '⏳ ' + steps[i].label;
+    try{ await steps[i].fn(); } catch(e){ erros.push(steps[i].label+': '+e.message); }
+  }
+  btn.textContent = '⏳ Processando...';
+  try{ processAll(); updateOtbStatus(); renderTabs(); renderTable(); } catch(e){ erros.push('processAll: '+e.message); }
+  if(erros.length > 0){
+    toast('⚠️ '+erros.join(' | '), 'err', 8000);
+  } else {
+    toast('✅ Dados atualizados! Clique em 💾 Salvar Tudo para persistir.');
+  }
+  btn.disabled = false; btn.textContent = orig;
+}
+
 async function handleSaveAll(btn){
   var orig = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Salvando...';
   var erros = [];
@@ -1147,12 +1179,21 @@ function aggregate(rows,useCols,sourceName){
     // Normaliza zeros à esquerda para EANs numéricos
     var gKey = g && /^\d+$/.test(g) ? String(parseInt(g,10)) : g;
     var rawDate=colDate?r[colDate]:null; var ym=monthFromDate(rawDate);
-    if(!ym){diag.rowsWithNoDate++;return;} if(!gKey){diag.rowsWithNoGrade++;return;}
+    if(!ym){diag.rowsWithNoDate++;return;}
     var q=parseNum(colQty?r[colQty]:0), v=parseNum(colVal?r[colVal]:0);
-    var info=state.gradeMap[gKey]||state.gradeMap[g];
-    if(!info&&diag.missingGradeSamples.length<5) diag.missingGradeSamples.push(g);
-    if(!info) diag.rowsWithNoMatchInProd++;
-    var sup=supplierFromFornecedor(info?info.fornecedor:'');
+    var sup;
+    if(!gKey){
+      // Sem grade: linha agregada sem identificação de fornecedor
+      // Vai para AVACY para ser incluída no consolidado
+      sup = 'AVACY';
+      diag.rowsWithNoGrade++;
+    } else {
+      var info=state.gradeMap[gKey]||state.gradeMap[g];
+      if(!info&&diag.missingGradeSamples.length<5) diag.missingGradeSamples.push(g);
+      if(!info) diag.rowsWithNoMatchInProd++;
+      sup=supplierFromFornecedor(info?info.fornecedor:'');
+    }
+    if(!out[sup]) out[sup]={};
     if(!out[sup][ym]) out[sup][ym]={qty:0,val:0};
     out[sup][ym].qty+=q; out[sup][ym].val+=v;
     diag.rowsProcessed++; diag.totalQty+=q; diag.totalVal+=v;
@@ -1242,7 +1283,7 @@ function processAll(){
     state.matrices[sup]=m;
   }
   state.suppliers.filter(function(s){return s!=='AVACY';}).forEach(function(sup){recomputeFuture(sup);});
-  buildAvacyMatrix();
+  buildAvacyMatrix(vendaAgg);
   renderTabs(); renderTable();
 }
 
@@ -1281,9 +1322,11 @@ function recomputeFuture(sup){
   });
 }
 
-function buildAvacyMatrix(){
+function buildAvacyMatrix(vendaAgg){
   var months=state.months,childSups=state.suppliers.filter(function(s){return s!=='AVACY';});
   var sumKeys=['stkQty','stkVal','vendaQty','vendaVal','cartFileQty','cartFileVal','cartQty','cartVal','fatQty','fatVal','estQty','estVal','otbQty','otbVal','otbCartRealQty','otbCartRealVal'];
+  // Vendas diretas AVACY (linhas sem grade na dw_otb_venda)
+  var avacyVendas = (vendaAgg && vendaAgg['AVACY']) || {};
   var avacy={};
   months.forEach(function(ym){
     var cell={}; sumKeys.forEach(function(k){cell[k]=0;});
@@ -1291,6 +1334,17 @@ function buildAvacyMatrix(){
       var mA=state.matrices[sup]; if(!mA||!mA[ym]) return;
       var src=mA[ym]; sumKeys.forEach(function(k){var v=src[k];if(typeof v==='number'&&!isNaN(v))cell[k]+=v;});
     });
+    // Adiciona vendas diretas AVACY (sem grade) que não estão em nenhum supplier filho
+    var avVenda = avacyVendas[ym];
+    if(avVenda){
+      cell.vendaQty += avVenda.qty || 0;
+      cell.vendaVal += avVenda.val || 0;
+      // Para meses passados, fatQty também inclui essas vendas
+      if(ym < state.currentMonth){
+        cell.fatQty += avVenda.qty || 0;
+        cell.fatVal += avVenda.val || 0;
+      }
+    }
     var any=childSups.map(function(s){return state.matrices[s]&&state.matrices[s][ym];}).find(function(x){return x;});
     cell.isFuture=any?any.isFuture:(ym>=state.currentMonth);
     cell.precoVenda=cell.vendaQty>0?cell.vendaVal/cell.vendaQty:0;
