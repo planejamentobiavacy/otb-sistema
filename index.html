@@ -1012,6 +1012,8 @@ async function handleReloadAll(btn){
   }
   btn.disabled = false; btn.textContent = orig;
 }
+
+async function handleSaveAll(btn){
   var orig = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Salvando...';
   var erros = [];
   try{
