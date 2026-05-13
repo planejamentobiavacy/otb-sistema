@@ -525,8 +525,15 @@ async function supaFetch(path, opts){
     'Accept': 'application/json'
   }, opts && opts.headers || {});
   var r = await fetch(SUPA_URL + path, Object.assign({}, opts, {headers: headers}));
-  if(!r.ok){ var t = await r.text(); throw new Error(t); }
-  return r.json();
+  if(!r.ok){
+    var t = await r.text();
+    throw new Error(t);
+  }
+  // 204 No Content — sem body
+  if(r.status === 204) return null;
+  var ct = r.headers.get('content-type')||'';
+  if(ct.includes('json')) return r.json();
+  return null;
 }
 
 // Buscar todas as linhas paginadas — tableKey opcional para select otimizado
@@ -570,13 +577,23 @@ async function fetchNew(table, rows, dateCol, tableKey){
 async function supaSave(saveTable, rowKey, value){
   var body = JSON.stringify({key: rowKey, value: JSON.stringify(value)});
   try{
-    await supaFetch('/rest/v1/' + saveTable + '?key=eq.' + rowKey, {
+    var r = await supaFetch('/rest/v1/' + saveTable + '?key=eq.' + rowKey, {
       method:'PATCH', body: body, headers:{'Prefer':'return=minimal','Content-Type':'application/json'}
     });
+    console.log('[supaSave] PATCH ok:', rowKey);
+    return r;
   } catch(e){
-    await supaFetch('/rest/v1/' + saveTable, {
-      method:'POST', body: body, headers:{'Prefer':'return=minimal','Content-Type':'application/json'}
-    });
+    console.warn('[supaSave] PATCH falhou, tentando POST:', e.message);
+    try{
+      var r2 = await supaFetch('/rest/v1/' + saveTable, {
+        method:'POST', body: body, headers:{'Prefer':'return=minimal','Content-Type':'application/json'}
+      });
+      console.log('[supaSave] POST ok:', rowKey);
+      return r2;
+    } catch(e2){
+      console.error('[supaSave] POST também falhou:', e2.message);
+      throw e2;
+    }
   }
 }
 async function supaLoad(saveTable, rowKey){
