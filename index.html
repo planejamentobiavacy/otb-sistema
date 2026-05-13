@@ -1242,7 +1242,29 @@ function processAll(){
   var cartAgg=aggregate(state.cart,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['valor','VALOR','VL_CARTEIRA']},'cart');
   var minYm='2024-01',maxYm='2026-12',months=[],ym=minYm;
   while(ym<=maxYm){months.push(ym);ym=ymNext(ym);}
-  state.months=months; state.currentMonth=currentYM(); state.matrices={};
+  state.months=months;
+  // Detecta o último mês com dados reais de estoque
+  // Usa o mês atual do calendário, mas se não houver dados de estoque para ele,
+  // recua para o último mês que tem dados
+  var today = currentYM();
+  var stkMonths = new Set();
+  if(state.stk && state.stk.length){
+    state.stk.forEach(function(r){
+      var ym = monthFromDate(r.ano_mes||r.ANO_MES);
+      if(ym) stkMonths.add(ym);
+    });
+  }
+  // Se hoje tem dados de estoque, usa hoje; senão usa o último mês com dados
+  if(stkMonths.has(today)){
+    state.currentMonth = today;
+  } else {
+    var stkSorted = Array.from(stkMonths).sort();
+    var lastStkMonth = stkSorted[stkSorted.length-1];
+    // currentMonth = próximo mês após o último com dados reais
+    state.currentMonth = lastStkMonth ? ymNext(lastStkMonth) : today;
+  }
+  console.log('[OTB] currentMonth detectado:', state.currentMonth, '| último stk:', Array.from(stkMonths).sort().slice(-2));
+  state.matrices={};
   for(var _si=0;_si<state.suppliers.length;_si++){
     var sup=state.suppliers[_si]; if(sup==='AVACY') continue;
     var m={};
