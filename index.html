@@ -1116,6 +1116,8 @@ function processAll(){
   }
   state.diagnostics=[];
   var stkAgg=aggregate(state.stk,{date:['ano_mes','ANO_MES'],qty:['estoque_qtd','ESTOQUE_QTD','QUANTIDADE'],val:['estoque_valor','ESTOQUE_VALOR','VALOR']},'stk');
+  // Diagnóstico: mostra o que o stkAgg tem para março
+  console.log('[OTB] stkAgg 2026-03:', JSON.stringify(Object.fromEntries(state.suppliers.map(function(s){return [s, stkAgg[s]&&stkAgg[s]['2026-03']||null];}))));
   var vendaAgg=aggregate(state.venda,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['faturamento','FATURAMENTO','VALOR']},'venda');
   var cartAgg=aggregate(state.cart,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['valor','VALOR','VL_CARTEIRA']},'cart');
   var minYm='2024-01',maxYm='2026-12',months=[],ym=minYm;
