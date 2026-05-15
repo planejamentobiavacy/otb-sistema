@@ -489,9 +489,11 @@ var COLS = {
   // otb_produto: cod_produto, fornecedor, categoria
   produto: ['cod_produto','fornecedor','categoria'],
 
-  // otb_venda_dre: colunas diretas + raw (contém QTD, ICMS, CUSTO, FATURAMENTO etc.)
-  // Usa select=* pois a tabela tem poucas colunas e raw contém os dados financeiros
-  venda_dre: null, // null = select=*
+  // dw_otb_venda_dre: colunas em MAIÚSCULO, sem campo raw
+  venda_dre: ['ANO','MES','TRIMESTRE','REGIAO','ESTADO','FORNECEDOR','CANAL','CLUSTER',
+              'NF','SERIE','NF_SERIE','QTD','FATURAMENTO','FATURAMENTO_VENDA','DEVOLUCAO_VENDA',
+              'CUSTO','ICMS','COFINS','PIS','FECPST','REC_FRETE','CUSTO_FRETE',
+              'QTD_GRADE_HAVA','IMPOSTO_SEM_DEV'],
 
   // otb_folha: todas as colunas úteis já são diretas
   folha: ['ano_mes','area','cargo','pessoa','valor'],
@@ -1804,9 +1806,9 @@ async function initDre(){
     if(!ok){ document.getElementById('dreHeaderMeta').textContent='Sem dados DRE'; return; }
   }
   document.getElementById('dreEmpty').style.display='none';
-  var anos=Array.from(new Set(DRE_RAW.map(function(r){return r.ano;}))).sort();
-  var meses=Array.from(new Set(DRE_RAW.map(function(r){return String(r.mes).padStart(2,'0');}))).sort();
-  var canais=Array.from(new Set(DRE_RAW.map(function(r){return r.canal||'';}))).filter(Boolean).sort();
+  var anos=Array.from(new Set(DRE_RAW.map(function(r){return r.ANO||r.ano;}))).filter(Boolean).sort();
+  var meses=Array.from(new Set(DRE_RAW.map(function(r){return String(r.MES||r.mes||'').padStart(2,'0');}))).filter(function(m){return m!=='00';}).sort();
+  var canais=Array.from(new Set(DRE_RAW.map(function(r){return r.CANAL||r.canal||'';}))).filter(Boolean).sort();
   document.getElementById('dreHeaderMeta').innerHTML='<strong>'+DRE_RAW.length.toLocaleString('pt-BR')+' registros</strong> · DRE carregado';
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
   var tabsDefs=[{id:'mensal',label:'📅 Todos os Meses'},{id:'canal',label:'📡 Canal'},{id:'cluster',label:'🗂 Cluster'},{id:'regiao',label:'📍 Região'},{id:'fornecedor',label:'🏭 Fornecedor'}];
@@ -1818,9 +1820,9 @@ async function initDre(){
   var selAno=function(id){var opts=['TODOS'].concat(anos);return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Ano</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:90px">'+opts.map(function(a){return'<option value="'+a+'"'+(a===anos[anos.length-1]?' selected':'')+'>'+a+'</option>';}).join('')+'</select></div>';};
   var selMes=function(id){var opts=['TODOS'].concat(meses);return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Mês</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:90px">'+opts.map(function(m){return'<option value="'+m+'">'+( m==='TODOS'?'Todos':ml(m))+'</option>';}).join('')+'</select></div>';};
   var selCanal=function(id){var opts=['TODOS'].concat(canais);return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Canal</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:110px">'+opts.map(function(v){return'<option value="'+v+'">'+v+'</option>';}).join('')+'</select></div>';};
-  var clusters=['TODOS'].concat(DRE_RAW.map(function(r){return r.cluster||'';}).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;}).sort());
-  var regioes=['TODOS'].concat(DRE_RAW.map(function(r){ var rw=r.raw?(typeof r.raw==='string'?JSON.parse(r.raw):r.raw):{};return r.regiao||rw.REGIAO||''; }).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;}).sort());
-  var fornecs=['TODOS'].concat(DRE_RAW.map(function(r){ var rw=r.raw?(typeof r.raw==='string'?JSON.parse(r.raw):r.raw):{};return r.fornecedor||rw.FORNECEDOR||''; }).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;}).sort());
+  var clusters=['TODOS'].concat(DRE_RAW.map(function(r){return r.CLUSTER||r.cluster||'';}).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;}).sort());
+  var regioes=['TODOS'].concat(DRE_RAW.map(function(r){return r.REGIAO||r.regiao||'';}).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;}).sort());
+  var fornecs=['TODOS'].concat(DRE_RAW.map(function(r){return r.FORNECEDOR||r.fornecedor||'';}).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;}).sort());
   var selQ=function(id){return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Quarter</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:80px">'+['TODOS','T1','T2','T3','T4'].map(function(t){return'<option value="'+t+'">'+t+'</option>';}).join('')+'</select></div>';};
   var selCluster=function(id){return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Cluster</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:110px">'+clusters.map(function(v){return'<option value="'+v+'">'+v+'</option>';}).join('')+'</select></div>';};
   var selRegiao=function(id){return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Região</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:100px">'+regioes.map(function(v){return'<option value="'+v+'">'+v+'</option>';}).join('')+'</select></div>';};
@@ -1853,13 +1855,13 @@ function dreGv(id){var el=document.getElementById(id);return el?el.value:'TODOS'
 function dreQuarterMeses(q){if(!q||q==='TODOS') return null;return{T1:['01','02','03'],T2:['04','05','06'],T3:['07','08','09'],T4:['10','11','12']}[q]||null;}
 function dreFilt(ano,mes,canal,q,cluster,regiao,forn){
   var r=DRE_RAW;
-  if(ano&&ano!=='TODOS') r=r.filter(function(x){return String(x.ano)===String(ano);});
-  var qMeses=dreQuarterMeses(q); if(qMeses) r=r.filter(function(x){return qMeses.includes(String(x.mes).padStart(2,'0'));});
-  if(mes&&mes!=='TODOS') r=r.filter(function(x){return String(x.mes).padStart(2,'0')===mes;});
-  if(canal&&canal!=='TODOS') r=r.filter(function(x){return x.canal===canal;});
-  if(cluster&&cluster!=='TODOS') r=r.filter(function(x){return x.cluster===cluster;});
-  if(regiao&&regiao!=='TODOS') r=r.filter(function(x){return ( x.regiao || (x.raw&&(typeof x.raw==='string'?JSON.parse(x.raw):x.raw).REGIAO) || '')===regiao;});
-  if(forn&&forn!=='TODOS') r=r.filter(function(x){return ( x.fornecedor || (x.raw&&(typeof x.raw==='string'?JSON.parse(x.raw):x.raw).FORNECEDOR) || '')===forn;});
+  if(ano&&ano!=='TODOS') r=r.filter(function(x){return String(x.ANO)===String(ano);});
+  var qMeses=dreQuarterMeses(q); if(qMeses) r=r.filter(function(x){return qMeses.includes(String(x.MES).padStart(2,'0'));});
+  if(mes&&mes!=='TODOS') r=r.filter(function(x){return String(x.MES).padStart(2,'0')===mes;});
+  if(canal&&canal!=='TODOS') r=r.filter(function(x){return x.CANAL===canal;});
+  if(cluster&&cluster!=='TODOS') r=r.filter(function(x){return x.CLUSTER===cluster;});
+  if(regiao&&regiao!=='TODOS') r=r.filter(function(x){return x.REGIAO===regiao;});
+  if(forn&&forn!=='TODOS') r=r.filter(function(x){return x.FORNECEDOR===forn;});
   return r;
 }
 function dreRender(){
@@ -1905,31 +1907,23 @@ var dreNum=function(v){if(!v&&v!==0) return 0;var s=String(v).trim();if(s.includ
 function dreAgg(rows){
   var fat=0,fat_v=0,dev=0,qtd=0,custo=0,icms=0,cofins=0,pis=0,fecpst=0,rf=0,cf=0,qtdGradeHava=0;
   rows.forEach(function(r){
-    // otb_venda_dre armazena os campos financeiros dentro de r.raw (jsonb)
-    // O Supabase retorna raw já como objeto JS — se vier como string, faz parse
-    var d = r;
-    if(r.raw){
-      var rw = (typeof r.raw === 'string') ? JSON.parse(r.raw) : r.raw;
-      // Mescla raw sobre r: colunas diretas têm prioridade se não forem null
-      d = Object.assign({}, rw, r);
-    }
-    fat    += dreNum(d.FATURAMENTO      || d.faturamento      || 0);
-    fat_v  += dreNum(d.FATURAMENTO_VENDA|| d.faturamento_venda|| d.FATURAMENTO || d.faturamento || 0);
-    dev    += dreNum(d.DEVOLUCAO_VENDA  || d.devolucao_venda  || 0);
-    qtd    += dreNum(d.QTD              || d.qtd              || 0);
-    custo  += dreNum(d.CUSTO            || d.custo            || 0);
-    icms   += dreNum(d.ICMS             || d.icms             || 0);
-    cofins += dreNum(d.COFINS           || d.cofins           || 0);
-    pis    += dreNum(d.PIS              || d.pis              || 0);
-    fecpst += dreNum(d.FECPST           || d.fecpst           || 0);
-    rf     += dreNum(d.REC_FRETE        || d.rec_frete        || 0);
-    cf     += dreNum(d.CUSTO_FRETE      || d.custo_frete      || 0);
-    qtdGradeHava += dreNum(d.QTD_GRADE_HAVA || d.qtd_grade_hava || d.QTD_GRADE || 0);
+    // dw_otb_venda_dre tem colunas diretas em MAIÚSCULO — sem raw
+    fat    += dreNum(r.FATURAMENTO       || 0);
+    fat_v  += dreNum(r.FATURAMENTO_VENDA || r.FATURAMENTO || 0);
+    dev    += dreNum(r.DEVOLUCAO_VENDA   || 0);
+    qtd    += dreNum(r.QTD               || 0);
+    custo  += dreNum(r.CUSTO             || 0);
+    icms   += dreNum(r.ICMS              || 0);
+    cofins += dreNum(r.COFINS            || 0);
+    pis    += dreNum(r.PIS               || 0);
+    fecpst += dreNum(r.FECPST            || 0);
+    rf     += dreNum(r.REC_FRETE         || 0);
+    cf     += dreNum(r.CUSTO_FRETE       || 0);
+    qtdGradeHava += dreNum(r.QTD_GRADE_HAVA || r.QTD_GRADE_HAVA || 0);
   });
   var _aSet={};
   rows.forEach(function(r){
-    var d = r.raw ? (typeof r.raw==='string' ? JSON.parse(r.raw) : r.raw) : r;
-    var ano=String(r.ano||d.ANO||''), mes=String(r.mes||d.MES||'').padStart(2,'0');
+    var ano=String(r.ANO||''), mes=String(r.MES||'').padStart(2,'0');
     if(ano&&mes) _aSet[ano+mes]=1;
   });
   var anomesList=Object.keys(_aSet).sort();
