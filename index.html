@@ -489,11 +489,8 @@ var COLS = {
   // otb_produto: cod_produto, fornecedor, categoria
   produto: ['cod_produto','fornecedor','categoria'],
 
-  // dw_otb_venda_dre: colunas em MAIÚSCULO, sem campo raw
-  venda_dre: ['ANO','MES','TRIMESTRE','REGIAO','ESTADO','FORNECEDOR','CANAL','CLUSTER',
-              'NF','SERIE','NF_SERIE','QTD','FATURAMENTO','FATURAMENTO_VENDA','DEVOLUCAO_VENDA',
-              'CUSTO','ICMS','COFINS','PIS','FECPST','REC_FRETE','CUSTO_FRETE',
-              'QTD_GRADE_HAVA','IMPOSTO_SEM_DEV'],
+  // dw_otb_venda_dre: usa select=* pois colunas são em maiúsculo e PostgREST é case-sensitive
+  venda_dre: null,
 
   // otb_folha: todas as colunas úteis já são diretas
   folha: ['ano_mes','area','cargo','pessoa','valor'],
