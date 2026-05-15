@@ -378,7 +378,10 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
         <small id="dreHeaderMeta">Carregando...</small>
       </div>
     </div>
-    <button class="btn save" id="btnSaveDre" onclick="handleSaveDre(this)">💾 Salvar DRE</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn" onclick="openConfig()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Config</button>
+      <button class="btn save" id="btnSaveDre" onclick="handleSaveDre(this)">💾 Salvar DRE</button>
+    </div>
   </header>
   <div class="dre-header-bar" id="dreTabsBar"></div>
   <div id="drePanels" class="dre-panels"></div>
