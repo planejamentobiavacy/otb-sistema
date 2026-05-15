@@ -1881,8 +1881,9 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   var ano=dreGv(anoId),mes=dreGv(mesId),canal=canalId?dreGv(canalId):null;
   var q=dreGv('dre-q-'+suffix),cluster=dreGv('dre-cluster-'+suffix),regiao=dreGv('dre-reg-'+suffix),forn=dreGv('dre-forn-'+suffix);
   var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn);
-  var dims=Array.from(new Set(rows.map(function(r){return r[dim.toLowerCase()]||r[dim]||'';}))).filter(Boolean).sort();
-  var cols=dims.map(function(d){return{label:d,d:dreCalcShare(rows.filter(function(r){return r[dim.toLowerCase()]||r[dim]===d;}),rows)};});
+  var dimKey=dim.toLowerCase();
+  var dims=Array.from(new Set(rows.map(function(r){return r[dimKey]||r[dim]||'';}))).filter(Boolean).sort();
+  var cols=dims.map(function(d){return{label:d,d:dreCalcShare(rows.filter(function(r){return (r[dimKey]||r[dim])===d;}),rows)};});
   var anos=Array.from(new Set(rows.map(function(r){return r.ano||r.ANO;})));
   var anosLY=anos.map(function(a){return String(+a-1);}),rowsLY=DRE_RAW.filter(function(r){return anosLY.includes(String(r.ano||r.ANO));});
   var mSet=new Set(rows.map(function(r){return String(r.mes||r.MES||'').padStart(2,'0');})),cSet=new Set(rows.map(function(r){return r.canal||r.CANAL||'';}));
