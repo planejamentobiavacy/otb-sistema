@@ -490,7 +490,8 @@ var COLS = {
   produto: ['cod_produto','fornecedor','categoria'],
 
   // otb_venda_dre: colunas diretas + raw (contém QTD, ICMS, CUSTO, FATURAMENTO etc.)
-  venda_dre: ['ano','mes','canal','cluster','rec_frete','custo_frete','nf_serie','raw'],
+  // Usa select=* pois a tabela tem poucas colunas e raw contém os dados financeiros
+  venda_dre: null, // null = select=*
 
   // otb_folha: todas as colunas úteis já são diretas
   folha: ['ano_mes','area','cargo','pessoa','valor'],
@@ -1225,11 +1226,32 @@ function processAll(){
     var gradeExemplo = String(stkSample[stkGradeCol]||'').trim();
     console.log('[OTB] grade stk no gradeMap?', !!state.gradeMap[gradeExemplo]);
   }
+
+  // ── Deduplica dw_otb_stk por grade+ano_mes (tabela tem linhas duplicadas) ──
+  var stkDedup = (function(){
+    var seen = {}, out = [];
+    (state.stk||[]).forEach(function(r){
+      var key = (r.grade||'') + '|' + (r.ano_mes||'');
+      if(!seen[key]){ seen[key] = true; out.push(r); }
+    });
+    console.log('[OTB] stk dedup:', (state.stk||[]).length, '→', out.length, 'linhas');
+    return out;
+  })();
+  // ── Deduplica dw_otb_venda por cod_grade+ano_mes ──
+  var vendaDedup = (function(){
+    var seen = {}, out = [];
+    (state.venda||[]).forEach(function(r){
+      var key = (r.cod_grade||'NULL') + '|' + (r.ano_mes||'');
+      if(!seen[key]){ seen[key] = true; out.push(r); }
+    });
+    console.log('[OTB] venda dedup:', (state.venda||[]).length, '→', out.length, 'linhas');
+    return out;
+  })();
   state.diagnostics=[];
-  var stkAgg=aggregate(state.stk,{date:['ano_mes','ANO_MES'],qty:['estoque_qtd','ESTOQUE_QTD','QUANTIDADE'],val:['estoque_valor','ESTOQUE_VALOR','VALOR']},'stk');
+  var stkAgg=aggregate(stkDedup,{date:['ano_mes','ANO_MES'],qty:['estoque_qtd','ESTOQUE_QTD','QUANTIDADE'],val:['estoque_valor','ESTOQUE_VALOR','VALOR']},'stk');
   // Diagnóstico: mostra o que o stkAgg tem para março
   console.log('[OTB] stkAgg 2026-03:', JSON.stringify(Object.fromEntries(state.suppliers.map(function(s){return [s, stkAgg[s]&&stkAgg[s]['2026-03']||null];}))));
-  var vendaAgg=aggregate(state.venda,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['faturamento','FATURAMENTO','VALOR']},'venda');
+  var vendaAgg=aggregate(vendaDedup,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['faturamento','FATURAMENTO','VALOR']},'venda');
   var cartAgg=aggregate(state.cart,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['valor','VALOR','VL_CARTEIRA']},'cart');
   var minYm='2024-01',maxYm='2026-12',months=[],ym=minYm;
   while(ym<=maxYm){months.push(ym);ym=ymNext(ym);}
