@@ -545,11 +545,17 @@ async function fetchAll(table, extraFilter, tableKey){
   var page = 0;
   while(true){
     var from = page * PAGE, to = from + PAGE - 1;
-    var rows = await supaFetch(base, {headers:{'Range': from+'-'+to, 'Range-Unit':'items'}});
-    if(!Array.isArray(rows)) break;
-    out = out.concat(rows);
-    if(rows.length < PAGE) break;
-    page++;
+    try{
+      var rows = await supaFetch(base, {headers:{'Range': from+'-'+to, 'Range-Unit':'items'}});
+      if(!Array.isArray(rows) || rows.length === 0) break;
+      out = out.concat(rows);
+      if(rows.length < PAGE) break;
+      page++;
+    } catch(e){
+      // 416 = range satisfiable mas sem mais dados — fim normal
+      if(e.message && (e.message.includes('416') || e.message.includes('Requested range'))) break;
+      throw e;
+    }
   }
   return out;
 }
@@ -1060,29 +1066,20 @@ async function handleSaveAll(btn){
   var orig = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Salvando...';
   var erros = [];
   try{
-    // OTB
     if(state.matrices && Object.keys(state.matrices).length > 0){
       await supaSave(TBLS.save_otb, 'otb_current', buildOtbPayload());
     }
   } catch(e){ erros.push('OTB: ' + e.message); }
   try{
-    // DRE
-    if(DRE_LOADED && DRE_RAW.length > 0){
-      await supaSave(TBLS.save_dre, 'dre_current', {raw:DRE_RAW, config:DRE_CONFIG, exportedAt:new Date().toISOString()});
-    }
-  } catch(e){ erros.push('DRE: ' + e.message); }
-  try{
-    // Folha
-    if(FOLHA_LOADED && FOLHA_RAW.length > 0){
-      await supaSave(TBLS.save_folha, 'folha_current', {raw:FOLHA_RAW, exportedAt:new Date().toISOString()});
-    }
-  } catch(e){ erros.push('Folha: ' + e.message); }
+    // DRE: só salva config (parâmetros), não os dados brutos
+    await supaSave(TBLS.save_dre, 'dre_current', {config:DRE_CONFIG, exportedAt:new Date().toISOString()});
+  } catch(e){ erros.push('DRE config: ' + e.message); }
   if(erros.length > 0){
     toast('⚠️ Erros ao salvar: ' + erros.join(' | '), 'err', 6000);
   } else {
     var ts = new Date().toLocaleString('pt-BR');
     document.getElementById('otbLastSaved').textContent = ts;
-    toast('✅ Tudo salvo com sucesso — ' + ts);
+    toast('✅ OTB salvo! DRE e Folha carregam direto do Supabase.');
   }
   btn.disabled = false; btn.textContent = orig;
 }
@@ -1772,14 +1769,9 @@ var DRE_CONFIG_DEFAULTS={fob:0.006,closer:0.008,developer:0.006,farmer:0.006,mar
 async function loadDreFromSupabase(){
   try{
     var saved = await supaLoad(TBLS.save_dre, 'dre_current');
-    if(saved && saved.raw && saved.raw.length){
-      DRE_RAW = saved.raw; DRE_LOADED = true;
-      if(saved.config) DRE_CONFIG = Object.assign(DRE_CONFIG, saved.config);
-      return true;
-    }
-    // Sem dados salvos: busca da tabela
-    DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre');
     if(saved && saved.config) DRE_CONFIG = Object.assign(DRE_CONFIG, saved.config);
+    // Sempre busca os dados da tabela (não salva raw no cache — muito grande)
+    DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre');
     DRE_LOADED = DRE_RAW.length > 0;
     return DRE_LOADED;
   } catch(e){ console.warn('Erro DRE:', e.message); return false; }
@@ -1788,8 +1780,9 @@ async function loadDreFromSupabase(){
 async function handleSaveDre(btn){
   var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
   try{
-    await supaSave(TBLS.save_dre,'dre_current',{raw:DRE_RAW,config:DRE_CONFIG,exportedAt:new Date().toISOString()});
-    toast('[OK] DRE salvo no Supabase');
+    // Salva apenas config (parâmetros de cálculo) — dados brutos ficam no Supabase
+    await supaSave(TBLS.save_dre,'dre_current',{config:DRE_CONFIG,exportedAt:new Date().toISOString()});
+    toast('[OK] Configurações DRE salvas');
   } catch(e){ toast('Erro ao salvar DRE: '+e.message,'err'); }
   btn.disabled=false; btn.textContent=orig;
 }
@@ -1803,9 +1796,9 @@ async function initDre(){
     if(!ok){ document.getElementById('dreHeaderMeta').textContent='Sem dados DRE'; return; }
   }
   document.getElementById('dreEmpty').style.display='none';
-  var anos=Array.from(new Set(DRE_RAW.map(function(r){return r.ANO||r.ano;}))).filter(Boolean).sort();
-  var meses=Array.from(new Set(DRE_RAW.map(function(r){return String(r.MES||r.mes||'').padStart(2,'0');}))).filter(function(m){return m!=='00';}).sort();
-  var canais=Array.from(new Set(DRE_RAW.map(function(r){return r.CANAL||r.canal||'';}))).filter(Boolean).sort();
+  var anos=Array.from(new Set(DRE_RAW.map(function(r){return r.ano||r.ANO;}))).filter(Boolean).sort();
+  var meses=Array.from(new Set(DRE_RAW.map(function(r){return String(r.mes||r.MES||'').padStart(2,'0');}))).filter(function(m){return m!=='00';}).sort();
+  var canais=Array.from(new Set(DRE_RAW.map(function(r){return r.canal||r.CANAL||'';}))).filter(Boolean).sort();
   document.getElementById('dreHeaderMeta').innerHTML='<strong>'+DRE_RAW.length.toLocaleString('pt-BR')+' registros</strong> · DRE carregado';
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
   var tabsDefs=[{id:'mensal',label:'📅 Todos os Meses'},{id:'canal',label:'📡 Canal'},{id:'cluster',label:'🗂 Cluster'},{id:'regiao',label:'📍 Região'},{id:'fornecedor',label:'🏭 Fornecedor'}];
@@ -1817,9 +1810,9 @@ async function initDre(){
   var selAno=function(id){var opts=['TODOS'].concat(anos);return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Ano</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:90px">'+opts.map(function(a){return'<option value="'+a+'"'+(a===anos[anos.length-1]?' selected':'')+'>'+a+'</option>';}).join('')+'</select></div>';};
   var selMes=function(id){var opts=['TODOS'].concat(meses);return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Mês</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:90px">'+opts.map(function(m){return'<option value="'+m+'">'+( m==='TODOS'?'Todos':ml(m))+'</option>';}).join('')+'</select></div>';};
   var selCanal=function(id){var opts=['TODOS'].concat(canais);return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Canal</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:110px">'+opts.map(function(v){return'<option value="'+v+'">'+v+'</option>';}).join('')+'</select></div>';};
-  var clusters=['TODOS'].concat(DRE_RAW.map(function(r){return r.CLUSTER||r.cluster||'';}).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;}).sort());
-  var regioes=['TODOS'].concat(DRE_RAW.map(function(r){return r.REGIAO||r.regiao||'';}).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;}).sort());
-  var fornecs=['TODOS'].concat(DRE_RAW.map(function(r){return r.FORNECEDOR||r.fornecedor||'';}).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;}).sort());
+  var clusters=['TODOS'].concat(DRE_RAW.map(function(r){return r.cluster||r.CLUSTER||'';}).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;}).sort());
+  var regioes=['TODOS'].concat(DRE_RAW.map(function(r){return r.regiao||r.REGIAO||'';}).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;}).sort());
+  var fornecs=['TODOS'].concat(DRE_RAW.map(function(r){return r.fornecedor||r.FORNECEDOR||'';}).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;}).sort());
   var selQ=function(id){return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Quarter</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:80px">'+['TODOS','T1','T2','T3','T4'].map(function(t){return'<option value="'+t+'">'+t+'</option>';}).join('')+'</select></div>';};
   var selCluster=function(id){return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Cluster</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:110px">'+clusters.map(function(v){return'<option value="'+v+'">'+v+'</option>';}).join('')+'</select></div>';};
   var selRegiao=function(id){return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Região</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:100px">'+regioes.map(function(v){return'<option value="'+v+'">'+v+'</option>';}).join('')+'</select></div>';};
@@ -1852,13 +1845,13 @@ function dreGv(id){var el=document.getElementById(id);return el?el.value:'TODOS'
 function dreQuarterMeses(q){if(!q||q==='TODOS') return null;return{T1:['01','02','03'],T2:['04','05','06'],T3:['07','08','09'],T4:['10','11','12']}[q]||null;}
 function dreFilt(ano,mes,canal,q,cluster,regiao,forn){
   var r=DRE_RAW;
-  if(ano&&ano!=='TODOS') r=r.filter(function(x){return String(x.ANO)===String(ano);});
-  var qMeses=dreQuarterMeses(q); if(qMeses) r=r.filter(function(x){return qMeses.includes(String(x.MES).padStart(2,'0'));});
-  if(mes&&mes!=='TODOS') r=r.filter(function(x){return String(x.MES).padStart(2,'0')===mes;});
-  if(canal&&canal!=='TODOS') r=r.filter(function(x){return x.CANAL===canal;});
-  if(cluster&&cluster!=='TODOS') r=r.filter(function(x){return x.CLUSTER===cluster;});
-  if(regiao&&regiao!=='TODOS') r=r.filter(function(x){return x.REGIAO===regiao;});
-  if(forn&&forn!=='TODOS') r=r.filter(function(x){return x.FORNECEDOR===forn;});
+  if(ano&&ano!=='TODOS') r=r.filter(function(x){return String(x.ano||x.ANO)===String(ano);});
+  var qMeses=dreQuarterMeses(q); if(qMeses) r=r.filter(function(x){return qMeses.includes(String(x.mes||x.MES||'').padStart(2,'0'));});
+  if(mes&&mes!=='TODOS') r=r.filter(function(x){return String(x.mes||x.MES||'').padStart(2,'0')===mes;});
+  if(canal&&canal!=='TODOS') r=r.filter(function(x){return (x.canal||x.CANAL)===canal;});
+  if(cluster&&cluster!=='TODOS') r=r.filter(function(x){return (x.cluster||x.CLUSTER)===cluster;});
+  if(regiao&&regiao!=='TODOS') r=r.filter(function(x){return (x.regiao||x.REGIAO)===regiao;});
+  if(forn&&forn!=='TODOS') r=r.filter(function(x){return (x.fornecedor||x.FORNECEDOR)===forn;});
   return r;
 }
 function dreRender(){
@@ -1873,10 +1866,10 @@ function dreRenderMensal(){
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
   var ano=dreGv('dre-ano-mensal'),q=dreGv('dre-q-mensal'),mes=dreGv('dre-mes-mensal'),canal=dreGv('dre-canal-mensal'),cluster=dreGv('dre-cluster-mensal'),regiao=dreGv('dre-reg-mensal'),forn=dreGv('dre-forn-mensal');
   var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn);
-  var meses=Array.from(new Set(rows.map(function(r){return String(r.MES||r.mes||'').padStart(2,'0');}))).filter(function(m){return m!=='00';}).sort();
-  var cols=meses.map(function(m){return{label:ml(m)+(ano!=='TODOS'?'/'+String(ano).slice(-2):''),d:dreCalc(dreAgg(rows.filter(function(r){return String(r.MES||r.mes||'').padStart(2,'0')===m;})),1,1)};});
+  var meses=Array.from(new Set(rows.map(function(r){return String(r.mes||r.MES||'').padStart(2,'0');}))).filter(function(m){return m!=='00';}).sort();
+  var cols=meses.map(function(m){return{label:ml(m)+(ano!=='TODOS'?'/'+String(ano).slice(-2):''),d:dreCalc(dreAgg(rows.filter(function(r){return String(r.mes||r.MES||'').padStart(2,'0')===m;})),1,1)};});
   var lastMes=meses[meses.length-1],anoLY=ano==='TODOS'?null:String(+ano-1);
-  var rowsLY=anoLY?DRE_RAW.filter(function(r){return String(r.ANO||r.ano)===anoLY&&String(r.MES||r.mes||'').padStart(2,'0')===lastMes;}):[];
+  var rowsLY=anoLY?DRE_RAW.filter(function(r){return String(r.ano||r.ANO)===anoLY&&String(r.mes||r.MES||'').padStart(2,'0')===lastMes;}):[];
   var dLY=rowsLY.length?dreCalc(dreAgg(rowsLY),1,1):null;
   document.getElementById('dreKpi-mensal').innerHTML=cols.length?dreKpis(cols.map(function(c){return c.d;}),dLY):'';
   document.getElementById('dreTable-mensal').innerHTML=cols.length?dreTabela(cols):'<div style="text-align:center;padding:60px;color:#7a8ab0;font-size:13px">Sem dados.</div>';
@@ -1885,12 +1878,12 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   var ano=dreGv(anoId),mes=dreGv(mesId),canal=canalId?dreGv(canalId):null;
   var q=dreGv('dre-q-'+suffix),cluster=dreGv('dre-cluster-'+suffix),regiao=dreGv('dre-reg-'+suffix),forn=dreGv('dre-forn-'+suffix);
   var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn);
-  var dims=Array.from(new Set(rows.map(function(r){return r[dim]||'';}))).filter(Boolean).sort();
-  var cols=dims.map(function(d){return{label:d,d:dreCalcShare(rows.filter(function(r){return r[dim]===d;}),rows)};});
-  var anos=Array.from(new Set(rows.map(function(r){return r.ANO||r.ano;})));
-  var anosLY=anos.map(function(a){return String(+a-1);}),rowsLY=DRE_RAW.filter(function(r){return anosLY.includes(String(r.ANO||r.ano));});
-  var mSet=new Set(rows.map(function(r){return String(r.MES||r.mes||'').padStart(2,'0');})),cSet=new Set(rows.map(function(r){return r.CANAL||r.canal||'';}));
-  var rowsLYf=rowsLY.filter(function(r){return mSet.has(String(r.MES||r.mes||'').padStart(2,'0'))&&cSet.has(r.CANAL||r.canal||'');});
+  var dims=Array.from(new Set(rows.map(function(r){return r[dim.toLowerCase()]||r[dim]||'';}))).filter(Boolean).sort();
+  var cols=dims.map(function(d){return{label:d,d:dreCalcShare(rows.filter(function(r){return r[dim.toLowerCase()]||r[dim]===d;}),rows)};});
+  var anos=Array.from(new Set(rows.map(function(r){return r.ano||r.ANO;})));
+  var anosLY=anos.map(function(a){return String(+a-1);}),rowsLY=DRE_RAW.filter(function(r){return anosLY.includes(String(r.ano||r.ANO));});
+  var mSet=new Set(rows.map(function(r){return String(r.mes||r.MES||'').padStart(2,'0');})),cSet=new Set(rows.map(function(r){return r.canal||r.CANAL||'';}));
+  var rowsLYf=rowsLY.filter(function(r){return mSet.has(String(r.mes||r.MES||'').padStart(2,'0'))&&cSet.has(r.canal||r.CANAL||'');});
   var dLY=rowsLYf.length?dreCalc(dreAgg(rowsLYf),1,1):null;
   document.getElementById('dreKpi-'+suffix).innerHTML=cols.length?dreKpis(cols.map(function(c){return c.d;}),dLY):'';
   document.getElementById('dreTable-'+suffix).innerHTML=cols.length?dreTabela(cols):'<div style="text-align:center;padding:60px;color:#7a8ab0;font-size:13px">Sem dados.</div>';
@@ -1904,23 +1897,22 @@ var dreNum=function(v){if(!v&&v!==0) return 0;var s=String(v).trim();if(s.includ
 function dreAgg(rows){
   var fat=0,fat_v=0,dev=0,qtd=0,custo=0,icms=0,cofins=0,pis=0,fecpst=0,rf=0,cf=0,qtdGradeHava=0;
   rows.forEach(function(r){
-    // dw_otb_venda_dre tem colunas diretas em MAIÚSCULO — sem raw
-    fat    += dreNum(r.FATURAMENTO       || 0);
-    fat_v  += dreNum(r.FATURAMENTO_VENDA || r.FATURAMENTO || 0);
-    dev    += dreNum(r.DEVOLUCAO_VENDA   || 0);
-    qtd    += dreNum(r.QTD               || 0);
-    custo  += dreNum(r.CUSTO             || 0);
-    icms   += dreNum(r.ICMS              || 0);
-    cofins += dreNum(r.COFINS            || 0);
-    pis    += dreNum(r.PIS               || 0);
-    fecpst += dreNum(r.FECPST            || 0);
-    rf     += dreNum(r.REC_FRETE         || 0);
-    cf     += dreNum(r.CUSTO_FRETE       || 0);
-    qtdGradeHava += dreNum(r.QTD_GRADE_HAVA || r.QTD_GRADE_HAVA || 0);
+    fat    += dreNum(r.faturamento       || r.FATURAMENTO       || 0);
+    fat_v  += dreNum(r.faturamento_venda || r.FATURAMENTO_VENDA || r.faturamento || r.FATURAMENTO || 0);
+    dev    += dreNum(r.devolucao_venda   || r.DEVOLUCAO_VENDA   || 0);
+    qtd    += dreNum(r.qtd               || r.QTD               || 0);
+    custo  += dreNum(r.custo             || r.CUSTO             || 0);
+    icms   += dreNum(r.icms              || r.ICMS              || 0);
+    cofins += dreNum(r.cofins            || r.COFINS            || 0);
+    pis    += dreNum(r.pis               || r.PIS               || 0);
+    fecpst += dreNum(r.fecpst            || r.FECPST            || 0);
+    rf     += dreNum(r.rec_frete         || r.REC_FRETE         || 0);
+    cf     += dreNum(r.custo_frete       || r.CUSTO_FRETE       || 0);
+    qtdGradeHava += dreNum(r.qtd_grade_hava || r.QTD_GRADE_HAVA || 0);
   });
   var _aSet={};
   rows.forEach(function(r){
-    var ano=String(r.ANO||''), mes=String(r.MES||'').padStart(2,'0');
+    var ano=String(r.ano||r.ANO||''), mes=String(r.mes||r.MES||'').padStart(2,'0');
     if(ano&&mes) _aSet[ano+mes]=1;
   });
   var anomesList=Object.keys(_aSet).sort();
@@ -2015,8 +2007,7 @@ function folhaTotal(r){
 
 async function loadFolhaFromSupabase(){
   try{
-    var saved=await supaLoad(TBLS.save_folha,'folha_current');
-    if(saved&&saved.raw&&saved.raw.length){FOLHA_RAW=saved.raw;FOLHA_LOADED=true;initFolha();return;}
+    // Sempre busca da tabela — dados brutos não são salvos no cache
     FOLHA_RAW=await fetchAll(TBLS.folha, null, 'folha');
     FOLHA_LOADED=FOLHA_RAW.length>0;
     if(FOLHA_LOADED) initFolha();
@@ -2025,12 +2016,8 @@ async function loadFolhaFromSupabase(){
 }
 
 async function handleSaveFolha(btn){
-  var orig=btn.textContent;btn.disabled=true;btn.textContent='⏳ Salvando...';
-  try{
-    await supaSave(TBLS.save_folha,'folha_current',{raw:FOLHA_RAW,exportedAt:new Date().toISOString()});
-    toast('[OK] Folha salva no Supabase');
-  }catch(e){toast('Erro ao salvar Folha: '+e.message,'err');}
-  btn.disabled=false;btn.textContent=orig;
+  // Folha não tem configurações para salvar — dados ficam no Supabase
+  toast('Folha carrega sempre direto do Supabase — não há configurações para salvar.');
 }
 
 function initFolha(){
