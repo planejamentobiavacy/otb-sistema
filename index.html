@@ -402,6 +402,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn" id="btnDreReload" onclick="dreForceReload(this)" title="Recarregar dados brutos do Supabase" style="background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.2);color:#cdd5f0;font-size:12px">🔄 Recarregar</button>
       <button class="btn" onclick="openDreCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Config</button>
       <button class="btn save" id="btnSaveDre" onclick="handleSaveDre(this)">💾 Salvar DRE</button>
     </div>
@@ -1814,7 +1815,7 @@ function renderTable(){
 // ═══════════════════════════════════════════════════════
 //  DRE DATA + CALC (mantido exatamente do original)
 // ═══════════════════════════════════════════════════════
-var DRE_RAW=[], DRE_LOADED=false, DRE_TAB='mensal';
+var DRE_RAW=[], DRE_LOADED=false, DRE_TAB='mensal', DRE_SNAPSHOT=false;
 var FIXOS_DEF={sal_vend:191500,sal_adm:409000,marketing:79800,desp_gerais:579000,cd_mensal:270000};
 var DRE_CONFIG={freteMetodo:'qtd',fob:{},closer:{},developer:{},farmer:{},martins:{},rca:{},branding:{},leads:{},grade:{},custoGrade:{},canaisBranding:{},canaisLeads:{}};
 var DRE_CONFIG_DEFAULTS={fob:0.006,closer:0.008,developer:0.006,farmer:0.006,martins:0.003,rca:0.005,branding:0.025,leads:0.015,grade:0,custoGrade:0};
@@ -1826,22 +1827,33 @@ function dreShowProgress(loaded, total){
   if(bar) bar.style.width = pct + '%';
   if(lbl) lbl.textContent = loaded.toLocaleString('pt-BR') + ' de ' + total.toLocaleString('pt-BR') + ' registros (' + pct + '%)';
 }
-async function loadDreFromSupabase(){
+async function loadDreFromSupabase(forceRaw){
   try{
-    // Mostra loading
     var loadingEl = document.getElementById('dreLoading');
-    var emptyEl = document.getElementById('dreEmpty');
-    if(loadingEl){ loadingEl.style.display='flex'; }
-    if(emptyEl){ emptyEl.style.display='none'; }
+    var emptyEl   = document.getElementById('dreEmpty');
+    var progLbl   = document.getElementById('dreProgLabel');
+    if(loadingEl) loadingEl.style.display='flex';
+    if(emptyEl)   emptyEl.style.display='none';
     dreShowProgress(0, 100);
 
     var saved = await supaLoad(TBLS.save_dre, 'dre_current');
     if(saved && saved.config) DRE_CONFIG = Object.assign(DRE_CONFIG, saved.config);
+    if(saved && saved.fixos)  Object.assign(FIXOS_DEF, saved.fixos);
 
-    // Busca paralela com progress callback
-    DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre', dreShowProgress);
+    // Usa snapshot agregado se existir e não for forceRaw
+    if(!forceRaw && saved && saved.snapshot && saved.snapshot.length){
+      if(progLbl) progLbl.textContent = 'Carregando snapshot ('+saved.snapshot.length.toLocaleString('pt-BR')+' linhas agregadas)...';
+      DRE_RAW = saved.snapshot;
+      DRE_SNAPSHOT = true;
+      dreShowProgress(100, 100);
+    } else {
+      // Busca completa com progress
+      DRE_SNAPSHOT = false;
+      if(progLbl) progLbl.textContent = 'Buscando dados brutos do Supabase...';
+      DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre', dreShowProgress);
+    }
+
     DRE_LOADED = DRE_RAW.length > 0;
-
     if(loadingEl) loadingEl.style.display='none';
     return DRE_LOADED;
   } catch(e){
@@ -1851,12 +1863,65 @@ async function loadDreFromSupabase(){
   }
 }
 
+// Agrega DRE_RAW por (ano,mes,canal,cluster,regiao,fornecedor) somando campos numéricos
+// Reduz tipicamente de 50k+ linhas para ~500 combinações — cabe num único save key
+function dreAggregateFull(raw){
+  var map = {};
+  var nk = function(v){ return dreNum(v)||0; };
+  raw.forEach(function(r){
+    var ano  = String(r.ano||r.ANO||'');
+    var mes  = String(r.mes||r.MES||'').padStart(2,'0');
+    var canal= String(r.canal||r.CANAL||'');
+    var clus = String(r.cluster||r.CLUSTER||'');
+    var reg  = String(r.regiao||r.REGIAO||'');
+    var forn = String(r.fornecedor||r.FORNECEDOR||'');
+    var key  = [ano,mes,canal,clus,reg,forn].join('|');
+    if(!map[key]){
+      map[key]={ano,mes,canal,cluster:clus,regiao:reg,fornecedor:forn,
+        faturamento:0,faturamento_venda:0,devolucao_venda:0,qtd:0,custo:0,
+        icms:0,cofins:0,pis:0,fecpst:0,rec_frete:0,custo_frete:0,qtd_grade_hava:0};
+    }
+    var a=map[key];
+    a.faturamento        += nk(r.faturamento       ||r.FATURAMENTO);
+    a.faturamento_venda  += nk(r.faturamento_venda ||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO);
+    a.devolucao_venda    += nk(r.devolucao_venda   ||r.DEVOLUCAO_VENDA);
+    a.qtd                += nk(r.qtd               ||r.QTD);
+    a.custo              += nk(r.custo             ||r.CUSTO);
+    a.icms               += nk(r.icms              ||r.ICMS);
+    a.cofins             += nk(r.cofins            ||r.COFINS);
+    a.pis                += nk(r.pis               ||r.PIS);
+    a.fecpst             += nk(r.fecpst            ||r.FECPST);
+    a.rec_frete          += nk(r.rec_frete         ||r.REC_FRETE);
+    a.custo_frete        += nk(r.custo_frete       ||r.CUSTO_FRETE);
+    a.qtd_grade_hava     += nk(r.qtd_grade_hava    ||r.QTD_GRADE_HAVA);
+  });
+  return Object.values(map);
+}
+
 async function handleSaveDre(btn){
   var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
   try{
-    // Salva apenas config (parâmetros de cálculo) — dados brutos ficam no Supabase
-    await supaSave(TBLS.save_dre,'dre_current',{config:DRE_CONFIG,exportedAt:new Date().toISOString()});
-    toast('[OK] Configurações DRE salvas');
+    // Agrega raw em snapshot compacto para carregamento rápido
+    var snapshot = DRE_RAW.length ? dreAggregateFull(DRE_RAW) : null;
+    var payload = {
+      config: DRE_CONFIG,
+      fixos: FIXOS_DEF,
+      snapshot: snapshot,
+      snapshotAt: new Date().toISOString(),
+      snapshotRows: snapshot ? snapshot.length : 0,
+      rawRows: DRE_RAW.length
+    };
+    // Verifica tamanho (~5MB limite Supabase por célula)
+    var json = JSON.stringify(payload);
+    var kb = Math.round(json.length/1024);
+    if(json.length > 4800000){
+      // Snapshot muito grande: salva só config sem snapshot
+      toast('⚠️ Snapshot grande demais ('+kb+'KB) — salvando só configurações', 'warn');
+      await supaSave(TBLS.save_dre,'dre_current',{config:DRE_CONFIG,fixos:FIXOS_DEF,exportedAt:new Date().toISOString()});
+    } else {
+      await supaSave(TBLS.save_dre,'dre_current', payload);
+      toast('✔ DRE salvo — snapshot de '+snapshot.length.toLocaleString('pt-BR')+' linhas ('+kb+'KB), era '+DRE_RAW.length.toLocaleString('pt-BR')+' linhas brutas');
+    }
   } catch(e){ toast('Erro ao salvar DRE: '+e.message,'err'); }
   btn.disabled=false; btn.textContent=orig;
 }
@@ -1877,7 +1942,8 @@ async function initDre(){
   var anos=Array.from(new Set(DRE_RAW.map(function(r){return r.ano||r.ANO;}))).filter(Boolean).sort();
   var meses=Array.from(new Set(DRE_RAW.map(function(r){return String(r.mes||r.MES||'').padStart(2,'0');}))).filter(function(m){return m!=='00';}).sort();
   var canais=Array.from(new Set(DRE_RAW.map(function(r){return r.canal||r.CANAL||'';}))).filter(Boolean).sort();
-  document.getElementById('dreHeaderMeta').innerHTML='<strong>'+DRE_RAW.length.toLocaleString('pt-BR')+' registros</strong> · DRE carregado';
+  var snapBadge=DRE_SNAPSHOT?'<span style="background:#e8f0fe;color:#1a56c4;font-size:10px;padding:2px 7px;border-radius:10px;margin-left:8px;font-weight:600">⚡ snapshot</span>':'<span style="background:#fff3cd;color:#856404;font-size:10px;padding:2px 7px;border-radius:10px;margin-left:8px;font-weight:600">🔴 dados brutos</span>';
+  document.getElementById('dreHeaderMeta').innerHTML='<strong>'+DRE_RAW.length.toLocaleString('pt-BR')+' registros</strong> · DRE carregado'+snapBadge;
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
   var tabsDefs=[{id:'mensal',label:'📅 Todos os Meses'},{id:'canal',label:'📡 Canal'},{id:'cluster',label:'🗂 Cluster'},{id:'regiao',label:'📍 Região'},{id:'fornecedor',label:'🏭 Fornecedor'}];
   var bar=document.getElementById('dreTabsBar'); bar.innerHTML='';
@@ -2153,6 +2219,24 @@ function _folhaRenderAll(){
   var meta=document.getElementById('folhaHeaderMeta');if(meta) meta.innerHTML='<strong>'+rows.length.toLocaleString('pt-BR')+' registros</strong>';
   var getFn=FOLHA_ABA==='area'?folhaGetArea:FOLHA_ABA==='cargo'?folhaGetCargo:folhaGetNome;
   _fpRenderTabela('fpTblPrincipal',rows,getFn);
+}
+
+// ═══════════════════════════════════════════════════════
+//  DRE FORCE RELOAD
+// ═══════════════════════════════════════════════════════
+async function dreForceReload(btn){
+  var orig = btn ? btn.textContent : '';
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Buscando...'; }
+  DRE_LOADED = false;
+  DRE_SNAPSHOT = false;
+  var ok = await loadDreFromSupabase(true); // forceRaw=true
+  if(ok){
+    await initDre();
+    toast('✔ Dados brutos recarregados — '+DRE_RAW.length.toLocaleString('pt-BR')+' linhas. Salve o DRE para atualizar o snapshot.');
+  } else {
+    toast('Erro ao recarregar dados','err');
+  }
+  if(btn){ btn.disabled=false; btn.textContent=orig; }
 }
 
 // ═══════════════════════════════════════════════════════
