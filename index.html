@@ -214,6 +214,12 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
 .dre-cfg-field input:focus,.dre-cfg-field select:focus{border-color:#2352c8;background:#fff}
 .dre-cfg-field .hint{font-size:10px;color:#b0b8d0;margin-top:2px}
 .dre-cfg-ft{padding:14px 22px;border-top:1px solid #dde3f0;background:#f7f9fc;display:flex;justify-content:flex-end;gap:8px}
+.pct-wrap{display:flex;align-items:center;border:1.5px solid #d0d8ee;border-radius:6px;background:#f7f9ff;overflow:hidden}
+.pct-wrap:focus-within{border-color:#2352c8;background:#fff}
+.pct-input{flex:1;border:none;background:transparent;padding:6px 4px 6px 10px;font-size:13px;font-family:inherit;color:#0f1a3a;outline:none;min-width:0}
+.pct-sym{padding:0 10px 0 2px;font-size:13px;font-weight:700;color:#2352c8;user-select:none}
+.brl-input{width:100%;padding:6px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:13px;font-family:inherit;color:#0f1a3a;background:#f7f9ff;outline:none;box-sizing:border-box}
+.brl-input:focus{border-color:#2352c8;background:#fff}
 
 /* ── Scrollbar ──────────────────────────────────── */
 ::-webkit-scrollbar{width:12px;height:12px}
@@ -2255,11 +2261,8 @@ function openDreCfg(){
     suffix = suffix || '';
     var isPct = suffix === '%';
     var inputHtml = isPct
-      ? '<div style="display:flex;align-items:center;border:1.5px solid #d0d8ee;border-radius:6px;background:#f7f9ff;overflow:hidden;transition:border .15s" onfocusin="this.style.borderColor='#2352c8';this.style.background='#fff'" onfocusout="this.style.borderColor='#d0d8ee';this.style.background='#f7f9ff'">'
-        + '<input type="number" id="dcf_'+id+'" value="'+val+'" step="0.01" min="0" max="100" style="flex:1;border:none;background:transparent;padding:6px 8px 6px 10px;font-size:13px;font-family:inherit;color:#0f1a3a;outline:none;width:100%">'
-        + '<span style="padding:0 10px 0 4px;font-size:13px;font-weight:700;color:#2352c8;user-select:none">%</span>'
-        + '</div>'
-      : '<input type="number" id="dcf_'+id+'" value="'+val+'" step="1" style="width:100%;padding:6px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:13px;font-family:inherit;color:#0f1a3a;background:#f7f9ff;outline:none">';
+      ? '<div class="pct-wrap"><input type="number" id="dcf_'+id+'" value="'+val+'" step="0.01" min="0" max="100" class="pct-input"><span class="pct-sym">%</span></div>'
+      : '<input type="number" id="dcf_'+id+'" value="'+val+'" step="1" class="brl-input">';
     return '<div class="dre-cfg-field">'
       + '<label>' + label + '</label>'
       + inputHtml
