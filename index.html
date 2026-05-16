@@ -168,6 +168,10 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
 .dre-tab-btn{font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;font-family:inherit}
 .dre-panels{flex:1;overflow:auto;padding:16px 20px;background:#f4f6fb}
 .dre-empty{flex:1;display:flex;align-items:center;justify-content:center;font-size:14px;color:#7a8ab0}
+.dre-loading{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px}
+.dre-prog-wrap{width:320px;background:#e4e9f4;border-radius:8px;height:8px;overflow:hidden}
+.dre-prog-bar{height:8px;background:linear-gradient(90deg,#1e5bb8,#2a7ae0);border-radius:8px;width:0%;transition:width .3s ease}
+.dre-prog-label{font-size:12px;color:#7a8ab0;font-weight:600}
 
 /* ── Folha ──────────────────────────────────────── */
 #folhaPivotWrap{display:flex;flex:1;overflow:hidden;min-height:0}
@@ -191,6 +195,25 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
 .fp-tbl tbody tr:nth-child(even) .fp-td-dim,.fp-tbl tbody tr:nth-child(even) .fp-td-val{background:#f9fafb}
 .fp-tbl tbody tr:hover .fp-td-dim,.fp-tbl tbody tr:hover .fp-td-val{background:#f0eaf5!important}
 .fp-tot .fp-td-dim,.fp-tot .fp-td-val{background:#1a2236!important;color:#fff!important;font-weight:700;border-top:2px solid #7b2d8b}
+
+/* ── DRE Config overlay ─────────────────────────────── */
+.dre-cfg-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:none;align-items:flex-start;justify-content:center;padding-top:40px;overflow-y:auto}
+.dre-cfg-box{background:#fff;border-radius:10px;width:min(680px,96vw);box-shadow:0 24px 64px rgba(0,0,0,.3);overflow:hidden;margin-bottom:40px}
+.dre-cfg-hd{background:linear-gradient(90deg,#0f1830,#1a2547);color:#fff;padding:16px 22px;display:flex;justify-content:space-between;align-items:center}
+.dre-cfg-hd h2{font-size:15px;font-weight:700;margin:0}
+.dre-cfg-hd small{font-size:11px;opacity:.6;display:block;margin-top:2px}
+.dre-cfg-close{background:transparent;border:1px solid rgba(255,255,255,.25);color:#fff;width:28px;height:28px;cursor:pointer;border-radius:3px;font-size:16px;line-height:1;font-family:inherit}
+.dre-cfg-body{padding:20px 22px;display:flex;flex-direction:column;gap:18px}
+.dre-cfg-sec{border:1px solid #dde3f0;border-radius:8px;overflow:hidden}
+.dre-cfg-sec-hd{background:linear-gradient(90deg,#1a2a6c,#2352c8);color:#fff;padding:8px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px}
+.dre-cfg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:0;padding:4px 0}
+.dre-cfg-field{display:flex;flex-direction:column;gap:4px;padding:10px 14px;border-bottom:1px solid #f0f3fa}
+.dre-cfg-field:last-child{border-bottom:none}
+.dre-cfg-field label{font-size:10px;font-weight:700;color:#7a8ab0;text-transform:uppercase;letter-spacing:.8px}
+.dre-cfg-field input,.dre-cfg-field select{padding:6px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:13px;font-family:inherit;color:#0f1a3a;background:#f7f9ff;outline:none;transition:border .15s}
+.dre-cfg-field input:focus,.dre-cfg-field select:focus{border-color:#2352c8;background:#fff}
+.dre-cfg-field .hint{font-size:10px;color:#b0b8d0;margin-top:2px}
+.dre-cfg-ft{padding:14px 22px;border-top:1px solid #dde3f0;background:#f7f9fc;display:flex;justify-content:flex-end;gap:8px}
 
 /* ── Scrollbar ──────────────────────────────────── */
 ::-webkit-scrollbar{width:12px;height:12px}
@@ -379,12 +402,17 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn" onclick="openConfig()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Config</button>
+      <button class="btn" onclick="openDreCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Config</button>
       <button class="btn save" id="btnSaveDre" onclick="handleSaveDre(this)">💾 Salvar DRE</button>
     </div>
   </header>
   <div class="dre-header-bar" id="dreTabsBar"></div>
   <div id="drePanels" class="dre-panels"></div>
+  <div id="dreLoading" class="dre-loading" style="display:none">
+    <div style="font-size:15px;font-weight:700;color:#1a2547">Carregando DRE...</div>
+    <div class="dre-prog-wrap"><div class="dre-prog-bar" id="dreProgBar"></div></div>
+    <div class="dre-prog-label" id="dreProgLabel">Conectando ao Supabase...</div>
+  </div>
   <div id="dreEmpty" class="dre-empty" style="display:none">Sem dados DRE. Use Configurações para atualizar as tabelas.</div>
 </div>
 
@@ -540,26 +568,48 @@ async function supaFetch(path, opts){
 }
 
 // Buscar todas as linhas paginadas — tableKey opcional para select otimizado
-async function fetchAll(table, extraFilter, tableKey){
+// Estratégia: busca 1a pagina com count=exact, depois demais em PARALELO
+async function fetchAll(table, extraFilter, tableKey, onProgress){
   var PAGE = 1000;
   var sel = tableKey ? buildSelect(tableKey) : 'select=*';
   var base = '/rest/v1/' + table + '?' + sel + (extraFilter||'');
-  var out = [];
-  var page = 0;
-  while(true){
-    var from = page * PAGE, to = from + PAGE - 1;
-    try{
-      var rows = await supaFetch(base, {headers:{'Range': from+'-'+to, 'Range-Unit':'items'}});
-      if(!Array.isArray(rows) || rows.length === 0) break;
-      out = out.concat(rows);
-      if(rows.length < PAGE) break;
-      page++;
-    } catch(e){
-      // 416 = range satisfiable mas sem mais dados — fim normal
-      if(e.message && (e.message.includes('416') || e.message.includes('Requested range'))) break;
-      throw e;
-    }
+
+  async function fetchPage(from){
+    var to = from + PAGE - 1;
+    if(!_session) throw new Error('Nao autenticado');
+    var token = _session.access_token;
+    var headers = {
+      'apikey': SUPA_ANON_KEY, 'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json', 'Accept': 'application/json',
+      'Range': from + '-' + to, 'Range-Unit': 'items', 'Prefer': 'count=exact'
+    };
+    var r = await fetch(SUPA_URL + base, {headers: headers});
+    if(r.status === 416) return {rows:[], total:0};
+    if(!r.ok){ var t=await r.text(); throw new Error(t); }
+    var cr = r.headers.get('content-range')||'';
+    var total = 0;
+    var m = cr.match(/\/(\d+)$/);
+    if(m) total = parseInt(m[1], 10);
+    var rows = await r.json();
+    return {rows: Array.isArray(rows)?rows:[], total: total};
   }
+
+  var first = await fetchPage(0);
+  if(!first.rows.length) return [];
+  var total = first.total || first.rows.length;
+  if(onProgress) onProgress(first.rows.length, total);
+  if(first.rows.length >= total) return first.rows;
+
+  var numPages = Math.ceil(total / PAGE);
+  var promises = [];
+  for(var p = 1; p < numPages; p++) promises.push(fetchPage(p * PAGE));
+
+  var results = await Promise.all(promises);
+  var out = first.rows.slice();
+  results.forEach(function(res){
+    out = out.concat(res.rows);
+    if(onProgress) onProgress(out.length, total);
+  });
   return out;
 }
 
@@ -1769,15 +1819,36 @@ var FIXOS_DEF={sal_vend:191500,sal_adm:409000,marketing:79800,desp_gerais:579000
 var DRE_CONFIG={freteMetodo:'qtd',fob:{},closer:{},developer:{},farmer:{},martins:{},rca:{},branding:{},leads:{},grade:{},custoGrade:{},canaisBranding:{},canaisLeads:{}};
 var DRE_CONFIG_DEFAULTS={fob:0.006,closer:0.008,developer:0.006,farmer:0.006,martins:0.003,rca:0.005,branding:0.025,leads:0.015,grade:0,custoGrade:0};
 
+function dreShowProgress(loaded, total){
+  var bar = document.getElementById('dreProgBar');
+  var lbl = document.getElementById('dreProgLabel');
+  var pct = total > 0 ? Math.min(100, Math.round(loaded/total*100)) : 0;
+  if(bar) bar.style.width = pct + '%';
+  if(lbl) lbl.textContent = loaded.toLocaleString('pt-BR') + ' de ' + total.toLocaleString('pt-BR') + ' registros (' + pct + '%)';
+}
 async function loadDreFromSupabase(){
   try{
+    // Mostra loading
+    var loadingEl = document.getElementById('dreLoading');
+    var emptyEl = document.getElementById('dreEmpty');
+    if(loadingEl){ loadingEl.style.display='flex'; }
+    if(emptyEl){ emptyEl.style.display='none'; }
+    dreShowProgress(0, 100);
+
     var saved = await supaLoad(TBLS.save_dre, 'dre_current');
     if(saved && saved.config) DRE_CONFIG = Object.assign(DRE_CONFIG, saved.config);
-    // Sempre busca os dados da tabela (não salva raw no cache — muito grande)
-    DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre');
+
+    // Busca paralela com progress callback
+    DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre', dreShowProgress);
     DRE_LOADED = DRE_RAW.length > 0;
+
+    if(loadingEl) loadingEl.style.display='none';
     return DRE_LOADED;
-  } catch(e){ console.warn('Erro DRE:', e.message); return false; }
+  } catch(e){
+    var loadingEl2 = document.getElementById('dreLoading');
+    if(loadingEl2) loadingEl2.style.display='none';
+    console.warn('Erro DRE:', e.message); return false;
+  }
 }
 
 async function handleSaveDre(btn){
@@ -1792,13 +1863,17 @@ async function handleSaveDre(btn){
 
 async function initDre(){
   if(!DRE_LOADED){
-    document.getElementById('dreEmpty').style.display='flex';
     document.getElementById('dreTabsBar').innerHTML='';
     document.getElementById('drePanels').innerHTML='';
     var ok = await loadDreFromSupabase();
-    if(!ok){ document.getElementById('dreHeaderMeta').textContent='Sem dados DRE'; return; }
+    if(!ok){
+      document.getElementById('dreHeaderMeta').textContent='Sem dados DRE';
+      document.getElementById('dreEmpty').style.display='flex';
+      return;
+    }
   }
   document.getElementById('dreEmpty').style.display='none';
+  document.getElementById('dreLoading').style.display='none';
   var anos=Array.from(new Set(DRE_RAW.map(function(r){return r.ano||r.ANO;}))).filter(Boolean).sort();
   var meses=Array.from(new Set(DRE_RAW.map(function(r){return String(r.mes||r.MES||'').padStart(2,'0');}))).filter(function(m){return m!=='00';}).sort();
   var canais=Array.from(new Set(DRE_RAW.map(function(r){return r.canal||r.CANAL||'';}))).filter(Boolean).sort();
@@ -2079,6 +2154,122 @@ function _folhaRenderAll(){
   var getFn=FOLHA_ABA==='area'?folhaGetArea:FOLHA_ABA==='cargo'?folhaGetCargo:folhaGetNome;
   _fpRenderTabela('fpTblPrincipal',rows,getFn);
 }
+
+// ═══════════════════════════════════════════════════════
+//  DRE CONFIG PANEL
+// ═══════════════════════════════════════════════════════
+function openDreCfg(){
+  var body = document.getElementById('dreCfgBody');
+  if(!body) return;
+
+  // Pega o valor atual de um param (default se não definido globalmente)
+  function getGlobal(key){ var d = DRE_CONFIG_DEFAULTS; return d[key] !== undefined ? d[key] : 0; }
+  function pct(v){ return (v*100).toFixed(2); }
+  function brl(v){ return Math.round(v); }
+
+  function field(label, id, val, hint, suffix){
+    suffix = suffix || '';
+    return '<div class="dre-cfg-field">'
+      + '<label>' + label + '</label>'
+      + '<input type="number" id="dcf_'+id+'" value="'+val+'" step="0.01" style="width:100%">'
+      + (hint ? '<span class="hint">'+hint+(suffix?' '+suffix:'')+'</span>' : '')
+      + '</div>';
+  }
+
+  body.innerHTML =
+    // ── FRETE ──
+    '<div class="dre-cfg-sec">'
+    + '<div class="dre-cfg-sec-hd">🚚 Método de cálculo do Custo Frete</div>'
+    + '<div style="padding:12px 14px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">'
+    + '<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="dcf_frete" value="base" '+(DRE_CONFIG.freteMetodo==='base'?'checked':'')+' onchange="DRE_CONFIG.freteMetodo=this.value"> % da Receita Líquida (3,1%)</label>'
+    + '<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="dcf_frete" value="qtd" '+(DRE_CONFIG.freteMetodo!=='base'?'checked':'')+' onchange="DRE_CONFIG.freteMetodo=this.value"> Valor real da base (coluna custo_frete)</label>'
+    + '</div></div>'
+
+    // ── COMISSÕES % ──
+    + '<div class="dre-cfg-sec">'
+    + '<div class="dre-cfg-sec-hd">💼 Comissões e Salários Comerciais (% da Rec. Líquida)</div>'
+    + '<div class="dre-cfg-grid">'
+    + field('FOB', 'fob', pct(getGlobal('fob')), 'Custo FOB', '%')
+    + field('Sal. Closer', 'closer', pct(getGlobal('closer')), 'Salário Closer', '%')
+    + field('Sal. Developer', 'developer', pct(getGlobal('developer')), 'Salário Developer', '%')
+    + field('Sal. Farmer', 'farmer', pct(getGlobal('farmer')), 'Salário Farmer', '%')
+    + field('Comissão Martins', 'martins', pct(getGlobal('martins')), 'Comissão Martins', '%')
+    + field('Comissão RCA', 'rca', pct(getGlobal('rca')), 'Comissão RCA', '%')
+    + '</div></div>'
+
+    // ── MARKETING % ──
+    + '<div class="dre-cfg-sec">'
+    + '<div class="dre-cfg-sec-hd">📢 Marketing (% da Rec. Líquida)</div>'
+    + '<div class="dre-cfg-grid">'
+    + field('Branding', 'branding', pct(getGlobal('branding')), 'Marketing de branding', '%')
+    + field('Leads Novos', 'leads', pct(getGlobal('leads')), 'Geração de leads', '%')
+    + '</div></div>'
+
+    // ── FIXOS R$ ──
+    + '<div class="dre-cfg-sec">'
+    + '<div class="dre-cfg-sec-hd">🏢 Despesas Fixas (R$ / mês)</div>'
+    + '<div class="dre-cfg-grid">'
+    + field('Salários Adm', 'sal_adm', brl(FIXOS_DEF.sal_adm), 'Valor mensal R$')
+    + field('Despesas Gerais', 'desp_gerais', brl(FIXOS_DEF.desp_gerais), 'Valor mensal R$')
+    + field('CD (centro de dist.)', 'cd_mensal', brl(FIXOS_DEF.cd_mensal), 'Valor mensal R$')
+    + '</div></div>'
+
+    // ── MONTAGEM GRADE ──
+    + '<div class="dre-cfg-sec">'
+    + '<div class="dre-cfg-sec-hd">📦 Montagem de Grade</div>'
+    + '<div class="dre-cfg-grid">'
+    + field('Custo por Par (Hava)', 'custoGrade', brl(DRE_CONFIG_DEFAULTS.custoGrade||0), 'R$ por par montado')
+    + '</div></div>';
+
+  document.getElementById('dreCfgOverlay').style.display = 'flex';
+}
+
+function closeDreCfg(){
+  document.getElementById('dreCfgOverlay').style.display = 'none';
+}
+
+function applyDreCfg(){
+  function gv(id){ return parseFloat(document.getElementById('dcf_'+id).value)||0; }
+
+  // Atualiza defaults de % (converte de % para decimal)
+  var pctFields = ['fob','closer','developer','farmer','martins','rca','branding','leads'];
+  pctFields.forEach(function(k){
+    DRE_CONFIG_DEFAULTS[k] = gv(k) / 100;
+    // Limpa overrides por mês para usar o novo default global
+    DRE_CONFIG[k] = {};
+  });
+
+  // Custo grade R$
+  DRE_CONFIG_DEFAULTS.custoGrade = gv('custoGrade');
+  DRE_CONFIG.custoGrade = {};
+
+  // Fixos R$
+  FIXOS_DEF.sal_adm     = gv('sal_adm');
+  FIXOS_DEF.desp_gerais = gv('desp_gerais');
+  FIXOS_DEF.cd_mensal   = gv('cd_mensal');
+
+  closeDreCfg();
+  dreRender();
+  toast('✔ Parâmetros aplicados — DRE recalculado');
+}
+
 </script>
+
+<!-- ══════════════════ DRE CONFIG ═════════════════════ -->
+<div class="dre-cfg-overlay" id="dreCfgOverlay" onclick="if(event.target===this)closeDreCfg()">
+  <div class="dre-cfg-box">
+    <div class="dre-cfg-hd">
+      <div><h2>⚙️ Parâmetros DRE</h2><small>Percentuais e valores fixos usados nos cálculos</small></div>
+      <button class="dre-cfg-close" onclick="closeDreCfg()">×</button>
+    </div>
+    <div class="dre-cfg-body" id="dreCfgBody">
+      <!-- preenchido por openDreCfg() -->
+    </div>
+    <div class="dre-cfg-ft">
+      <button class="btn save" onclick="applyDreCfg()">✔ Aplicar e Recalcular</button>
+      <button class="btn" onclick="closeDreCfg()">Cancelar</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
