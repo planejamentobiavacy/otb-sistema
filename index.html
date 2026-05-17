@@ -2605,15 +2605,27 @@ async function loadBudget(){
 }
 
 function budgetGetMonths(){
-  // Union of months from DRE_RAW and BUDGET_DESP_RAW
   var set = {};
+  // From DRE_RAW (ano + mes fields)
   DRE_RAW.forEach(function(r){
     var a=String(r.ano||r.ANO||''), m=String(r.mes||r.MES||'').padStart(2,'0');
-    if(a&&m) set[a+'-'+m]=1;
+    if(a&&m&&m!=='00') set[a+'-'+m]=1;
   });
+  // From despesa — try multiple possible date column names
   BUDGET_DESP_RAW.forEach(function(r){
-    var am = String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
-    if(am.length===6) set[am.slice(0,4)+'-'+am.slice(4,6)]=1;
+    var candidates = [
+      r.ano_mes, r.ANO_MES,
+      r.ano_mes_emissao, r.ANO_MES_EMISSAO,
+      r.ano_mes_baixa, r.ANO_MES_BAIXA,
+      r.ano_mes_venc, r.ANO_MES_VENC,
+      r.competencia, r.COMPETENCIA
+    ];
+    for(var i=0;i<candidates.length;i++){
+      var v = candidates[i];
+      if(!v) continue;
+      var am = String(v).replace(/\D/g,'').slice(0,6);
+      if(am.length===6){ set[am.slice(0,4)+'-'+am.slice(4,6)]=1; break; }
+    }
   });
   return Object.keys(set).sort();
 }
@@ -2647,10 +2659,19 @@ function budgetDreMetric(ym, key){
   return map[key] != null ? map[key] : null;
 }
 
+function budgetDespAm(r){
+  var candidates=[r.ano_mes,r.ANO_MES,r.ano_mes_emissao,r.ANO_MES_EMISSAO,r.ano_mes_baixa,r.ANO_MES_BAIXA,r.ano_mes_venc,r.ANO_MES_VENC,r.competencia,r.COMPETENCIA];
+  for(var i=0;i<candidates.length;i++){
+    var v=candidates[i]; if(!v) continue;
+    var am=String(v).replace(/\D/g,'').slice(0,6);
+    if(am.length===6) return am;
+  }
+  return '';
+}
 function budgetDespByTipoArea(ym, tipo, area){
   var am = ym.replace('-','');
   return BUDGET_DESP_RAW.filter(function(r){
-    var ramAm = String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
+    var ramAm = budgetDespAm(r);
     var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'');
     var hist   = String(r.e2_hist||r.E2_HIST||'');
     var classif= BUDGET_CFG.classif[nomfor+'|'+hist]||{};
