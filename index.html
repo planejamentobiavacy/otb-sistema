@@ -908,11 +908,14 @@ function openConfig(){
   ];
   document.getElementById('cfgDreRows').innerHTML = dreDefs.map(function(d){
     var tbl = TBLS[d.key];
+    var testBtn = d.key==='despesa' ? '<button class="btn" onclick="gcTestTable(this)" style="font-size:11px;padding:5px 8px;background:#e8f0fe;border-color:#2352c8;color:#2352c8">🔍 Testar</button>' : '';
+    var spanCols = (d.key==='despesa') ? '' : 'grid-column:span 2;';
     return '<div class="cfg-row">'
       + '<div><span>'+d.label+'</span>'
-      + '<input class="tbl-input" id="tbl_'+d.key+'" value="'+tbl+'" oninput="TBLS[\''+d.key+'\']=this.value;localStorage.setItem(\'otb_tbl_'+d.key+'\',this.value)">'
+      + '<input class="tbl-input" id="tbl_'+d.key+'" value="'+tbl+'" oninput="TBLS[&apos;'+d.key+'&apos;]=this.value;localStorage.setItem(&apos;otb_tbl_'+d.key+'&apos;,this.value)">'
       + '</div>'
-      + '<button class="btn gray" onclick="gcRecarregar(\''+d.key+'\',this)" style="font-size:11px;padding:5px 10px;grid-column:span 2">↺ Recarregar</button>'
+      + testBtn
+      + '<button class="btn gray" onclick="gcRecarregar(&apos;'+d.key+'&apos;,this)" style="font-size:11px;padding:5px 10px;'+spanCols+'">↺ Recarregar</button>'
       + '<span class="cfg-status" id="cfg_status_'+d.key+'"></span>'
       + '</div>';
   }).join('');
@@ -932,6 +935,37 @@ async function gcAtualizar(key, dateCol, btn){
     processAll(); renderTabs(); renderTable();
   } catch(e){ toast('Erro ao atualizar ' + key + ': ' + e.message, 'err'); if(st) st.textContent = 'Erro'; }
   btn.disabled = false; btn.textContent = orig;
+}
+
+async function gcTestTable(btn){
+  var key='despesa';
+  var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳';
+  var tbl = TBLS[key];
+  var url = SUPA_URL + '/rest/v1/' + tbl + '?select=*&limit=1';
+  var st = document.getElementById('cfg_status_'+key);
+  try{
+    var token = _session.access_token;
+    var r = await fetch(url, {headers:{
+      'apikey':SUPA_ANON_KEY,'Authorization':'Bearer '+token,
+      'Accept':'application/json','Range':'0-0','Range-Unit':'items','Prefer':'count=exact'
+    }});
+    var body = await r.text();
+    var cr = r.headers.get('content-range')||'';
+    var msg = 'HTTP '+r.status+' | Content-Range: '+cr+' | URL: ...'+tbl;
+    if(r.ok){
+      var total = (cr.match(/\/(\d+)/)||[])[1]||'?';
+      toast('✔ Tabela encontrada: '+tbl+' — '+total+' registros');
+      if(st) st.textContent = '✔ '+total+' registros';
+    } else {
+      toast('✘ '+tbl+': HTTP '+r.status+' — '+body.slice(0,120),'err');
+      if(st) st.textContent = '✘ HTTP '+r.status;
+      console.error('[gcTestTable]', url, r.status, body);
+    }
+  }catch(e){
+    toast('Erro: '+e.message,'err');
+    if(st) st.textContent = 'Erro: '+e.message;
+  }
+  btn.disabled=false; btn.textContent=orig;
 }
 
 async function gcRecarregar(key, btn){
