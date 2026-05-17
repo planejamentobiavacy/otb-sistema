@@ -506,7 +506,7 @@ var TBLS = (function(){
     produto:   localStorage.getItem('otb_tbl_produto')   || 'otb_produto',
     venda_dre: localStorage.getItem('otb_tbl_venda_dre') || 'dw_otb_venda_dre',
     frete_dre: localStorage.getItem('otb_tbl_frete_dre') || 'otb_frete_dre',
-    despesa:   localStorage.getItem('otb_tbl_despesa')   || 'dw_otb_despesa',
+    despesa:   (localStorage.getItem('otb_tbl_despesa')==='otb_despesa'?(localStorage.removeItem('otb_tbl_despesa'),null):localStorage.getItem('otb_tbl_despesa')) || 'dw_otb_despesa',
     folha:     localStorage.getItem('otb_tbl_folha')     || 'otb_folha',
     save_otb:  localStorage.getItem('otb_tbl_save_otb')  || 'otb_simulations',
     save_dre:  localStorage.getItem('otb_tbl_save_dre')  || 'otb_simulations',
@@ -584,15 +584,16 @@ async function fetchAll(table, extraFilter, tableKey, onProgress){
   var sel = tableKey ? buildSelect(tableKey) : 'select=*';
   var base = '/rest/v1/' + table + '?' + sel + (extraFilter||'');
 
-  async function fetchPage(from){
+  async function fetchPage(from, noCount){
     var to = from + PAGE - 1;
     if(!_session) throw new Error('Nao autenticado');
     var token = _session.access_token;
     var headers = {
       'apikey': SUPA_ANON_KEY, 'Authorization': 'Bearer ' + token,
       'Content-Type': 'application/json', 'Accept': 'application/json',
-      'Range': from + '-' + to, 'Range-Unit': 'items', 'Prefer': 'count=exact'
+      'Range': from + '-' + to, 'Range-Unit': 'items'
     };
+    if(!noCount) headers['Prefer'] = 'count=exact';
     var r = await fetch(SUPA_URL + base, {headers: headers});
     if(r.status === 416) return {rows:[], total:0};
     if(!r.ok){ var t=await r.text(); throw new Error(t); }
@@ -604,10 +605,29 @@ async function fetchAll(table, extraFilter, tableKey, onProgress){
     return {rows: Array.isArray(rows)?rows:[], total: total};
   }
 
-  var first = await fetchPage(0);
+  var first;
+  try{ first = await fetchPage(0); }
+  catch(e){
+    // Retry without count=exact (some tables/RLS configs reject it)
+    try{ first = await fetchPage(0, true); first.total = 0; }
+    catch(e2){ throw e2; }
+  }
   if(!first.rows.length) return [];
   var total = first.total || first.rows.length;
   if(onProgress) onProgress(first.rows.length, total);
+  if(first.rows.length >= total && !first.total) {
+    // No total known — keep fetching sequentially until empty
+    var allRows = first.rows.slice();
+    var pg = 1;
+    while(allRows.length === pg * PAGE){
+      var next; try{ next = await fetchPage(pg*PAGE,true); }catch(e){ break; }
+      if(!next.rows.length) break;
+      allRows = allRows.concat(next.rows);
+      if(onProgress) onProgress(allRows.length, allRows.length);
+      pg++;
+    }
+    return allRows;
+  }
   if(first.rows.length >= total) return first.rows;
 
   var numPages = Math.ceil(total / PAGE);
