@@ -2441,6 +2441,31 @@ function dreAmChange(am){
   openDreCfg();
 }
 
+async function saveAndApplyDreCfg(btn){
+  var orig = btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
+  applyDreCfg(); // aplica e re-renderiza
+  try{
+    var snapshot = DRE_RAW.length ? dreAggregateFull(DRE_RAW) : null;
+    var payload = {
+      config: DRE_CONFIG,
+      fixos: FIXOS_DEF,
+      cfgParams: DRE_CFG_PARAMS,
+      snapshot: snapshot,
+      snapshotAt: new Date().toISOString(),
+      snapshotRows: snapshot ? snapshot.length : 0,
+      rawRows: DRE_RAW.length
+    };
+    var json = JSON.stringify(payload);
+    if(json.length > 4800000){
+      await supaSave(TBLS.save_dre,'dre_current',{config:DRE_CONFIG,fixos:FIXOS_DEF,cfgParams:DRE_CFG_PARAMS,exportedAt:new Date().toISOString()});
+    } else {
+      await supaSave(TBLS.save_dre,'dre_current', payload);
+    }
+    toast('✔ Parâmetros salvos no Supabase');
+  } catch(e){ toast('Erro ao salvar: '+e.message,'err'); }
+  btn.disabled=false; btn.textContent=orig;
+}
+
 function applyDreCfg(){
   function gv(id){ var el=document.getElementById('dcf_'+id); return el?(parseFloat(el.value)||0):0; }
   var body = document.getElementById('dreCfgBody');
@@ -2485,7 +2510,7 @@ function applyDreCfg(){
       <!-- preenchido por openDreCfg() -->
     </div>
     <div class="dre-cfg-ft">
-      <button class="btn save" onclick="applyDreCfg()">✔ Aplicar e Recalcular</button>
+      <button class="btn save" id="btnApplyDreCfg" onclick="saveAndApplyDreCfg(this)">💾 Salvar</button>
       <button class="btn" onclick="closeDreCfg()">Cancelar</button>
     </div>
   </div>
