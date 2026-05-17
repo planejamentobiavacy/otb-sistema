@@ -2429,6 +2429,7 @@ function openDreCfg(){
     +'<div class="dre-cfg-grid">'
     +fieldBrl('Custo por Par (R$)', 'custoGrade', DRE_CONFIG_DEFAULTS.custoGrade||0)
     +'</div></div>';
+  document.getElementById('dreCfgOverlay').style.display='flex';
 }
 function closeDreCfg(){
   document.getElementById('dreCfgOverlay').style.display = 'none';
