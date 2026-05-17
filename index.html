@@ -2660,13 +2660,11 @@ function budgetDreMetric(ym, key){
 }
 
 function budgetDespAm(r){
-  var candidates=[r.ano_mes,r.ANO_MES,r.ano_mes_emissao,r.ANO_MES_EMISSAO,r.ano_mes_baixa,r.ANO_MES_BAIXA,r.ano_mes_venc,r.ANO_MES_VENC,r.competencia,r.COMPETENCIA];
-  for(var i=0;i<candidates.length;i++){
-    var v=candidates[i]; if(!v) continue;
-    var am=String(v).replace(/\D/g,'').slice(0,6);
-    if(am.length===6) return am;
-  }
-  return '';
+  // Usa ano_mes_venc como coluna de referência de mês
+  var v = r.ano_mes_venc||r.ANO_MES_VENC||r.ano_mes||r.ANO_MES||'';
+  if(!v) return '';
+  var am = String(v).replace(/\D/g,'').slice(0,6);
+  return am.length===6 ? am : '';
 }
 function budgetDespByTipoArea(ym, tipo, area){
   var am = ym.replace('-','');
