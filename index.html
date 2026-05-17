@@ -919,12 +919,13 @@ async function gcRecarregar(key, btn){
   var st = document.getElementById('cfg_status_'+key);
   try{
     state[key] = await fetchAll(TBLS[key], null, key);
-    if(st) st.textContent = state[key].length + ' linhas';
-    toast('[OK] ' + key + ' recarregado: ' + state[key].length + ' linhas');
-    if(key === 'venda_dre' || key === 'frete_dre') initDre();
+    toast('[OK] ' + TBLS[key] + ' recarregado: ' + state[key].length + ' linhas');
+    if(st) st.textContent = state[key].length + ' linhas (' + TBLS[key] + ')';
+    if(key === 'venda_dre' || key === 'frete_dre'){ DRE_RAW = state[key]; DRE_LOADED = DRE_RAW.length>0; initDre(); }
     else if(key === 'folha'){ FOLHA_RAW = state[key]; FOLHA_LOADED = true; if(document.getElementById('screenFolha').classList.contains('screen-active')) initFolha(); }
+    else if(key === 'despesa'){ DRE_DESP_RAW = state[key]; BUDGET_DESP_RAW = state[key]; BUDGET_LOADED = true; }
     else { processAll(); renderTabs(); renderTable(); }
-  } catch(e){ toast('Erro ao recarregar ' + key + ': ' + e.message, 'err'); if(st) st.textContent = 'Erro'; }
+  } catch(e){ toast('Erro ao recarregar ' + TBLS[key] + ': ' + e.message, 'err'); if(st) st.textContent = 'Erro: '+TBLS[key]; }
   btn.disabled = false; btn.textContent = orig;
 }
 
