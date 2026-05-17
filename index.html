@@ -218,6 +218,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
 .pct-wrap:focus-within{border-color:#2352c8;background:#fff}
 .pct-input{flex:1;border:none;background:transparent;padding:6px 4px 6px 10px;font-size:13px;font-family:inherit;color:#0f1a3a;outline:none;min-width:0}
 .pct-sym{padding:0 10px 0 2px;font-size:13px;font-weight:700;color:#2352c8;user-select:none}
+.ref-val{color:#1a56c4!important;font-weight:600;font-size:11px}
 .brl-input{width:100%;padding:6px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:13px;font-family:inherit;color:#0f1a3a;background:#f7f9ff;outline:none;box-sizing:border-box}
 .brl-input:focus{border-color:#2352c8;background:#fff}
 
@@ -504,6 +505,7 @@ var TBLS = (function(){
     produto:   localStorage.getItem('otb_tbl_produto')   || 'otb_produto',
     venda_dre: localStorage.getItem('otb_tbl_venda_dre') || 'dw_otb_venda_dre',
     frete_dre: localStorage.getItem('otb_tbl_frete_dre') || 'otb_frete_dre',
+    despesa:   localStorage.getItem('otb_tbl_despesa')   || 'otb_despesa',
     folha:     localStorage.getItem('otb_tbl_folha')     || 'otb_folha',
     save_otb:  localStorage.getItem('otb_tbl_save_otb')  || 'otb_simulations',
     save_dre:  localStorage.getItem('otb_tbl_save_dre')  || 'otb_simulations',
@@ -881,6 +883,7 @@ function openConfig(){
     {key:'venda_dre', label:'📊 Venda DRE'},
     {key:'frete_dre', label:'🚚 Frete DRE'},
     {key:'folha',     label:'👥 Folha Pag.'},
+    {key:'despesa',   label:'💸 Despesas'},
   ];
   document.getElementById('cfgDreRows').innerHTML = dreDefs.map(function(d){
     var tbl = TBLS[d.key];
@@ -1822,6 +1825,7 @@ function renderTable(){
 //  DRE DATA + CALC (mantido exatamente do original)
 // ═══════════════════════════════════════════════════════
 var DRE_RAW=[], DRE_LOADED=false, DRE_TAB='mensal', DRE_SNAPSHOT=false;
+var DRE_FOLHA_RAW=[], DRE_DESP_RAW=[], DRE_CFG_PARAMS={}; // params por ano_mes
 var FIXOS_DEF={sal_vend:191500,sal_adm:409000,marketing:79800,desp_gerais:579000,cd_mensal:270000};
 var DRE_CONFIG={freteMetodo:'qtd',fob:{},closer:{},developer:{},farmer:{},martins:{},rca:{},branding:{},leads:{},grade:{},custoGrade:{},canaisBranding:{},canaisLeads:{}};
 var DRE_CONFIG_DEFAULTS={fob:0.006,closer:0.008,developer:0.006,farmer:0.006,martins:0.003,rca:0.005,branding:0.025,leads:0.015,grade:0,custoGrade:0};
@@ -1845,6 +1849,7 @@ async function loadDreFromSupabase(forceRaw){
     var saved = await supaLoad(TBLS.save_dre, 'dre_current');
     if(saved && saved.config) DRE_CONFIG = Object.assign(DRE_CONFIG, saved.config);
     if(saved && saved.fixos)  Object.assign(FIXOS_DEF, saved.fixos);
+    if(saved && saved.cfgParams) DRE_CFG_PARAMS = Object.assign(DRE_CFG_PARAMS, saved.cfgParams);
 
     // Usa snapshot agregado se existir e não for forceRaw
     if(!forceRaw && saved && saved.snapshot && saved.snapshot.length){
@@ -1857,6 +1862,9 @@ async function loadDreFromSupabase(forceRaw){
       DRE_SNAPSHOT = false;
       if(progLbl) progLbl.textContent = 'Buscando dados brutos do Supabase...';
       DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre', dreShowProgress);
+    // Carrega folha e despesa para referência no Config
+    try{ DRE_FOLHA_RAW = await fetchAll(TBLS.folha, null, 'folha'); } catch(e){ DRE_FOLHA_RAW=[]; }
+    try{ DRE_DESP_RAW  = await fetchAll(TBLS.despesa); } catch(e){ DRE_DESP_RAW=[]; }
     }
 
     DRE_LOADED = DRE_RAW.length > 0;
@@ -1912,6 +1920,7 @@ async function handleSaveDre(btn){
     var payload = {
       config: DRE_CONFIG,
       fixos: FIXOS_DEF,
+      cfgParams: DRE_CFG_PARAMS,
       snapshot: snapshot,
       snapshotAt: new Date().toISOString(),
       snapshotRows: snapshot ? snapshot.length : 0,
@@ -2252,99 +2261,214 @@ function openDreCfg(){
   var body = document.getElementById('dreCfgBody');
   if(!body) return;
 
-  // Pega o valor atual de um param (default se não definido globalmente)
-  function getGlobal(key){ var d = DRE_CONFIG_DEFAULTS; return d[key] !== undefined ? d[key] : 0; }
-  function pct(v){ return (v*100).toFixed(2); }
+  // ── Helpers ──────────────────────────────────────────
+  function pct(v){ return parseFloat((v*100).toFixed(4)); }
   function brl(v){ return Math.round(v); }
 
-  function field(label, id, val, hint, suffix){
-    suffix = suffix || '';
-    var isPct = suffix === '%';
-    var inputHtml = isPct
-      ? '<div class="pct-wrap"><input type="number" id="dcf_'+id+'" value="'+val+'" step="0.01" min="0" max="100" class="pct-input"><span class="pct-sym">%</span></div>'
-      : '<input type="number" id="dcf_'+id+'" value="'+val+'" step="1" class="brl-input">';
-    return '<div class="dre-cfg-field">'
-      + '<label>' + label + '</label>'
-      + inputHtml
-      + (hint ? '<span class="hint">'+hint+'</span>' : '')
-      + '</div>';
+  // Calcula totais da folha por canal/área para o ano_mes selecionado
+  function folhaTotalCanal(canal, am){
+    return DRE_FOLHA_RAW.filter(function(r){
+      var area  = String(r.area||r.AREA||'').toUpperCase();
+      var anomes= String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
+      return area.includes(canal.toUpperCase()) && (!am || anomes===am);
+    }).reduce(function(s,r){ return s + (parseFloat(r.valor||r.VALOR)||0); }, 0);
+  }
+  function folhaTotalAdm(am){
+    return DRE_FOLHA_RAW.filter(function(r){
+      var area  = String(r.area||r.AREA||'').toUpperCase();
+      var anomes= String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
+      var isComercial = ['CLOSER','DEVELOPER','FARMER'].some(function(c){ return area.includes(c); });
+      return !isComercial && (!am || anomes===am);
+    }).reduce(function(s,r){ return s + (parseFloat(r.valor||r.VALOR)||0); }, 0);
+  }
+  function despTotal(categoria, am){
+    return DRE_DESP_RAW.filter(function(r){
+      var cat   = String(r.categoria||r.CATEGORIA||'').toUpperCase();
+      var anomes= String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
+      return cat.includes(categoria.toUpperCase()) && (!am || anomes===am);
+    }).reduce(function(s,r){ return s + (parseFloat(r.valor||r.VALOR)||0); }, 0);
   }
 
+  // ── Meses disponíveis para filtro ──────────────────
+  var anomesList = Array.from(new Set(DRE_RAW.map(function(r){
+    var a=String(r.ano||r.ANO||''), m=String(r.mes||r.MES||'').padStart(2,'0');
+    return (a&&m)?a+m:'';
+  }))).filter(Boolean).sort();
+  var selectedAm = body._selectedAm || anomesList[anomesList.length-1] || '';
+  body._selectedAm = selectedAm;
+
+  // Pega parâmetro salvo para o ano_mes (ou default global)
+  function getP(key){
+    var p = DRE_CFG_PARAMS[selectedAm];
+    if(p && p[key] != null) return p[key];
+    return DRE_CONFIG_DEFAULTS[key] != null ? DRE_CONFIG_DEFAULTS[key] : 0;
+  }
+
+  // Faturamento bruto por canal no mês
+  function rbCanal(canal, am){
+    return DRE_RAW.filter(function(r){
+      var c = String(r.canal||r.CANAL||'').toUpperCase();
+      var anomes = String(r.ano||r.ANO||'')+ String(r.mes||r.MES||'').padStart(2,'0');
+      return c===canal.toUpperCase() && (!am || anomes===am);
+    }).reduce(function(s,r){ return s + (parseFloat(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO)||0); }, 0);
+  }
+
+  function fmt(v){ return 'R$ '+Math.round(v).toLocaleString('pt-BR'); }
+
+  // ── Field builders ────────────────────────────────
+  function fieldPct(label, id, val, refHtml){
+    return '<div class="dre-cfg-field">'
+      +'<label>'+label+'</label>'
+      +'<div class="pct-wrap"><input type="number" id="dcf_'+id+'" value="'+pct(val)+'" step="0.01" min="0" max="100" class="pct-input"><span class="pct-sym">%</span></div>'
+      +(refHtml ? '<span class="hint ref-val">'+refHtml+'</span>' : '')
+      +'</div>';
+  }
+  function fieldBrl(label, id, val, refHtml){
+    return '<div class="dre-cfg-field">'
+      +'<label>'+label+'</label>'
+      +'<input type="number" id="dcf_'+id+'" value="'+brl(val)+'" step="100" class="brl-input">'
+      +(refHtml ? '<span class="hint ref-val">'+refHtml+'</span>' : '')
+      +'</div>';
+  }
+
+  var am = selectedAm;
+
+  // ── Ref values ────────────────────────────────────
+  var rbCloser    = rbCanal('CLOSER',am),    folhaCloser    = folhaTotalCanal('CLOSER',am);
+  var rbDeveloper = rbCanal('DEVELOPER',am), folhaDeveloper = folhaTotalCanal('DEVELOPER',am);
+  var rbFarmer    = rbCanal('FARMER',am),    folhaFarmer    = folhaTotalCanal('FARMER',am);
+  var rbMartins   = rbCanal('MARTINS',am);
+  var rbRca       = rbCanal('RCA',am),       despRca        = despTotal('COMISSÃO RCA',am)||despTotal('COMISSAO RCA',am)||despTotal('RCA',am);
+  var despMkt     = despTotal('MARKETING',am)||despTotal('MKT',am);
+  var despGerais  = despTotal('DESPESA GERAL',am)||despTotal('DESP GERAL',am)||despTotal('GERAL',am);
+  var despCd      = despTotal('CD',am)||despTotal('CENTRO DE DISTRIBUIÇÃO',am)||despTotal('DISTRIBUICAO',am);
+  var folhaAdm    = folhaTotalAdm(am);
+  var despCusto   = despTotal('CUSTO',am);
+
+  // Meses select
+  var mesOpts = anomesList.map(function(am2){
+    var y=am2.slice(0,4), m=am2.slice(4,6);
+    var ml=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    return '<option value="'+am2+'"'+(am2===selectedAm?' selected':'')+'>'+ml[+m]+'/'+y+'</option>';
+  }).join('');
+
   body.innerHTML =
-    // ── FRETE ──
+    // ── FILTRO ANO_MES ──
     '<div class="dre-cfg-sec">'
-    + '<div class="dre-cfg-sec-hd">🚚 Método de cálculo do Custo Frete</div>'
-    + '<div style="padding:12px 14px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">'
-    + '<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="dcf_frete" value="base" '+(DRE_CONFIG.freteMetodo==='base'?'checked':'')+' onchange="DRE_CONFIG.freteMetodo=this.value"> % da Receita Líquida (3,1%)</label>'
-    + '<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="dcf_frete" value="qtd" '+(DRE_CONFIG.freteMetodo!=='base'?'checked':'')+' onchange="DRE_CONFIG.freteMetodo=this.value"> Valor real da base (coluna custo_frete)</label>'
-    + '</div></div>'
+    +'<div class="dre-cfg-sec-hd">📅 Parâmetros por Ano/Mês</div>'
+    +'<div style="padding:12px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+    +'<div style="display:flex;flex-direction:column;gap:4px"><label style="font-size:10px;font-weight:700;color:#7a8ab0;text-transform:uppercase;letter-spacing:.8px">Mês de referência</label>'
+    +'<select id="dcf_am" onchange="dreAmChange(this.value)" style="padding:7px 12px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:13px;font-family:inherit;color:#0f1a3a;background:#f7f9ff;cursor:pointer">'+mesOpts+'</select></div>'
+    +'<div style="font-size:11px;color:#7a8ab0;line-height:1.5;margin-top:18px">Os parâmetros abaixo serão salvos para <strong>'+selectedAm+'</strong>.<br>Cada mês pode ter valores diferentes.</div>'
+    +'</div></div>'
 
-    // ── COMISSÕES % ──
-    + '<div class="dre-cfg-sec">'
-    + '<div class="dre-cfg-sec-hd">💼 Comissões e Salários Comerciais (% da Rec. Líquida)</div>'
-    + '<div class="dre-cfg-grid">'
-    + field('FOB', 'fob', pct(getGlobal('fob')), 'Custo FOB', '%')
-    + field('Sal. Closer', 'closer', pct(getGlobal('closer')), 'Salário Closer', '%')
-    + field('Sal. Developer', 'developer', pct(getGlobal('developer')), 'Salário Developer', '%')
-    + field('Sal. Farmer', 'farmer', pct(getGlobal('farmer')), 'Salário Farmer', '%')
-    + field('Comissão Martins', 'martins', pct(getGlobal('martins')), 'Comissão Martins', '%')
-    + field('Comissão RCA', 'rca', pct(getGlobal('rca')), 'Comissão RCA', '%')
-    + '</div></div>'
+    // ── FRETE ──
+    +'<div class="dre-cfg-sec">'
+    +'<div class="dre-cfg-sec-hd">🚚 Método de cálculo do Custo Frete</div>'
+    +'<div style="padding:12px 14px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">'
+    +'<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="dcf_frete" value="base" '+(DRE_CONFIG.freteMetodo==='base'?'checked':'')+' onchange="DRE_CONFIG.freteMetodo=this.value"> % da Receita Líquida (3,1%)</label>'
+    +'<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="dcf_frete" value="qtd" '+(DRE_CONFIG.freteMetodo!=='base'?'checked':'')+' onchange="DRE_CONFIG.freteMetodo=this.value"> Valor real da base (coluna custo_frete)</label>'
+    +'</div></div>'
 
-    // ── MARKETING % ──
-    + '<div class="dre-cfg-sec">'
-    + '<div class="dre-cfg-sec-hd">📢 Marketing (% da Rec. Líquida)</div>'
-    + '<div class="dre-cfg-grid">'
-    + field('Branding', 'branding', pct(getGlobal('branding')), 'Marketing de branding', '%')
-    + field('Leads Novos', 'leads', pct(getGlobal('leads')), 'Geração de leads', '%')
-    + '</div></div>'
+    // ── FOB ──
+    +'<div class="dre-cfg-sec">'
+    +'<div class="dre-cfg-sec-hd">📦 FOB</div>'
+    +'<div class="dre-cfg-grid">'
+    +fieldPct('FOB (% da Rec. Líquida)', 'fob', getP('fob'))
+    +'</div></div>'
 
-    // ── FIXOS R$ ──
-    + '<div class="dre-cfg-sec">'
-    + '<div class="dre-cfg-sec-hd">🏢 Despesas Fixas (R$ / mês)</div>'
-    + '<div class="dre-cfg-grid">'
-    + field('Salários Adm', 'sal_adm', brl(FIXOS_DEF.sal_adm), 'Valor mensal R$')
-    + field('Despesas Gerais', 'desp_gerais', brl(FIXOS_DEF.desp_gerais), 'Valor mensal R$')
-    + field('CD (centro de dist.)', 'cd_mensal', brl(FIXOS_DEF.cd_mensal), 'Valor mensal R$')
-    + '</div></div>'
+    // ── SALÁRIOS COMERCIAIS ──
+    +'<div class="dre-cfg-sec">'
+    +'<div class="dre-cfg-sec-hd">💼 Salários Comerciais (% da Rec. Bruta do Canal)</div>'
+    +'<div class="dre-cfg-grid">'
+    +fieldPct('% Sal. Closer', 'closer', getP('closer'),
+      rbCloser>0 ? '🏦 RB Canal: '+fmt(rbCloser)+(folhaCloser?' &nbsp;|&nbsp; 👥 Folha: '+fmt(folhaCloser):'') : (folhaCloser?'👥 Folha: '+fmt(folhaCloser):''))
+    +fieldPct('% Sal. Developer', 'developer', getP('developer'),
+      rbDeveloper>0 ? '🏦 RB Canal: '+fmt(rbDeveloper)+(folhaDeveloper?' &nbsp;|&nbsp; 👥 Folha: '+fmt(folhaDeveloper):'') : (folhaDeveloper?'👥 Folha: '+fmt(folhaDeveloper):''))
+    +fieldPct('% Sal. Farmer', 'farmer', getP('farmer'),
+      rbFarmer>0 ? '🏦 RB Canal: '+fmt(rbFarmer)+(folhaFarmer?' &nbsp;|&nbsp; 👥 Folha: '+fmt(folhaFarmer):'') : (folhaFarmer?'👥 Folha: '+fmt(folhaFarmer):''))
+    +'</div></div>'
+
+    // ── COMISSÕES ──
+    +'<div class="dre-cfg-sec">'
+    +'<div class="dre-cfg-sec-hd">🤝 Comissões (% da Rec. Bruta do Canal)</div>'
+    +'<div class="dre-cfg-grid">'
+    +fieldPct('% Comissão Martins', 'martins', getP('martins'),
+      rbMartins>0 ? '🏦 RB Canal: '+fmt(rbMartins) : '')
+    +fieldPct('% Comissão RCA', 'rca', getP('rca'),
+      (rbRca>0?'🏦 RB Canal: '+fmt(rbRca):'') + (despRca?' &nbsp;|&nbsp; 💸 Desp.: '+fmt(despRca):''))
+    +'</div></div>'
+
+    // ── MARKETING ──
+    +'<div class="dre-cfg-sec">'
+    +'<div class="dre-cfg-sec-hd">📢 Marketing</div>'
+    +'<div class="dre-cfg-grid">'
+    +fieldBrl('Despesa Marketing Total (R$)', 'desp_mkt', despMkt||FIXOS_DEF.marketing||0,
+      despMkt ? '💸 Base otb_despesa: '+fmt(despMkt) : '⚠️ Sem dado na base — usando fixo')
+    +fieldPct('Share Branding (% do Total Mkt)', 'branding', getP('branding'),
+      'Aplica-se aos canais Farmer e Developer')
+    +fieldPct('Share Performance (% do Total Mkt)', 'leads', getP('leads'),
+      'Aplica-se ao canal Closer')
+    +'</div></div>'
+
+    // ── FIXOS ──
+    +'<div class="dre-cfg-sec">'
+    +'<div class="dre-cfg-sec-hd">🏢 Despesas Fixas</div>'
+    +'<div class="dre-cfg-grid">'
+    +fieldBrl('Salários Adm (R$)', 'sal_adm', FIXOS_DEF.sal_adm,
+      folhaAdm ? '👥 Folha ADM: '+fmt(folhaAdm) : '')
+    +fieldBrl('Despesas Gerais (R$)', 'desp_gerais', FIXOS_DEF.desp_gerais,
+      despGerais ? '💸 Base: '+fmt(despGerais) : '')
+    +fieldBrl('CD — Centro de Dist. (R$)', 'cd_mensal', FIXOS_DEF.cd_mensal,
+      despCd ? '💸 Base: '+fmt(despCd) : '')
+    +'</div></div>'
 
     // ── MONTAGEM GRADE ──
-    + '<div class="dre-cfg-sec">'
-    + '<div class="dre-cfg-sec-hd">📦 Montagem de Grade</div>'
-    + '<div class="dre-cfg-grid">'
-    + field('Custo por Par (Hava)', 'custoGrade', brl(DRE_CONFIG_DEFAULTS.custoGrade||0), 'R$ por par montado')
-    + '</div></div>';
-
-  document.getElementById('dreCfgOverlay').style.display = 'flex';
+    +'<div class="dre-cfg-sec">'
+    +'<div class="dre-cfg-sec-hd">👟 Montagem de Grade — Havaianas</div>'
+    +'<div class="dre-cfg-grid">'
+    +fieldBrl('Custo por Par (R$)', 'custoGrade', DRE_CONFIG_DEFAULTS.custoGrade||0)
+    +'</div></div>';
 }
-
 function closeDreCfg(){
   document.getElementById('dreCfgOverlay').style.display = 'none';
 }
 
+function dreAmChange(am){
+  var body = document.getElementById('dreCfgBody');
+  if(body) body._selectedAm = am;
+  openDreCfg();
+}
+
 function applyDreCfg(){
-  function gv(id){ return parseFloat(document.getElementById('dcf_'+id).value)||0; }
+  function gv(id){ var el=document.getElementById('dcf_'+id); return el?(parseFloat(el.value)||0):0; }
+  var body = document.getElementById('dreCfgBody');
+  var am = body && body._selectedAm ? body._selectedAm : '';
 
-  // Atualiza defaults de % (converte de % para decimal)
-  var pctFields = ['fob','closer','developer','farmer','martins','rca','branding','leads'];
-  pctFields.forEach(function(k){
-    DRE_CONFIG_DEFAULTS[k] = gv(k) / 100;
-    // Limpa overrides por mês para usar o novo default global
-    DRE_CONFIG[k] = {};
-  });
+  if(am){
+    if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
+    ['fob','closer','developer','farmer','martins','rca','branding','leads'].forEach(function(k){
+      DRE_CFG_PARAMS[am][k] = gv(k) / 100;
+      if(!DRE_CONFIG[k]) DRE_CONFIG[k] = {};
+      DRE_CONFIG[k][am] = DRE_CFG_PARAMS[am][k];
+    });
+  } else {
+    ['fob','closer','developer','farmer','martins','rca','branding','leads'].forEach(function(k){
+      DRE_CONFIG_DEFAULTS[k] = gv(k) / 100;
+      DRE_CONFIG[k] = {};
+    });
+  }
 
-  // Custo grade R$
-  DRE_CONFIG_DEFAULTS.custoGrade = gv('custoGrade');
-  DRE_CONFIG.custoGrade = {};
-
-  // Fixos R$
+  FIXOS_DEF.marketing   = gv('desp_mkt');
   FIXOS_DEF.sal_adm     = gv('sal_adm');
   FIXOS_DEF.desp_gerais = gv('desp_gerais');
   FIXOS_DEF.cd_mensal   = gv('cd_mensal');
+  DRE_CONFIG_DEFAULTS.custoGrade = gv('custoGrade');
+  DRE_CONFIG.custoGrade = {};
 
   closeDreCfg();
   dreRender();
-  toast('✔ Parâmetros aplicados — DRE recalculado');
+  toast('✔ Parâmetros de '+(am||'global')+' aplicados — DRE recalculado');
 }
 
 </script>
