@@ -30,6 +30,7 @@ body{font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;background:var(--b
 #screenOtb{background:var(--bg);z-index:80;flex-direction:column}
 #screenDre{background:var(--bg);z-index:80;flex-direction:column}
 #screenFolha{background:var(--bg);z-index:80;flex-direction:column}
+#screenBudget{background:var(--bg);z-index:80;flex-direction:column}
 /* active class shows the screen */
 .screen-active{display:flex!important}
 
@@ -329,7 +330,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       <div class="name">DRE</div>
       <div class="desc">Demonstrativo de Resultado<br>Receita · Custos · Margem</div>
     </button>
-    <button class="home-card budget" onclick="toast('Módulo Budget em desenvolvimento.','info')">
+    <button class="home-card budget" onclick="openBudget()">
       <div class="icon">🎯</div>
       <div class="name">BUDGET</div>
       <div class="desc">Orçamento<br>Metas · Projeções · Desvios</div>
@@ -676,7 +677,7 @@ async function supaLoad(saveTable, rowKey){
 //  AUTH
 // ═══════════════════════════════════════════════════════
 function showScreen(id){
-  ['screenLogin','screenHome','screenOtb','screenDre','screenFolha'].forEach(function(s){
+  ['screenLogin','screenHome','screenOtb','screenDre','screenFolha','screenBudget'].forEach(function(s){
     document.getElementById(s).classList.remove('screen-active');
   });
   document.getElementById(id).classList.add('screen-active');
@@ -2510,6 +2511,294 @@ function applyDreCfg(){
   toast('✔ Parâmetros de '+(am||'global')+' aplicados — DRE recalculado');
 }
 
+
+// ═══════════════════════════════════════════════════════
+//  BUDGET MODULE
+// ═══════════════════════════════════════════════════════
+var BUDGET_DESP_RAW = [];
+var BUDGET_LOADED = false;
+var BUDGET_CFG = {
+  // classif[e2_nomfor+'|'+e2_hist] = {tipo, area}
+  classif: {},
+  // saved tipoMap and areaMap for display
+};
+var BUDGET_TIPOS = ['Frete','CMV','Salários','Impostos','CD','Sistemas','INSS','Benefícios',
+  'Convênio','Aluguel','Seguros','FGTS','Rescisão','Eventos','Comissão','Conselho',
+  'Educação','Água/Luz/Internet','Materiais de Consumo','Jurídico','Equipamentos'];
+var BUDGET_AREAS = ['Operações','Avacy','Comercial','Compras','RH','Financeiro',
+  'E-comm/Mkt','Administrativo','Fiscal'];
+
+async function openBudget(){
+  showScreen('screenBudget');
+  if(!BUDGET_LOADED) await loadBudget();
+  renderBudget();
+}
+
+async function loadBudget(){
+  var meta = document.getElementById('budgetHeaderMeta');
+  if(meta) meta.textContent = 'Carregando...';
+  // Load despesa and saved config
+  try{ BUDGET_DESP_RAW = await fetchAll(TBLS.despesa); } catch(e){ BUDGET_DESP_RAW=[]; }
+  // Also make sure DRE data is loaded (for AVACY fatVal)
+  if(!DRE_LOADED){ try{ DRE_RAW = await fetchAll(TBLS.venda_dre,null,'venda_dre'); DRE_LOADED=DRE_RAW.length>0; }catch(e){} }
+  // Load saved config
+  try{
+    var saved = await supaLoad(TBLS.save_dre,'budget_cfg');
+    if(saved && saved.classif) BUDGET_CFG.classif = saved.classif;
+  }catch(e){}
+  BUDGET_LOADED = true;
+}
+
+function budgetGetMonths(){
+  // Union of months from DRE_RAW and BUDGET_DESP_RAW
+  var set = {};
+  DRE_RAW.forEach(function(r){
+    var a=String(r.ano||r.ANO||''), m=String(r.mes||r.MES||'').padStart(2,'0');
+    if(a&&m) set[a+'-'+m]=1;
+  });
+  BUDGET_DESP_RAW.forEach(function(r){
+    var am = String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
+    if(am.length===6) set[am.slice(0,4)+'-'+am.slice(4,6)]=1;
+  });
+  return Object.keys(set).sort();
+}
+
+function budgetAvacyFatVal(ym){
+  // ym = 'YYYY-MM'
+  var parts = ym.split('-'), ano=parts[0], mes=parts[1];
+  var avacy = state && state.matrices && state.matrices['AVACY'];
+  if(avacy && avacy[ym]) return avacy[ym].fatVal||0;
+  // Fallback: sum from DRE_RAW for the month
+  return DRE_RAW.filter(function(r){
+    return String(r.ano||r.ANO)===ano && String(r.mes||r.MES||'').padStart(2,'0')===mes;
+  }).reduce(function(s,r){ return s+(parseFloat(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO)||0);},0);
+}
+
+function budgetDreMetric(ym, key){
+  var parts=ym.split('-'), ano=parts[0], mes=parts[1];
+  var rows = DRE_RAW.filter(function(r){
+    return String(r.ano||r.ANO)===ano && String(r.mes||r.MES||'').padStart(2,'0')===mes;
+  });
+  if(!rows.length) return null;
+  var a = dreAgg(rows);
+  var d = dreCalc(a,1,1);
+  var map = {
+    icms_pct: a.fat_v>0 ? a.icms/a.fat_v : 0,
+    piscofins_pct: a.fat_v>0 ? (a.cofins+a.pis+a.fecpst)/a.fat_v : 0,
+    mg_prod: d.mg_prod,
+    fob: d.fob,
+    grade: d.grade||0,
+  };
+  return map[key] != null ? map[key] : null;
+}
+
+function budgetDespByTipoArea(ym, tipo, area){
+  var am = ym.replace('-','');
+  return BUDGET_DESP_RAW.filter(function(r){
+    var ramAm = String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
+    var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'');
+    var hist   = String(r.e2_hist||r.E2_HIST||'');
+    var classif= BUDGET_CFG.classif[nomfor+'|'+hist]||{};
+    return ramAm===am
+      && (!tipo || classif.tipo===tipo)
+      && (!area || classif.area===area);
+  }).reduce(function(s,r){ return s+(parseFloat(r.valor||r.VALOR||r.e2_valor||r.E2_VALOR)||0);},0);
+}
+
+var _bFmt = function(v){ if(v===null||v===undefined) return '—';
+  var n=Math.round(v); return n<0?'-R$ '+Math.abs(n).toLocaleString('pt-BR'):'R$ '+n.toLocaleString('pt-BR'); };
+var _bPct = function(v){ if(v===null||v===undefined) return '—';
+  return (v*100).toFixed(1)+'%'; };
+
+function renderBudget(){
+  var months = budgetGetMonths();
+  var meta = document.getElementById('budgetHeaderMeta');
+  if(meta) meta.textContent = months.length+' meses · '+BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' lançamentos';
+
+  if(!months.length){
+    document.getElementById('budgetBody').innerHTML='<div style="text-align:center;padding:80px;color:#7a8ab0">Sem dados. Verifique as tabelas nas Configurações.</div>';
+    return;
+  }
+
+  var ml=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  function mLabel(ym){ var p=ym.split('-'); return ml[+p[1]]+'/'+(p[0].slice(2)); }
+  function isFuture(ym){ return ym >= (new Date().getFullYear()+'-'+(String(new Date().getMonth()+1).padStart(2,'0'))); }
+
+  // Build header
+  var h = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:900px">';
+  h += '<thead><tr><th style="text-align:left;padding:8px 12px;background:#1a2547;color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;position:sticky;left:0;z-index:2;min-width:220px">INDICADOR</th>';
+  months.forEach(function(ym){
+    var future = isFuture(ym);
+    h += '<th style="text-align:right;padding:8px 10px;background:'+(future?'#1e3a6e':'#1a2547')+';color:'+(future?'#a8c4f0':'#fff')+';font-size:11px;font-weight:700;min-width:110px">'+mLabel(ym)+(future?' ✦':'')+'</th>';
+  });
+  h += '</tr></thead><tbody>';
+
+  function secRow(label, icon){
+    h += '<tr><td colspan="'+(months.length+1)+'" style="padding:6px 12px;background:linear-gradient(90deg,#1a2a6c,#2352c8);color:#fff;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;position:sticky;left:0">'+icon+' '+label+'</td></tr>';
+  }
+  function dataRow(label, fn, opts){
+    opts = opts||{};
+    var bold = opts.bold, sub = opts.sub, isPct = opts.pct;
+    var bg = bold ? '#eef2fc' : sub ? '#fafbff' : '#fff';
+    var fw = bold ? '700' : '400';
+    var pl = sub ? '28px' : '12px';
+    h += '<tr>';
+    h += '<td style="padding:6px '+pl+';background:'+bg+';font-weight:'+fw+';color:#0f1a3a;border-bottom:1px solid #eef1f8;position:sticky;left:0;z-index:1">'+label+'</td>';
+    months.forEach(function(ym){
+      var val = fn(ym);
+      var future = isFuture(ym);
+      var display = val===null ? '<span style="color:#ccc">—</span>' : isPct ? _bPct(val) : _bFmt(val);
+      var color = (typeof val==='number'&&val<0) ? '#c0181a' : (future?'#1a56c4':'#0f1a3a');
+      h += '<td style="text-align:right;padding:6px 10px;background:'+(future?'#f0f5ff':bg)+';font-weight:'+fw+';color:'+color+';border-bottom:1px solid #eef1f8">'+display+'</td>';
+    });
+    h += '</tr>';
+  }
+
+  // ── RECEITA ──
+  secRow('Receita', '📈');
+  dataRow('Receita Bruta AVACY', function(ym){ return budgetAvacyFatVal(ym)||null; }, {bold:true});
+
+  // ── IMPOSTOS ──
+  secRow('Impostos', '🧾');
+  dataRow('ICMS %', function(ym){ return budgetDreMetric(ym,'icms_pct'); }, {sub:true, pct:true});
+  dataRow('PIS/COFINS %', function(ym){ return budgetDreMetric(ym,'piscofins_pct'); }, {sub:true, pct:true});
+
+  // ── CMV ──
+  secRow('CMV', '🏭');
+  dataRow('Margem Produto %', function(ym){ return budgetDreMetric(ym,'mg_prod'); }, {bold:true, pct:true});
+
+  // ── CUSTOS ──
+  secRow('Custos Operacionais', '💰');
+  dataRow('FOB (R$)', function(ym){ return budgetDreMetric(ym,'fob')||null; }, {sub:true});
+  dataRow('Montagem Grade (R$)', function(ym){ return budgetDreMetric(ym,'grade')||null; }, {sub:true});
+
+  // ── DESPESAS CLASSIFICADAS ──
+  // Get unique tipo/area combos that have data
+  var usedTipos = {};
+  BUDGET_DESP_RAW.forEach(function(r){
+    var k = (r.e2_nomfor||r.E2_NOMFOR||'')+'|'+(r.e2_hist||r.E2_HIST||'');
+    var c = BUDGET_CFG.classif[k]||{};
+    if(c.tipo) usedTipos[c.tipo] = true;
+  });
+  var tiposUsados = BUDGET_TIPOS.filter(function(t){ return usedTipos[t]; });
+
+  if(tiposUsados.length){
+    secRow('Despesas', '💸');
+    tiposUsados.forEach(function(tipo){
+      var usedAreas = {};
+      BUDGET_DESP_RAW.forEach(function(r){
+        var k = (r.e2_nomfor||r.E2_NOMFOR||'')+'|'+(r.e2_hist||r.E2_HIST||'');
+        var c = BUDGET_CFG.classif[k]||{};
+        if(c.tipo===tipo && c.area) usedAreas[c.area] = true;
+      });
+      var areas = BUDGET_AREAS.filter(function(a){ return usedAreas[a]; });
+
+      // Total por tipo
+      dataRow(tipo, function(ym){ return budgetDespByTipoArea(ym,tipo,null)||null; }, {bold:true});
+      areas.forEach(function(area){
+        dataRow('↳ '+area, function(ym){ return budgetDespByTipoArea(ym,tipo,area)||null; }, {sub:true});
+      });
+    });
+  }
+
+  h += '</tbody></table></div>';
+  document.getElementById('budgetBody').innerHTML = h;
+  document.getElementById('budgetEmpty').style.display='none';
+}
+
+// ── Budget Config ──────────────────────────────────────
+function openBudgetCfg(){
+  var body = document.getElementById('budgetCfgBody');
+  if(!body) return;
+
+  // Get unique nomfor+hist combos
+  var combos = {};
+  BUDGET_DESP_RAW.forEach(function(r){
+    var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
+    var hist   = String(r.e2_hist||r.E2_HIST||'').trim();
+    if(!nomfor && !hist) return;
+    var k = nomfor+'|'+hist;
+    if(!combos[k]) combos[k]={nomfor:nomfor, hist:hist, count:0};
+    combos[k].count++;
+  });
+
+  var keys = Object.keys(combos).sort();
+  if(!keys.length){
+    body.innerHTML = '<div style="padding:20px;color:#7a8ab0;text-align:center">Nenhum lançamento encontrado na tabela '+TBLS.despesa+'.<br>Verifique se a tabela está carregada nas Configurações.</div>';
+    document.getElementById('budgetCfgOverlay').style.display='flex';
+    return;
+  }
+
+  var tipoOpts = '<option value="">— Tipo —</option>'+BUDGET_TIPOS.map(function(t){ return '<option value="'+t+'">'+t+'</option>'; }).join('');
+  var areaOpts = '<option value="">— Área —</option>'+BUDGET_AREAS.map(function(a){ return '<option value="'+a+'">'+a+'</option>'; }).join('');
+
+  var selStyle = 'padding:4px 7px;border:1.5px solid #d0d8ee;border-radius:5px;font-size:11px;font-family:inherit;color:#0f1a3a;background:#f7f9ff;cursor:pointer;min-width:130px';
+
+  var h = '<div style="font-size:11px;color:#7a8ab0;margin-bottom:10px">'+keys.length+' combinações Fornecedor/Histórico encontradas. Classifique cada uma:</div>';
+  h += '<div style="overflow-y:auto;max-height:55vh">';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+  h += '<thead><tr style="background:#1a2547;color:#fff">';
+  h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">FORNECEDOR</th>';
+  h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">HISTÓRICO</th>';
+  h += '<th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;letter-spacing:1px">QTD</th>';
+  h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">TIPO</th>';
+  h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">ÁREA</th>';
+  h += '</tr></thead><tbody>';
+
+  keys.forEach(function(k, i){
+    var c = combos[k];
+    var saved = BUDGET_CFG.classif[k]||{};
+    var bg = i%2===0?'#fff':'#f7f9ff';
+    h += '<tr style="background:'+bg+'">';
+    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#0f1a3a;font-weight:500">'+c.nomfor+'</td>';
+    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#555">'+c.hist+'</td>';
+    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#7a8ab0;text-align:center">'+c.count+'</td>';
+    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8">';
+    h += '<select id="bcfg_tipo_'+i+'" data-key="'+k.replace(/"/g,'&quot;')+'" style="'+selStyle+'">';
+    h += tipoOpts.replace('value="'+(saved.tipo||'')+'"','value="'+(saved.tipo||'')+'" selected');
+    h += '</select></td>';
+    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8">';
+    h += '<select id="bcfg_area_'+i+'" data-key="'+k.replace(/"/g,'&quot;')+'" style="'+selStyle+'">';
+    h += areaOpts.replace('value="'+(saved.area||'')+'"','value="'+(saved.area||'')+'" selected');
+    h += '</select></td>';
+    h += '</tr>';
+  });
+
+  h += '</tbody></table></div>';
+  body.innerHTML = h;
+  body._keys = keys;
+  body._count = keys.length;
+  document.getElementById('budgetCfgOverlay').style.display='flex';
+}
+
+function closeBudgetCfg(){
+  document.getElementById('budgetCfgOverlay').style.display='none';
+}
+
+async function saveBudgetCfg(btn){
+  var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
+  var body = document.getElementById('budgetCfgBody');
+  var keys = body._keys||[];
+  var count = body._count||0;
+
+  // Read all selects
+  for(var i=0;i<count;i++){
+    var tipoEl = document.getElementById('bcfg_tipo_'+i);
+    var areaEl = document.getElementById('bcfg_area_'+i);
+    if(!tipoEl) continue;
+    var k = tipoEl.getAttribute('data-key');
+    BUDGET_CFG.classif[k] = {tipo: tipoEl.value, area: areaEl?areaEl.value:''};
+  }
+
+  try{
+    await supaSave(TBLS.save_dre,'budget_cfg', BUDGET_CFG);
+    toast('✔ Classificações salvas');
+    closeBudgetCfg();
+    renderBudget();
+  } catch(e){ toast('Erro ao salvar: '+e.message,'err'); }
+  btn.disabled=false; btn.textContent=orig;
+}
+
 </script>
 
 <!-- ══════════════════ DRE CONFIG ═════════════════════ -->
@@ -2528,5 +2817,40 @@ function applyDreCfg(){
     </div>
   </div>
 </div>
+<!-- ══════════════════ BUDGET ═════════════════════ -->
+<div id="screenBudget">
+  <header class="app-header">
+    <div class="app-brand">
+      <button class="btn-back" onclick="showHome()">← Início</button>
+      <div class="app-brand-mark" style="background:var(--green)">BGT</div>
+      <div>
+        <h1>Budget — Orçamento</h1>
+        <small id="budgetHeaderMeta">Carregando...</small>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn" onclick="openBudgetCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button>
+    </div>
+  </header>
+  <div style="flex:1;overflow:auto;padding:16px 20px" id="budgetBody">
+    <div style="text-align:center;padding:80px;color:#7a8ab0;font-size:14px" id="budgetEmpty">Carregando dados...</div>
+  </div>
+</div>
+
+<!-- ══════════════════ BUDGET CONFIG ══════════════ -->
+<div class="dre-cfg-overlay" id="budgetCfgOverlay" onclick="if(event.target===this)closeBudgetCfg()">
+  <div class="dre-cfg-box" style="width:min(760px,96vw)">
+    <div class="dre-cfg-hd">
+      <div><h2>⚙️ Configurações Budget — Despesas</h2><small>Classifique despesas da base otb_despesa por tipo e área</small></div>
+      <button class="dre-cfg-close" onclick="closeBudgetCfg()">×</button>
+    </div>
+    <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px" id="budgetCfgBody"></div>
+    <div class="dre-cfg-ft">
+      <button class="btn save" onclick="saveBudgetCfg(this)">💾 Salvar Configurações</button>
+      <button class="btn" onclick="closeBudgetCfg()">Fechar</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
