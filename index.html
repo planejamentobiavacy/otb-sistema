@@ -2091,7 +2091,19 @@ function dreCalc(a,shareRB,shareQTD){
   var sv=sv_closer+sv_developer+sv_farmer,com=com_martins+com_rca;
   var mb=rl-cmv-fob-grade,mc=mb-sv-com;
   var rf_rec=a.rec_frete,cf=a.custo_frete>0?a.custo_frete:rl*0.031;
-  var mkt_branding=rl*getSalPct('branding')*shareRB,mkt_leads=rl*getSalPct('leads')*shareRB,mkt=mkt_branding+mkt_leads;
+  // Marketing: valor fixo do mês (FIXOS_DEF.marketing) * shareRB
+  // branding e leads são shares do total (ex: 60% branding, 40% performance)
+  var mktBase=(function(){
+    // Tenta pegar valor do mês específico via DRE_CFG_PARAMS
+    var mktVal=FIXOS_DEF.marketing||0;
+    if(a.anomesList.length){
+      var p=DRE_CFG_PARAMS[a.anomesList[a.anomesList.length-1]];
+      if(p && p.desp_mkt!=null) mktVal=p.desp_mkt;
+    }
+    return mktVal;
+  })();
+  var mkt_total=mktBase*shareRB;
+  var mkt_branding=mkt_total*getSalPct('branding'),mkt_leads=mkt_total*getSalPct('leads'),mkt=mkt_branding+mkt_leads;
   var mcon=mc+rf_rec-cf-mkt,sa=FIXOS_DEF.sal_adm*shareRB,dg=FIXOS_DEF.desp_gerais*shareRB,cd=FIXOS_DEF.cd_mensal*shareQTD;
   var ebt=mcon-sa-dg-cd;
   return{rb_dev,dev,rb,imp,icms:a.icms,pc:a.cofins+a.pis+a.fecpst,rl,qtd:a.qtd,cmv_b,cmv,mkp,mg_prod,fob,mb,sv,sv_closer,sv_developer,sv_farmer,com,com_martins,com_rca,mc,rf:rf_rec,cf,mkt,mkt_branding,mkt_leads,mcon,grade,sa,dg,cd,ebt};
@@ -2478,6 +2490,7 @@ function applyDreCfg(){
       if(!DRE_CONFIG[k]) DRE_CONFIG[k] = {};
       DRE_CONFIG[k][am] = DRE_CFG_PARAMS[am][k];
     });
+    DRE_CFG_PARAMS[am].desp_mkt = gv('desp_mkt');
   } else {
     ['fob','closer','developer','farmer','martins','rca','branding','leads'].forEach(function(k){
       DRE_CONFIG_DEFAULTS[k] = gv(k) / 100;
