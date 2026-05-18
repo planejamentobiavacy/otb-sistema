@@ -534,10 +534,7 @@ var COLS = {
   // otb_produto: cod_produto, fornecedor, categoria
   produto: ['cod_produto','fornecedor','categoria'],
 
-  // dw_otb_venda_dre — só as colunas que dreAgg usa (reduz payload ~80%)
-  venda_dre: ['ano','mes','canal','cluster','regiao','fornecedor',
-              'faturamento_venda','devolucao_venda','qtd','custo',
-              'icms','cofins','pis','fecpst','rec_frete','custo_frete','qtd_grade_hava'],
+  venda_dre: null, // select=* — colunas em maiúsculo, PostgREST é case-sensitive
 
   // otb_folha: todas as colunas úteis já são diretas
   folha: ['ano_mes','area','cargo','pessoa','valor'],
@@ -586,7 +583,8 @@ async function supaFetch(path, opts){
 // Buscar todas as linhas paginadas — tableKey opcional para select otimizado
 // Estratégia: busca 1a pagina com count=exact, depois demais em PARALELO
 async function fetchAll(table, extraFilter, tableKey, onProgress){
-  var PAGE = 1000;
+  // Tabelas grandes usam página menor para evitar timeout do Supabase
+  var PAGE = (table && (table.indexOf('venda_dre')>-1 || table.indexOf('dw_otb')>-1)) ? 2000 : 1000;
   var sel = tableKey ? buildSelect(tableKey) : 'select=*';
   var base = '/rest/v1/' + table + '?' + sel + (extraFilter||'');
 
@@ -597,7 +595,8 @@ async function fetchAll(table, extraFilter, tableKey, onProgress){
     var headers = {
       'apikey': SUPA_ANON_KEY, 'Authorization': 'Bearer ' + token,
       'Content-Type': 'application/json', 'Accept': 'application/json',
-      'Range': from + '-' + to, 'Range-Unit': 'items'
+      'Range': from + '-' + to, 'Range-Unit': 'items',
+      'x-statement-timeout': '30000'
     };
     if(!noCount) headers['Prefer'] = 'count=exact';
     var r = await fetch(SUPA_URL + base, {headers: headers});
