@@ -702,8 +702,7 @@ async function supaSave(saveTable, rowKey, value){
 }
 async function supaLoad(saveTable, rowKey){
   try{
-    // order=id.desc + limit=1 garante que pegamos o registro mais recente
-    var rows = await supaFetch('/rest/v1/' + saveTable + '?key=eq.' + rowKey + '&select=id,value&order=id.desc&limit=1');
+    var rows = await supaFetch('/rest/v1/' + saveTable + '?key=eq.' + rowKey + '&select=value&limit=1');
     if(!rows || !rows.length) return null;
     var raw = rows[0].value;
     if(!raw) return null;
