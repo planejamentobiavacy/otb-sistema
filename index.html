@@ -2217,6 +2217,7 @@ function dreRenderMensal(){
   var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn);
   var meses=Array.from(new Set(rows.map(function(r){return String(r.mes||r.MES||'').padStart(2,'0');}))).filter(function(m){return m!=='00';}).sort();
   var cols=meses.map(function(m){return{label:ml(m)+(ano!=='TODOS'?'/'+String(ano).slice(-2):''),d:dreCalc(dreAgg(rows.filter(function(r){return String(r.mes||r.MES||'').padStart(2,'0')===m;})),1,1)};});
+  if(cols.length>1) cols=cols.concat([{label:'<strong>Total</strong>',d:dreCalc(dreAgg(rows),1,1),isTotal:true}]);
   var lastMes=meses[meses.length-1],anoLY=ano==='TODOS'?null:String(+ano-1);
   var rowsLY=anoLY?DRE_RAW.filter(function(r){return String(r.ano||r.ANO)===anoLY&&String(r.mes||r.MES||'').padStart(2,'0')===lastMes;}):[];
   var dLY=rowsLY.length?dreCalc(dreAgg(rowsLY),1,1):null;
@@ -2257,10 +2258,10 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
 
   var cols=dims.map(function(d){
     var label = dimLabelMap[d] || d;
-    // Pass canal context so dreCalc can allocate Leads 100% to Closer
     var canalCtx = dimKey==='canal' ? d : null;
     return{label:label,d:dreCalcShare(rows.filter(function(r){return dimVal(r)===d;}),rows,canalCtx)};
   });
+  if(cols.length>1) cols=cols.concat([{label:'<strong>Total</strong>',d:dreCalc(dreAgg(rows),1,1),isTotal:true}]);
   var anos=Array.from(new Set(rows.map(function(r){return r.ano||r.ANO;})));
   var anosLY=anos.map(function(a){return String(+a-1);}),rowsLY=DRE_RAW.filter(function(r){return anosLY.includes(String(r.ano||r.ANO));});
   var mSet=new Set(rows.map(function(r){return String(r.mes||r.MES||'').padStart(2,'0');})),cSet=new Set(rows.map(function(r){return r.canal||r.CANAL||'';}));
@@ -2368,8 +2369,8 @@ function dreKpis(dArr,dLY){
 }
 function dreTabela(cols){
   var n=cols.length;
-  var th=cols.map(function(c){return'<th style="background:linear-gradient(180deg,#1e3fa8 0%,#1a2a6c 100%);font-size:13px;text-transform:uppercase;letter-spacing:1px;font-weight:700;color:#fff;padding:12px 14px;text-align:center;white-space:nowrap;border-left:1px solid rgba(255,255,255,.1)">'+c.label+'</th>';}).join('');
-  var td=function(fn){return cols.map(function(c){return'<td>'+fn(c.d)+'</td>';}).join('');};
+  var th=cols.map(function(c){var bg=c.isTotal?'linear-gradient(180deg,#0a3d0a 0%,#0d5c0d 100%)':'linear-gradient(180deg,#1e3fa8 0%,#1a2a6c 100%)';return'<th style="background:'+bg+';font-size:13px;text-transform:uppercase;letter-spacing:1px;font-weight:700;color:#fff;padding:12px 14px;text-align:center;white-space:nowrap;border-left:1px solid rgba(255,255,255,.1)">'+(c.isTotal?'TOTAL':c.label)+'</th>';}).join('');
+  var td=function(fn){return cols.map(function(c){var s=c.isTotal?'background:rgba(10,100,10,.06);font-weight:700;border-left:2px solid rgba(10,100,10,.2)':'';return'<td'+(s?' style="'+s+'"':'')+'>'+fn(c.d)+'</td>';}).join('');};;
   var row=function(l,fn,cls){return'<tr'+(cls?' class="'+cls+'"':'')+'><td style="text-align:left;padding:8px 14px;font-size:13px;font-weight:600;color:#0f1a3a;border-bottom:1px solid #d0d8ee">'+l+'</td>'+td(fn)+'</tr>';};
   var rowP=function(l,fn){return'<tr><td style="text-align:left;padding:5px 14px 5px 28px;font-size:11px;font-weight:500;color:#7a8ab0;border-bottom:1px dashed rgba(208,216,238,.5)">'+l+'</td>'+cols.map(function(c){return'<td style="text-align:center;padding:5px 14px;font-size:11px;color:#7a8ab0;border-bottom:1px dashed rgba(208,216,238,.5)">'+fn(c.d)+'</td>';}).join('')+'</tr>';};
   var rowT=function(l,fn){return'<tr style="background:rgba(35,82,200,.07);border-top:2px solid #2352c8;border-bottom:2px solid #2352c8"><td style="text-align:left;padding:8px 14px;font-size:13px;font-weight:700;color:#1a2a6c;background:rgba(35,82,200,.07)">'+l+'</td>'+cols.map(function(c){return'<td style="text-align:center;padding:8px 14px;font-size:13px;font-weight:700;color:#1a2a6c">'+fn(c.d)+'</td>';}).join('')+'</tr>';};
