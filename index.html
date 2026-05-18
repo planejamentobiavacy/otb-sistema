@@ -1928,55 +1928,44 @@ async function loadDreFromSupabase(forceRaw){
     if(saved && saved.cfgParams) DRE_CFG_PARAMS = Object.assign(DRE_CFG_PARAMS, saved.cfgParams);
 
     // Usa snapshot agregado se existir e não for forceRaw
-    var hasInlineSnap = saved && saved.snapshot && saved.snapshot.length;
-    var hasChunks     = saved && saved.chunks > 1;
-    if(!forceRaw && (hasInlineSnap || hasChunks)){
-      if(hasInlineSnap){
-        if(progLbl) progLbl.textContent = 'Carregando snapshot ('+saved.snapshot.length.toLocaleString('pt-BR')+' linhas)...';
-        DRE_RAW = dreExpandSnapshot(saved.snapshot);
-      } else {
-        // Carrega chunks em paralelo
-        if(progLbl) progLbl.textContent = 'Carregando '+saved.chunks+' partes do snapshot...';
-        var chunkKeys = [];
-        for(var _ci=0; _ci<saved.chunks; _ci++) chunkKeys.push('dre_snap_'+_ci);
-        var chunkResults = await Promise.all(chunkKeys.map(function(k){ return supaLoad(TBLS.save_dre,k); }));
-        var allRows = [];
-        chunkResults.forEach(function(r){ if(r && r.rows) allRows = allRows.concat(r.rows); });
-        DRE_RAW = dreExpandSnapshot(allRows);
-        console.log('[DRE] chunks carregados:', DRE_RAW.length, 'linhas de', saved.chunks, 'partes');
-      }
-      // Verifica se snapshot tem dados de canal (se c vazio, snapshot corrompido)
-      var _snapValid = DRE_RAW.length === 0 || DRE_RAW[0].canal;
-      if(!_snapValid){
-        console.warn('[DRE] snapshot com canal vazio — descartando, buscando bruto');
-        DRE_SNAPSHOT = false;
-        if(progLbl) progLbl.textContent = 'Atualizando dados...';
-        DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre', dreShowProgress);
-        try{ DRE_FOLHA_RAW   = await fetchAll(TBLS.folha,   null, 'folha'); } catch(e){ DRE_FOLHA_RAW=[]; }
-        try{ DRE_DESP_RAW    = await fetchAll(TBLS.despesa); } catch(e){ DRE_DESP_RAW=[]; }
-        try{ DRE_CANAIS_RAW  = await fetchAll(TBLS.canais); }  catch(e){ DRE_CANAIS_RAW=[]; }
-        try{ DRE_CLUSTER_RAW = await fetchAll(TBLS.cluster); } catch(e){ DRE_CLUSTER_RAW=[];}
-        // Auto-salva snapshot correto
-        setTimeout(function(){ var b=document.getElementById('btnSaveDre'); if(b&&!b.disabled) b.click(); }, 2000);
-      } else {
-        DRE_SNAPSHOT = true;
-        dreShowProgress(100, 100);
-        console.log('[DRE] snapshot OK:', DRE_RAW.length, 'linhas canal='+DRE_RAW[0].canal);
-      }
+    // Tenta snapshot se disponível
+    var snapRows = null;
+    if(!forceRaw && saved && saved.snapshot && saved.snapshot.length){
+      snapRows = dreExpandSnapshot(saved.snapshot);
+    } else if(!forceRaw && saved && saved.chunks > 1){
+      var chunkKeys = [];
+      for(var _ci=0; _ci<saved.chunks; _ci++) chunkKeys.push('dre_snap_'+_ci);
+      var chunkResults = await Promise.all(chunkKeys.map(function(k){ return supaLoad(TBLS.save_dre,k).catch(function(){return null;}); }));
+      var allRows = [];
+      chunkResults.forEach(function(r){ if(r && r.rows) allRows = allRows.concat(r.rows); });
+      if(allRows.length) snapRows = dreExpandSnapshot(allRows);
+    }
+
+    // Valida snapshot: precisa ter canal preenchido
+    var snapOk = snapRows && snapRows.length > 0 && snapRows[0].canal;
+    if(!forceRaw && snapOk){
+      DRE_RAW = snapRows;
+      DRE_SNAPSHOT = true;
+      dreShowProgress(100, 100);
+      console.log('[DRE] snapshot OK:', DRE_RAW.length, 'linhas');
     } else {
+      // Busca dados brutos
       DRE_SNAPSHOT = false;
-      var reason = !saved ? 'sem save' : (!saved.snapshot && !saved.chunks) ? 'sem snapshot no save' : 'snapshot vazio';
-      console.log('[DRE] buscando bruto, motivo:', reason, '| saved keys:', saved ? Object.keys(saved).join(',') : 'null');
-      if(progLbl) progLbl.textContent = 'Buscando dados brutos ('+reason+')...';
+      var reason = !saved ? 'sem save' : !snapRows ? 'sem snapshot' : 'canal vazio';
+      if(progLbl) progLbl.textContent = 'Carregando dados (' + reason + ')...';
+      console.log('[DRE] bruto, motivo:', reason);
       DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre', dreShowProgress);
-      console.log('[DRE] bruto carregado:', DRE_RAW.length, 'linhas');
+      console.log('[DRE] bruto:', DRE_RAW.length, 'linhas');
       try{ DRE_FOLHA_RAW   = await fetchAll(TBLS.folha,   null, 'folha'); } catch(e){ DRE_FOLHA_RAW=[]; }
       try{ DRE_DESP_RAW    = await fetchAll(TBLS.despesa); } catch(e){ DRE_DESP_RAW=[]; }
       try{ DRE_CANAIS_RAW  = await fetchAll(TBLS.canais); }  catch(e){ DRE_CANAIS_RAW=[]; }
       try{ DRE_CLUSTER_RAW = await fetchAll(TBLS.cluster); } catch(e){ DRE_CLUSTER_RAW=[];}
+      // Auto-salva snapshot correto após 3s
+      setTimeout(function(){ var b=document.getElementById('btnSaveDre'); if(b&&!b.disabled) b.click(); }, 3000);
     }
 
     DRE_LOADED = DRE_RAW.length > 0;
+    console.log('[DRE] load done, DRE_RAW='+DRE_RAW.length+' DRE_LOADED='+DRE_LOADED);
     if(loadingEl) loadingEl.style.display='none';
     return DRE_LOADED;
   } catch(e){
@@ -2166,9 +2155,6 @@ function dreRender(){
   else if(DRE_TAB==='fornecedor') dreRenderDim('FORNECEDOR','dre-ano-forn','dre-mes-forn','dre-canal-forn','forn');
 }
 function dreRenderMensal(){
-  var _rows0=dreFilt(dreGv('dre-ano-mensal'),dreGv('dre-mes-mensal'),dreGv('dre-canal-mensal'),dreGv('dre-q-mensal'),dreGv('dre-cluster-mensal'),dreGv('dre-reg-mensal'),dreGv('dre-forn-mensal'));
-  console.log('[mensal] rows='+_rows0.length+' ano='+dreGv('dre-ano-mensal'));
-  if(_rows0.length) console.log('[mensal] r0.ano='+_rows0[0].ano+'/'+_rows0[0].ANO+' r0.mes='+_rows0[0].mes+'/'+_rows0[0].MES);
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
   var ano=dreGv('dre-ano-mensal'),q=dreGv('dre-q-mensal'),mes=dreGv('dre-mes-mensal'),canal=dreGv('dre-canal-mensal'),cluster=dreGv('dre-cluster-mensal'),regiao=dreGv('dre-reg-mensal'),forn=dreGv('dre-forn-mensal');
   var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn);
