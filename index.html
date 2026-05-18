@@ -998,6 +998,16 @@ async function gcRecarregar(key, btn){
     if(key === 'venda_dre' || key === 'frete_dre'){ DRE_RAW = state[key]; DRE_LOADED = DRE_RAW.length>0; initDre(); }
     else if(key === 'folha'){ FOLHA_RAW = state[key]; FOLHA_LOADED = true; if(document.getElementById('screenFolha').classList.contains('screen-active')) initFolha(); }
     else if(key === 'despesa'){ DRE_DESP_RAW = state[key]; BUDGET_DESP_RAW = state[key]; BUDGET_LOADED = true; }
+    else if(key === 'canais'){
+      DRE_CANAIS_RAW = state[key];
+      if(DRE_RAW.length){ dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW); dreRender(); }
+      toast('↺ Canal atualizado — salve o DRE para fixar o snapshot');
+    }
+    else if(key === 'cluster'){
+      DRE_CLUSTER_RAW = state[key];
+      if(DRE_RAW.length){ dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW); dreRender(); }
+      toast('↺ Cluster atualizado — salve o DRE para fixar o snapshot');
+    }
     else { processAll(); renderTabs(); renderTable(); }
   } catch(e){ toast('Erro ao recarregar ' + TBLS[key] + ': ' + e.message, 'err'); if(st) st.textContent = 'Erro: '+TBLS[key]; }
   btn.disabled = false; btn.textContent = orig;
@@ -1943,7 +1953,11 @@ async function loadDreFromSupabase(forceRaw){
     }
 
     // Valida snapshot: precisa ter canal preenchido
-    var snapOk = snapRows && snapRows.length > 0 && snapRows[0].canal;
+    // Valida amostrando até 5 linhas para canal
+    var snapOk = snapRows && snapRows.length > 0 && (function(){
+      var sample = snapRows.slice(0, Math.min(5, snapRows.length));
+      return sample.some(function(r){ return r.canal; });
+    })();
     if(!forceRaw && snapOk){
       DRE_RAW = snapRows;
       // Enriquece snapshot com canal se necessário
