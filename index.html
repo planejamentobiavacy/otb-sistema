@@ -608,24 +608,27 @@ async function fetchAll(table, extraFilter, tableKey, onProgress){
   var first;
   try{ first = await fetchPage(0); }
   catch(e){
-    // Retry without count=exact (some tables/RLS configs reject it)
-    try{ first = await fetchPage(0, true); first.total = 0; }
-    catch(e2){ throw e2; }
+    console.warn('[fetchAll] count=exact falhou para', table, '—', e.message, '— tentando sem count');
+    try{ first = await fetchPage(0, true); }
+    catch(e2){ console.error('[fetchAll] falhou sem count também:', e2.message); throw e2; }
   }
-  if(!first.rows.length) return [];
-  var total = first.total || first.rows.length;
-  if(onProgress) onProgress(first.rows.length, total);
-  if(first.rows.length >= total && !first.total) {
-    // No total known — keep fetching sequentially until empty
+  if(!first.rows.length){ console.log('[fetchAll]', table, '— página 0 vazia, total=', first.total); return []; }
+  var total = first.total || 0;
+  console.log('[fetchAll]', table, '— p0:', first.rows.length, 'total:', total);
+  if(onProgress) onProgress(first.rows.length, Math.max(total, first.rows.length));
+
+  // Se não temos total (noCount), busca sequencial até acabar
+  if(!total){
     var allRows = first.rows.slice();
     var pg = 1;
     while(allRows.length === pg * PAGE){
-      var next; try{ next = await fetchPage(pg*PAGE,true); }catch(e){ break; }
+      var next; try{ next = await fetchPage(pg*PAGE, true); }catch(e){ break; }
       if(!next.rows.length) break;
       allRows = allRows.concat(next.rows);
       if(onProgress) onProgress(allRows.length, allRows.length);
       pg++;
     }
+    console.log('[fetchAll]', table, '— total final (seq):', allRows.length);
     return allRows;
   }
   if(first.rows.length >= total) return first.rows;
@@ -2149,10 +2152,22 @@ function dreCalc(a,shareRB,shareQTD){
   shareRB=shareRB||1;shareQTD=shareQTD||1;
   var rb_dev=a.fat_v,dev=a.dev,rb_gross=rb_dev+dev,rb=rb_dev,rl_base=rb,imp=a.icms+a.cofins+a.pis+a.fecpst,rl=rb-imp,cmv=a.custo;
   var cmv_b=cmv>0?cmv/0.79:0,mkp=cmv_b>0?(rb/cmv_b-1):0,mg_prod=rl>0?(1-cmv/rl):0;
-  function getSalPct(key){var sum=0,cnt=0;a.anomesList.forEach(function(am){var v=DRE_CONFIG[key][am];sum+=(v!=null?v:DRE_CONFIG_DEFAULTS[key]);cnt++;});return cnt>0?sum/cnt:DRE_CONFIG_DEFAULTS[key];}
-  var fobAvg=(function(){var s=0,c=0;a.anomesList.forEach(function(am){var v=DRE_CONFIG.fob[am];s+=(v!=null?v:DRE_CONFIG_DEFAULTS.fob);c++;});return c>0?s/c:DRE_CONFIG_DEFAULTS.fob;})();
+  // Para cada mês usa o parâmetro salvo; se não tiver, usa o default global
+  // Para múltiplos meses (ex: total ano) pondera pelo número de meses
+  function getPct(key, am){
+    if(!DRE_CONFIG[key]) return DRE_CONFIG_DEFAULTS[key]||0;
+    var v = DRE_CONFIG[key][am];
+    return v != null ? v : (DRE_CONFIG_DEFAULTS[key]||0);
+  }
+  function getSalPct(key){
+    if(!a.anomesList.length) return DRE_CONFIG_DEFAULTS[key]||0;
+    var sum=0;
+    a.anomesList.forEach(function(am){ sum += getPct(key, am); });
+    return sum / a.anomesList.length;
+  }
+  var fobAvg=getSalPct('fob');
   var fob=rl*fobAvg;
-  var grade=(function(){var t=0;a.anomesList.forEach(function(am){var c=DRE_CONFIG.custoGrade?DRE_CONFIG.custoGrade[am]:null;if(c==null)c=DRE_CONFIG_DEFAULTS.custoGrade||0;t+=(a.qtdGradeHava||0)*c;});return t/Math.max(a.anomesList.length,1);})();
+  var gradeUnit=(function(){var s=0;a.anomesList.forEach(function(am){var v=DRE_CONFIG.custoGrade&&DRE_CONFIG.custoGrade[am]!=null?DRE_CONFIG.custoGrade[am]:(DRE_CONFIG_DEFAULTS.custoGrade||0);s+=v;});return a.anomesList.length?s/a.anomesList.length:0;})();  var grade=(a.qtdGradeHava||0)*gradeUnit;
   var sv_closer=rl*getSalPct('closer')*shareRB,sv_developer=rl*getSalPct('developer')*shareRB,sv_farmer=rl*getSalPct('farmer')*shareRB;
   var com_martins=rl*getSalPct('martins')*shareRB,com_rca=rl*getSalPct('rca')*shareRB;
   var sv=sv_closer+sv_developer+sv_farmer,com=com_martins+com_rca;
@@ -2161,13 +2176,14 @@ function dreCalc(a,shareRB,shareQTD){
   // Marketing: valor fixo do mês (FIXOS_DEF.marketing) * shareRB
   // branding e leads são shares do total (ex: 60% branding, 40% performance)
   var mktBase=(function(){
-    // Tenta pegar valor do mês específico via DRE_CFG_PARAMS
-    var mktVal=FIXOS_DEF.marketing||0;
-    if(a.anomesList.length){
-      var p=DRE_CFG_PARAMS[a.anomesList[a.anomesList.length-1]];
-      if(p && p.desp_mkt!=null) mktVal=p.desp_mkt;
-    }
-    return mktVal;
+    // Soma desp_mkt de cada mês (já proporcional ao shareRB)
+    if(!a.anomesList.length) return FIXOS_DEF.marketing||0;
+    var total=0;
+    a.anomesList.forEach(function(am){
+      var p=DRE_CFG_PARAMS[am];
+      total += (p && p.desp_mkt!=null) ? p.desp_mkt : (FIXOS_DEF.marketing||0);
+    });
+    return total / a.anomesList.length;
   })();
   var mkt_total=mktBase*shareRB;
   var mkt_branding=mkt_total*getSalPct('branding'),mkt_leads=mkt_total*getSalPct('leads'),mkt=mkt_branding+mkt_leads;
@@ -2205,7 +2221,21 @@ function dreTabela(cols){
   var sp=function(){return'<tr><td colspan="'+(n+1)+'" style="height:6px;background:#f0f3fa"></td></tr>';};
   var ebitdaRow='<tr style="font-weight:800;color:#1a2a6c;font-size:15px;background:rgba(35,82,200,.07);border-top:2px solid #2352c8;border-bottom:2px solid #2352c8"><td>EBITDA</td>'+cols.map(function(c){var v=c.d.ebt;var cl=v<0?'color:#c0181a;font-weight:700':v<c.d.rl*0.03?'color:#b07a00;font-weight:700':'color:#0a7c4e;font-weight:700';return'<td><span style="'+cl+'">'+dreBrl(v)+'</span></td>';}).join('')+'</tr>';
   var ebitdaPct='<tr style="font-size:13px;font-weight:700;color:#1a2a6c;border-bottom:1px dashed rgba(35,82,200,.3)"><td style="padding-left:28px">EBITDA %</td>'+cols.map(function(c){var p=c.d.rl>0?(c.d.ebt/c.d.rl*100).toFixed(1)+'%':'-';var cl=c.d.ebt<0?'color:#c0181a':c.d.ebt<c.d.rl*0.03?'color:#b07a00':'color:#0a7c4e';return'<td><span style="'+cl+'">'+p+'</span></td>';}).join('')+'</tr>';
-  return'<style>.dre-tbl td:first-child{text-align:left!important;font-weight:600;color:#0f1a3a}.dre-tbl td{text-align:center;padding:8px 14px;font-size:12px;font-weight:500;color:#3a4a7a;border-bottom:1px solid #d0d8ee;white-space:nowrap}</style><table class="dre-tbl" style="width:100%;border-collapse:separate;border-spacing:0;font-size:13px;background:#fff;border-radius:10px;box-shadow:0 8px 32px rgba(26,42,108,.16);overflow:hidden;font-family:inherit"><thead><tr><th style="font-size:14px;text-transform:uppercase;letter-spacing:1px;font-weight:700;color:#fff;padding:12px 14px;text-align:left;min-width:270px;background:linear-gradient(90deg,#1a2a6c 80%,#2352c8);position:sticky;top:0;z-index:10">Indicador</th>'+th+'</tr></thead><tbody>'
+  return'<style>'+
+  '.dre-tbl-wrap{overflow:auto;max-height:calc(100vh - 220px)}'+
+  '.dre-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;background:#fff;font-family:inherit}'+
+  '.dre-tbl td,.dre-tbl th{white-space:nowrap}'+
+  '.dre-tbl td{text-align:center;padding:8px 14px;font-size:12px;font-weight:500;color:#3a4a7a;border-bottom:1px solid #d0d8ee}'+
+  '.dre-tbl td:first-child{text-align:left!important;font-weight:600;color:#0f1a3a;position:sticky;left:0;z-index:2;background:#fff;min-width:270px;border-right:2px solid #d0d8ee}'+
+  '.dre-tbl tr.row-total td:first-child{background:#eef2fc}'+
+  '.dre-tbl tr.row-sub td:first-child{background:#fafbff}'+
+  '.dre-tbl tr.row-sec td:first-child{position:sticky;left:0;z-index:3}'+
+  '</style>'+
+  '<div class="dre-tbl-wrap">'+
+  '<table class="dre-tbl">'+
+  '<thead><tr>'+
+  '<th style="font-size:14px;text-transform:uppercase;letter-spacing:1px;font-weight:700;color:#fff;padding:12px 14px;text-align:left;min-width:270px;background:linear-gradient(90deg,#1a2a6c 80%,#2352c8);position:sticky;top:0;left:0;z-index:20;border-right:2px solid rgba(255,255,255,.2)">Indicador</th>'+th+
+  '</tr></thead><tbody>'
   +sec('📊 RECEITA')+row('Receita Bruta',function(d){return dreBrl(d.rb_gross);})+row('Devolução (-)',function(d){return dreBrl(d.dev);},'row-sub')+rowP('% Devolução',function(d){return drePct(d.dev,d.rb_gross);})+rowT('Receita Bruta s/ Dev',function(d){return dreBrl(d.rb_dev);})
   +sp()+row('Impostos (-)',function(d){return dreBrl(d.imp);},'row-sub')+row('&nbsp;&nbsp;ICMS',function(d){return dreBrl(d.icms);},'row-sub')+rowP('&nbsp;&nbsp;% ICMS',function(d){return drePct(d.icms,d.rb);})+row('&nbsp;&nbsp;PIS/COFINS',function(d){return dreBrl(d.pc);},'row-sub')+rowP('&nbsp;&nbsp;% PIS/COFINS',function(d){return drePct(d.pc,d.rb);})+rowT('Receita Líquida',function(d){return dreBrl(d.rl);})
   +sp()+sec('📦 VOLUME')+row('Pares',function(d){return dreNum2(d.qtd);})+row('Preço Médio',function(d){return d.qtd>0?'R$ '+(d.rb/d.qtd).toFixed(1):'-';})
@@ -2216,7 +2246,7 @@ function dreTabela(cols){
   +sp()+sec('📢 MARKETING')+row('Branding (-)',function(d){return dreBrl(d.mkt_branding||(d.mkt||0)/2);},'row-sub')+row('Leads Novos (-)',function(d){return dreBrl(d.mkt_leads||(d.mkt||0)/2);},'row-sub')+rowT('Total Marketing',function(d){return dreBrl(d.mkt||0);})+rowP('% Marketing',function(d){return drePct(d.mkt||0,d.rl);})
   +sp()+sec('💡 MARGEM DE CONTRIBUIÇÃO')+rowT('Margem de Contribuição',function(d){return dreBrl(d.mcon);})+rowP('Margem Contrib %',function(d){return drePct(d.mcon,d.rl);})+rowP('Margem Contrib / Par',function(d){return d.qtd>0?'R$ '+(d.mcon/d.qtd).toFixed(2):'-';})
   +sp()+sec('🏢 DESPESAS FIXAS')+row('Salários Adm (-)',function(d){return dreBrl(d.sa);},'row-sub')+rowP('% Sal Adm',function(d){return drePct(d.sa,d.rl);})+row('Despesas Gerais (-)',function(d){return dreBrl(d.dg);},'row-sub')+rowP('% Desp Gerais',function(d){return drePct(d.dg,d.rl);})+row('CD (-)',function(d){return dreBrl(d.cd);},'row-sub')+rowP('% CD',function(d){return drePct(d.cd,d.rl);})
-  +sp()+ebitdaRow+ebitdaPct+'</tbody></table>';
+  +sp()+ebitdaRow+ebitdaPct+'</tbody></table></div>';
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2559,9 +2589,10 @@ function applyDreCfg(){
     });
     DRE_CFG_PARAMS[am].desp_mkt = gv('desp_mkt');
   } else {
+    // Sem mês selecionado: atualiza defaults globais E limpa overrides por mês
     ['fob','closer','developer','farmer','martins','rca','branding','leads'].forEach(function(k){
       DRE_CONFIG_DEFAULTS[k] = gv(k) / 100;
-      DRE_CONFIG[k] = {};
+      // Não apaga DRE_CONFIG[k] para preservar overrides já salvos por mês
     });
   }
 
@@ -2654,9 +2685,20 @@ function budgetGetMonths(){
 function budgetAvacyFatVal(ym){
   // ym = 'YYYY-MM'
   var parts = ym.split('-'), ano=parts[0], mes=parts[1];
-  var avacy = state && state.matrices && state.matrices['AVACY'];
-  if(avacy && avacy[ym]) return avacy[ym].fatVal||0;
-  // Fallback: sum from DRE_RAW for the month
+  // 1. Try OTB projected value from state.matrices (includes future simulation)
+  if(state && state.matrices){
+    var total = 0;
+    Object.keys(state.matrices).forEach(function(sup){
+      if(sup==='AVACY') return; // skip combined
+      var mat = state.matrices[sup];
+      if(mat && mat[ym]) total += mat[ym].fatVal||0;
+    });
+    if(total > 0) return total;
+    // Also try AVACY directly
+    var avacy = state.matrices['AVACY'];
+    if(avacy && avacy[ym] && avacy[ym].fatVal) return avacy[ym].fatVal;
+  }
+  // 2. Fallback: sum from DRE_RAW
   return DRE_RAW.filter(function(r){
     return String(r.ano||r.ANO)===ano && String(r.mes||r.MES||'').padStart(2,'0')===mes;
   }).reduce(function(s,r){ return s+(parseFloat(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO)||0);},0);
@@ -2705,8 +2747,29 @@ var _bFmt = function(v){ if(v===null||v===undefined) return '—';
 var _bPct = function(v){ if(v===null||v===undefined) return '—';
   return (v*100).toFixed(1)+'%'; };
 
-function renderBudget(){
-  var months = budgetGetMonths();
+var BUDGET_ANO_FILTER = '';
+
+function renderBudget(anoFilter){
+  if(anoFilter !== undefined) BUDGET_ANO_FILTER = anoFilter;
+
+  // Months: union of DRE data + OTB projected months + despesa months
+  var allMonths = budgetGetMonths();
+
+  // Add OTB projection months (from state.matrices for all suppliers)
+  if(state && state.matrices){
+    Object.values(state.matrices).forEach(function(mat){
+      Object.keys(mat).forEach(function(ym){
+        if(mat[ym] && (mat[ym].fatVal||0) > 0 && allMonths.indexOf(ym) === -1) allMonths.push(ym);
+      });
+    });
+    allMonths.sort();
+  }
+
+  // Year filter
+  var anos = Array.from(new Set(allMonths.map(function(ym){ return ym.split('-')[0]; }))).sort();
+  var selectedAno = BUDGET_ANO_FILTER || anos[anos.length-1] || '';
+  var months = allMonths.filter(function(ym){ return !selectedAno || ym.startsWith(selectedAno+'-'); });
+
   var meta = document.getElementById('budgetHeaderMeta');
   if(meta) meta.textContent = months.length+' meses · '+BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' lançamentos';
 
@@ -2717,19 +2780,30 @@ function renderBudget(){
 
   var ml=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   function mLabel(ym){ var p=ym.split('-'); return ml[+p[1]]+'/'+(p[0].slice(2)); }
-  function isFuture(ym){ return ym >= (new Date().getFullYear()+'-'+(String(new Date().getMonth()+1).padStart(2,'0'))); }
+  var nowYm = new Date().getFullYear()+'-'+(String(new Date().getMonth()+1).padStart(2,'0'));
+  function isFuture(ym){ return ym >= nowYm; }
 
-  // Build header
-  var h = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:900px">';
-  h += '<thead><tr><th style="text-align:left;padding:8px 12px;background:#1a2547;color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;position:sticky;left:0;z-index:2;min-width:220px">INDICADOR</th>';
+  // Year selector
+  var anoOpts = anos.map(function(a){
+    return '<option value="'+a+'"'+(a===selectedAno?' selected':'')+'>'+a+'</option>';
+  }).join('');
+
+  // Build header — with year filter bar
+  var h = '<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px">';
+  h += '<span style="font-size:11px;font-weight:700;color:#7a8ab0;text-transform:uppercase;letter-spacing:.8px">Ano:</span>';
+  h += '<select onchange="renderBudget(this.value)" style="padding:5px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:13px;font-family:inherit;color:#0f1a3a;background:#f7f9ff;cursor:pointer">'+anoOpts+'</select>';
+  h += '</div>';
+  h += '<div style="overflow-x:auto;max-height:calc(100vh - 240px)"><table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:900px">';
+  h += '<thead><tr>';
+  h += '<th style="text-align:left;padding:8px 12px;background:#1a2547;color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;position:sticky;left:0;top:0;z-index:5;min-width:220px;border-right:2px solid rgba(255,255,255,.2)">INDICADOR</th>';
   months.forEach(function(ym){
     var future = isFuture(ym);
-    h += '<th style="text-align:right;padding:8px 10px;background:'+(future?'#1e3a6e':'#1a2547')+';color:'+(future?'#a8c4f0':'#fff')+';font-size:11px;font-weight:700;min-width:110px">'+mLabel(ym)+(future?' ✦':'')+'</th>';
+    h += '<th style="text-align:right;padding:8px 10px;background:'+(future?'#1e3a6e':'#1a2547')+';color:'+(future?'#a8c4f0':'#fff')+';font-size:11px;font-weight:700;min-width:110px;position:sticky;top:0;z-index:3">'+mLabel(ym)+(future?' ✦':'')+'</th>';
   });
   h += '</tr></thead><tbody>';
 
   function secRow(label, icon){
-    h += '<tr><td colspan="'+(months.length+1)+'" style="padding:6px 12px;background:linear-gradient(90deg,#1a2a6c,#2352c8);color:#fff;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;position:sticky;left:0">'+icon+' '+label+'</td></tr>';
+    h += '<tr><td colspan="'+(months.length+1)+'" style="padding:6px 12px;background:linear-gradient(90deg,#1a2a6c,#2352c8);color:#fff;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;position:sticky;left:0;z-index:2">'+icon+' '+label+'</td></tr>';
   }
   function dataRow(label, fn, opts){
     opts = opts||{};
@@ -2738,7 +2812,7 @@ function renderBudget(){
     var fw = bold ? '700' : '400';
     var pl = sub ? '28px' : '12px';
     h += '<tr>';
-    h += '<td style="padding:6px '+pl+';background:'+bg+';font-weight:'+fw+';color:#0f1a3a;border-bottom:1px solid #eef1f8;position:sticky;left:0;z-index:1">'+label+'</td>';
+    h += '<td style="padding:6px '+pl+';background:'+bg+';font-weight:'+fw+';color:#0f1a3a;border-bottom:1px solid #eef1f8;border-right:2px solid #d0d8ee;position:sticky;left:0;z-index:1">'+label+'</td>';
     months.forEach(function(ym){
       var val = fn(ym);
       var future = isFuture(ym);
@@ -2796,7 +2870,7 @@ function renderBudget(){
     });
   }
 
-  h += '</tbody></table></div>';
+  h += '</tbody></table></div></div>';
   document.getElementById('budgetBody').innerHTML = h;
   document.getElementById('budgetEmpty').style.display='none';
 }
