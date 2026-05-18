@@ -534,7 +534,7 @@ var COLS = {
   // otb_produto: cod_produto, fornecedor, categoria
   produto: ['cod_produto','fornecedor','categoria'],
 
-  venda_dre: null, // select=* — colunas em maiúsculo, PostgREST é case-sensitive
+  venda_dre: null, // select=* — colunas uppercase, PostgREST case-sensitive. Inclui cod_vendedor para join com otb_canais
 
   // otb_folha: todas as colunas úteis já são diretas
   folha: ['ano_mes','area','cargo','pessoa','valor'],
@@ -1945,6 +1945,8 @@ async function loadDreFromSupabase(forceRaw){
     var snapOk = snapRows && snapRows.length > 0 && snapRows[0].canal;
     if(!forceRaw && snapOk){
       DRE_RAW = snapRows;
+      // Enriquece snapshot com canal se necessário
+      if(DRE_CANAIS_RAW.length) DRE_RAW = dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW);
       DRE_SNAPSHOT = true;
       dreShowProgress(100, 100);
       console.log('[DRE] snapshot OK:', DRE_RAW.length, 'linhas');
@@ -1960,6 +1962,9 @@ async function loadDreFromSupabase(forceRaw){
       try{ DRE_DESP_RAW    = await fetchAll(TBLS.despesa); } catch(e){ DRE_DESP_RAW=[]; }
       try{ DRE_CANAIS_RAW  = await fetchAll(TBLS.canais); }  catch(e){ DRE_CANAIS_RAW=[]; }
       try{ DRE_CLUSTER_RAW = await fetchAll(TBLS.cluster); } catch(e){ DRE_CLUSTER_RAW=[];}
+      // Join canal/cluster via otb_canais (ano_mes + cod_vendedor)
+      DRE_RAW = dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW);
+      console.log('[DRE] após join canal:', DRE_RAW.filter(function(r){return r.canal;}).length, 'com canal');
       // Auto-salva snapshot correto após 3s
       setTimeout(function(){ var b=document.getElementById('btnSaveDre'); if(b&&!b.disabled) b.click(); }, 3000);
     }
@@ -2011,14 +2016,45 @@ function dreAggregateFull(raw){
 // Expande snapshot compacto de volta para o formato que dreAgg entende
 function dreExpandSnapshot(snap){
   return snap.map(function(x){
-    // Suporta tanto formato compacto (x.a) quanto legado (x.ano)
-    if(x.ano !== undefined) return x; // formato antigo — devolve como está
+    if(x.ano !== undefined) return x;
     return {
       ano:x.a, mes:x.m, canal:x.c, cluster:x.cl, regiao:x.rg, fornecedor:x.f,
       faturamento_venda:x.fv, devolucao_venda:x.dv, qtd:x.q, custo:x.cu,
       icms:x.ic, cofins:x.co, pis:x.pi, fecpst:x.fe,
       rec_frete:x.rf, custo_frete:x.cf, qtd_grade_hava:x.qg
     };
+  });
+}
+
+// Enriquece DRE_RAW com canal/cluster via join em otb_canais (ano_mes + cod_vendedor)
+// otb_canais esperado: {ano_mes, cod_vendedor, canal, cluster}
+function dreEnrichWithCanais(raw, canaisRaw){
+  if(!canaisRaw || !canaisRaw.length) return raw;
+  // Constrói lookup: "YYYYMM|cod_vendedor" -> {canal, cluster}
+  var lookup = {};
+  canaisRaw.forEach(function(c){
+    var am  = String(c.ano_mes||c.ANO_MES||'').replace(/\D/g,'').slice(0,6);
+    var cod = String(c.cod_vendedor||c.COD_VENDEDOR||c.vendedor||c.VENDEDOR||'').trim();
+    var canal   = String(c.canal||c.CANAL||'').trim();
+    var cluster = String(c.cluster||c.CLUSTER||'').trim();
+    if(am && cod) lookup[am+'|'+cod] = {canal:canal, cluster:cluster};
+  });
+  if(!Object.keys(lookup).length) return raw;
+  return raw.map(function(r){
+    // Só enriquece se canal ainda está vazio
+    if(r.canal||r.CANAL) return r;
+    var ano = String(r.ano||r.ANO||'');
+    var mes = String(r.mes||r.MES||'').padStart(2,'0');
+    var am  = ano+mes;
+    var cod = String(r.cod_vendedor||r.COD_VENDEDOR||r.vendedor||r.VENDEDOR||'').trim();
+    var match = lookup[am+'|'+cod];
+    if(match){
+      var out = Object.assign({}, r);
+      out.canal   = match.canal;
+      out.cluster = match.cluster;
+      return out;
+    }
+    return r;
   });
 }
 
