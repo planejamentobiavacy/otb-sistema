@@ -412,7 +412,6 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn" id="btnDreReload" onclick="dreForceReload(this)" title="Recarregar dados brutos do Supabase" style="background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.2);color:#cdd5f0;font-size:12px">🔄 Recarregar</button>
       <button class="btn" onclick="openDreCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Config</button>
       <button class="btn save" id="btnSaveDre" onclick="handleSaveDre(this)">💾 Salvar DRE</button>
     </div>
@@ -2170,15 +2169,15 @@ async function initDre(){
     btn.onclick=function(){dreSwitchTab(t.id);}; bar.appendChild(btn);
   });
   var selAno=function(id){var opts=['TODOS'].concat(anos);return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Ano</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:90px">'+opts.map(function(a){return'<option value="'+a+'"'+(a===anos[anos.length-1]?' selected':'')+'>'+a+'</option>';}).join('')+'</select></div>';};
-  var selMes=function(id){var opts=['TODOS'].concat(meses);return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Mês</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:90px">'+opts.map(function(m){return'<option value="'+m+'">'+( m==='TODOS'?'Todos':ml(m))+'</option>';}).join('')+'</select></div>';};
-  var selCanal=function(id){var opts=['TODOS'].concat(canais);return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Canal</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:110px">'+opts.map(function(v){return'<option value="'+v+'">'+v+'</option>';}).join('')+'</select></div>';};
+  var selMes=function(id){return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Mês</div><select multiple onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:4px 8px;border-radius:8px;font-family:inherit;font-size:12px;cursor:pointer;min-width:80px;max-height:90px">'+meses.map(function(m){return'<option value="'+m+'">'+ml(m)+'</option>';}).join('')+'</select></div>';};
+  var selCanal=function(id){return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Canal</div><select multiple onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:4px 8px;border-radius:8px;font-family:inherit;font-size:12px;cursor:pointer;min-width:100px;max-height:90px">'+canais.map(function(v){return'<option value="'+v+'">'+v+'</option>';}).join('')+'</select></div>';};
   var clusters=['TODOS'].concat(DRE_RAW.map(function(r){return r.cluster||r.CLUSTER||'';}).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;}).sort());
   var regioes=['TODOS'].concat(DRE_RAW.map(function(r){return r.regiao||r.REGIAO||'';}).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;}).sort());
   var fornecs=['TODOS'].concat(DRE_RAW.map(function(r){return r.fornecedor||r.FORNECEDOR||'';}).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;}).sort());
   var selQ=function(id){return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Quarter</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:80px">'+['TODOS','T1','T2','T3','T4'].map(function(t){return'<option value="'+t+'">'+t+'</option>';}).join('')+'</select></div>';};
-  var selCluster=function(id){return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Cluster</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:110px">'+clusters.map(function(v){return'<option value="'+v+'">'+v+'</option>';}).join('')+'</select></div>';};
-  var selRegiao=function(id){return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Região</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:100px">'+regioes.map(function(v){return'<option value="'+v+'">'+v+'</option>';}).join('')+'</select></div>';};
-  var selForn=function(id){return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Fornecedor</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:120px">'+fornecs.map(function(v){return'<option value="'+v+'">'+v+'</option>';}).join('')+'</select></div>';};
+  var selCluster=function(id){return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Cluster</div><select multiple onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:4px 8px;border-radius:8px;font-family:inherit;font-size:12px;cursor:pointer;min-width:100px;max-height:90px">'+clusters.map(function(v){return'<option value="'+v+'">'+v+'</option>';}).join('')+'</select></div>';};
+  var selRegiao=function(id){return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Região</div><select multiple onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:4px 8px;border-radius:8px;font-family:inherit;font-size:12px;cursor:pointer;min-width:90px;max-height:90px">'+regioes.map(function(v){return'<option value="'+v+'">'+v+'</option>';}).join('')+'</select></div>';};
+  var selForn=function(id){return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Fornecedor</div><select multiple onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:4px 8px;border-radius:8px;font-family:inherit;font-size:12px;cursor:pointer;min-width:110px;max-height:90px">'+fornecs.map(function(v){return'<option value="'+v+'">'+v+'</option>';}).join('')+'</select></div>';};
   var fBar=function(ids){return '<div style="display:flex;align-items:flex-end;gap:10px;padding:10px 0 14px;flex-wrap:wrap">'+ids.join('')+'</div>';};
   document.getElementById('drePanels').innerHTML=
     '<div id="drePanel-mensal">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-mensal'),selQ('dre-q-mensal'),selMes('dre-mes-mensal'),selCanal('dre-canal-mensal'),selCluster('dre-cluster-mensal'),selRegiao('dre-reg-mensal'),selForn('dre-forn-mensal')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-mensal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-mensal"></div></div>'+
@@ -2203,18 +2202,18 @@ function dreSwitchTab(tab){
   dreRender();
 }
 
-function dreGv(id){var el=document.getElementById(id);return el?el.value:'TODOS';}
+function dreGv(id){var el=document.getElementById(id);if(!el) return 'TODOS'; if(!el.multiple) return el.value; var sel=Array.from(el.selectedOptions).map(function(o){return o.value;}).filter(function(v){return v&&v!=='TODOS';}); return sel.length?sel:'TODOS';}
 function dreQuarterMeses(q){if(!q||q==='TODOS') return null;return{T1:['01','02','03'],T2:['04','05','06'],T3:['07','08','09'],T4:['10','11','12']}[q]||null;}
 function dreFilt(ano,mes,canal,q,cluster,regiao,forn){
   var r=DRE_RAW;
 
   if(ano&&ano!=='TODOS') r=r.filter(function(x){var y=x.ano!=null?x.ano:(x.ANO!=null?x.ANO:'');return String(y)===String(ano);});
   var qMeses=dreQuarterMeses(q); if(qMeses) r=r.filter(function(x){return qMeses.includes(String(x.mes||x.MES||'').padStart(2,'0'));});
-  if(mes&&mes!=='TODOS') r=r.filter(function(x){return String(x.mes||x.MES||'').padStart(2,'0')===mes;});
-  if(canal&&canal!=='TODOS') r=r.filter(function(x){return String(x.canal||x.CANAL||'').toUpperCase()===canal.toUpperCase();});
-  if(cluster&&cluster!=='TODOS') r=r.filter(function(x){return String(x.cluster||x.CLUSTER||'').toUpperCase()===cluster.toUpperCase();});
-  if(regiao&&regiao!=='TODOS') r=r.filter(function(x){return (x.regiao||x.REGIAO)===regiao;});
-  if(forn&&forn!=='TODOS') r=r.filter(function(x){return (x.fornecedor||x.FORNECEDOR)===forn;});
+  if(mes&&mes!=='TODOS'){var _mes=Array.isArray(mes)?mes:[mes]; r=r.filter(function(x){return _mes.includes(String(x.mes||x.MES||'').padStart(2,'0'));});}
+  if(canal&&canal!=='TODOS'){var _canal=Array.isArray(canal)?canal:[canal]; r=r.filter(function(x){return _canal.map(function(c){return c.toUpperCase();}).includes(String(x.canal||x.CANAL||'').toUpperCase());});}
+  if(cluster&&cluster!=='TODOS'){var _cluster=Array.isArray(cluster)?cluster:[cluster]; r=r.filter(function(x){return _cluster.map(function(c){return c.toUpperCase();}).includes(String(x.cluster||x.CLUSTER||'').toUpperCase());});}
+  if(regiao&&regiao!=='TODOS'){var _regiao=Array.isArray(regiao)?regiao:[regiao]; r=r.filter(function(x){return _regiao.includes(x.regiao||x.REGIAO||'');});}
+  if(forn&&forn!=='TODOS'){var _forn=Array.isArray(forn)?forn:[forn]; r=r.filter(function(x){return _forn.includes(x.fornecedor||x.FORNECEDOR||'');});}
   return r;
 }
 function dreRender(){
@@ -3204,6 +3203,7 @@ async function saveBudgetCfg(btn){
       <!-- preenchido por openDreCfg() -->
     </div>
     <div class="dre-cfg-ft">
+      <button class="btn" onclick="dreForceReload(this);closeDreCfg();" style="background:#f0f3fa;border-color:#d0d8ee;color:#0f1a3a;font-size:12px">🔄 Recarregar Dados</button>
       <button class="btn save" id="btnApplyDreCfg" onclick="saveAndApplyDreCfg(this)">💾 Salvar</button>
       <button class="btn" onclick="closeDreCfg()">Cancelar</button>
     </div>
@@ -3221,7 +3221,6 @@ async function saveBudgetCfg(btn){
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn" id="btnReloadBudget" onclick="budgetForceReload(this)" style="background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.2);color:#cdd5f0;font-size:12px">🔄 Recarregar</button>
       <button class="btn" onclick="openBudgetCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button>
       <button class="btn save" id="btnSaveBudget" onclick="handleSaveBudget(this)">💾 Salvar</button>
     </div>
@@ -3240,6 +3239,7 @@ async function saveBudgetCfg(btn){
     </div>
     <div style="padding:16px 20px;display:flex;flex-direction:column;gap:14px" id="budgetCfgBody"></div>
     <div class="dre-cfg-ft">
+      <button class="btn" onclick="budgetForceReload(this);closeBudgetCfg();" style="background:#f0f3fa;border-color:#d0d8ee;color:#0f1a3a;font-size:12px">🔄 Recarregar Dados</button>
       <button class="btn save" onclick="saveBudgetCfg(this)">💾 Salvar Configurações</button>
       <button class="btn" onclick="closeBudgetCfg()">Fechar</button>
     </div>
