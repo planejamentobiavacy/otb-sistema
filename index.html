@@ -1902,6 +1902,7 @@ function renderTable(){
 // ═══════════════════════════════════════════════════════
 var DRE_RAW=[], DRE_LOADED=false, DRE_TAB='mensal', DRE_SNAPSHOT=false;
 var DRE_FOLHA_RAW=[], DRE_DESP_RAW=[], DRE_CFG_PARAMS={}, DRE_CANAIS_RAW=[], DRE_CLUSTER_RAW=[]; // params por ano_mes
+var DRE_CANAL_LOOKUP={}, DRE_CLUSTER_LOOKUP={}, DRE_HAS_CLUSTER_LOOKUP=false;
 var FIXOS_DEF={sal_vend:191500,sal_adm:409000,marketing:79800,desp_gerais:579000,cd_mensal:270000};
 var DRE_CONFIG={freteMetodo:'qtd',fob:{},closer:{},developer:{},farmer:{},martins:{},rca:{},branding:{},leads:{},grade:{},custoGrade:{},canaisBranding:{},canaisLeads:{}};
 var DRE_CONFIG_DEFAULTS={fob:0.006,closer:0.008,developer:0.006,farmer:0.006,martins:0.003,rca:0.005,branding:0.025,leads:0.015,grade:0,custoGrade:0};
@@ -1991,8 +1992,22 @@ function dreAggregateFull(raw){
   raw.forEach(function(r){
     var a  = String(r.ANO||r.ano||'');
     var m  = String(r.MES||r.mes||'').padStart(2,'0');
+    // Canal: usa campo direto ou lookup por ano_mes+cod_vendedor
     var c  = String(r.CANAL||r.canal||'');
+    if(!c && Object.keys(DRE_CANAL_LOOKUP).length){
+      var _cod = String(r.COD_VENDEDOR||r.cod_vendedor||r.VENDEDOR||r.vendedor||'').trim();
+      c = DRE_CANAL_LOOKUP[a+m+'|'+_cod] || '';
+    }
+    // Cluster: usa campo direto ou lookup por cod_cliente; sem match -> "Demais"
     var cl = String(r.CLUSTER||r.cluster||'');
+    if(!cl){
+      if(DRE_HAS_CLUSTER_LOOKUP){
+        var _codCli = String(r.COD_CLIENTE||r.cod_cliente||r.CLIENTE||r.cliente||'').trim();
+        cl = DRE_CLUSTER_LOOKUP[_codCli] || 'Demais';
+      } else {
+        cl = 'Demais';
+      }
+    }
     var rg = String(r.REGIAO||r.regiao||'');
     var f  = String(r.FORNECEDOR||r.fornecedor||'');
     var key= a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f;
@@ -2054,34 +2069,12 @@ function dreEnrichWithCanais(raw, canaisRaw, clusterRaw){
   var hasClusterLookup = Object.keys(clusterLookup).length > 0;
   if(!hasCanalLookup && !hasClusterLookup) return raw;
 
-  return raw.map(function(r){
-    var needsCanal   = !(r.canal  ||r.CANAL);
-    var needsCluster = !(r.cluster||r.CLUSTER);
-    if(!needsCanal && !needsCluster) return r;
-
-    var out = Object.assign({}, r);
-
-    // Canal: join por ano_mes + cod_vendedor
-    if(needsCanal && hasCanalLookup){
-      var ano = String(r.ano||r.ANO||'');
-      var mes = String(r.mes||r.MES||'').padStart(2,'0');
-      var cod = String(r.cod_vendedor||r.COD_VENDEDOR||r.vendedor||r.VENDEDOR||'').trim();
-      var canal = canalLookup[ano+mes+'|'+cod];
-      if(canal) out.canal = canal;
-    }
-
-    // Cluster: join por cod_cliente; sem match -> "Demais"
-    if(needsCluster){
-      if(hasClusterLookup){
-        var codCli = String(r.cod_cliente||r.COD_CLIENTE||r.cliente||r.CLIENTE||'').trim();
-        out.cluster = clusterLookup[codCli] || 'Demais';
-      } else {
-        out.cluster = 'Demais';
-      }
-    }
-
-    return out;
-  });
+  // Instead of mapping all raw rows (slow), store lookups globally
+  // dreAggregateFull will use them during aggregation
+  DRE_CANAL_LOOKUP   = canalLookup;
+  DRE_CLUSTER_LOOKUP = clusterLookup;
+  DRE_HAS_CLUSTER_LOOKUP = hasClusterLookup;
+  return raw; // raw unchanged — join happens in dreAggregateFull
 }
 
 var SNAP_CHUNK = 3500000; // ~3.5MB por chave — margem segura
@@ -2251,7 +2244,24 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   }
 
   // Normaliza para maiúsculo para comparação consistente (snapshot usa minúsculo, raw usa maiúsculo)
-  var dimVal = function(r){ return String(r[dimKey]||r[dim]||'').toUpperCase(); };
+  var dimVal = function(r){
+    var v = r[dimKey]||r[dim]||'';
+    if(!v && dimKey==='canal' && Object.keys(DRE_CANAL_LOOKUP).length){
+      var _a = String(r.ano||r.ANO||'');
+      var _m = String(r.mes||r.MES||'').padStart(2,'0');
+      var _cv = String(r.cod_vendedor||r.COD_VENDEDOR||'').trim();
+      v = DRE_CANAL_LOOKUP[_a+_m+'|'+_cv]||'';
+    }
+    if(!v && dimKey==='cluster'){
+      if(DRE_HAS_CLUSTER_LOOKUP){
+        var _cc = String(r.cod_cliente||r.COD_CLIENTE||'').trim();
+        v = DRE_CLUSTER_LOOKUP[_cc]||'Demais';
+      } else {
+        v = 'Demais';
+      }
+    }
+    return String(v).toUpperCase();
+  };
   var dimsFromData = Array.from(new Set(rows.map(dimVal))).filter(Boolean);
   // Order: if refRaw defines order, use it; else sort alphabetically
   var dims;
