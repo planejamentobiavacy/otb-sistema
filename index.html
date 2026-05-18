@@ -1947,7 +1947,7 @@ async function loadDreFromSupabase(forceRaw){
     if(!forceRaw && snapOk){
       DRE_RAW = snapRows;
       // Enriquece snapshot com canal se necessário
-      if(DRE_CANAIS_RAW.length||DRE_CLUSTER_RAW.length) DRE_RAW = dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
+      dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW); // constrói lookups
       DRE_SNAPSHOT = true;
       dreShowProgress(100, 100);
       console.log('[DRE] snapshot OK:', DRE_RAW.length, 'linhas');
@@ -1963,9 +1963,8 @@ async function loadDreFromSupabase(forceRaw){
       try{ DRE_DESP_RAW    = await fetchAll(TBLS.despesa); } catch(e){ DRE_DESP_RAW=[]; }
       try{ DRE_CANAIS_RAW  = await fetchAll(TBLS.canais); }  catch(e){ DRE_CANAIS_RAW=[]; }
       try{ DRE_CLUSTER_RAW = await fetchAll(TBLS.cluster); } catch(e){ DRE_CLUSTER_RAW=[];}
-      // Join canal/cluster via otb_canais (ano_mes + cod_vendedor)
-      DRE_RAW = dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
-      console.log('[DRE] após join canal:', DRE_RAW.filter(function(r){return r.canal;}).length, 'com canal');
+      // Constrói lookups para join canal/cluster (sem copiar rows)
+      dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
       // Auto-salva snapshot correto após 3s
       setTimeout(function(){ var b=document.getElementById('btnSaveDre'); if(b&&!b.disabled) b.click(); }, 3000);
     }
@@ -2041,8 +2040,7 @@ function dreExpandSnapshot(snap){
   });
 }
 
-// Enriquece DRE_RAW com canal via join em otb_canais (ano_mes + cod_vendedor)
-// e cluster via join em otb_cluster (cod_cliente). Sem match -> cluster = "Demais"
+// Constrói DRE_CANAL_LOOKUP e DRE_CLUSTER_LOOKUP para uso em dreAggregateFull/dreRenderDim
 function dreEnrichWithCanais(raw, canaisRaw, clusterRaw){
   // ── Canal lookup: YYYYMM|cod_vendedor -> canal ──────────────
   var canalLookup = {};
@@ -2244,24 +2242,7 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   }
 
   // Normaliza para maiúsculo para comparação consistente (snapshot usa minúsculo, raw usa maiúsculo)
-  var dimVal = function(r){
-    var v = r[dimKey]||r[dim]||'';
-    if(!v && dimKey==='canal' && Object.keys(DRE_CANAL_LOOKUP).length){
-      var _a = String(r.ano||r.ANO||'');
-      var _m = String(r.mes||r.MES||'').padStart(2,'0');
-      var _cv = String(r.cod_vendedor||r.COD_VENDEDOR||'').trim();
-      v = DRE_CANAL_LOOKUP[_a+_m+'|'+_cv]||'';
-    }
-    if(!v && dimKey==='cluster'){
-      if(DRE_HAS_CLUSTER_LOOKUP){
-        var _cc = String(r.cod_cliente||r.COD_CLIENTE||'').trim();
-        v = DRE_CLUSTER_LOOKUP[_cc]||'Demais';
-      } else {
-        v = 'Demais';
-      }
-    }
-    return String(v).toUpperCase();
-  };
+  var dimVal = function(r){ return String(r[dimKey]||r[dim]||'').toUpperCase(); };
   var dimsFromData = Array.from(new Set(rows.map(dimVal))).filter(Boolean);
   // Order: if refRaw defines order, use it; else sort alphabetically
   var dims;
