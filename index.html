@@ -1945,34 +1945,9 @@ async function loadDreFromSupabase(forceRaw){
         DRE_RAW = dreExpandSnapshot(allRows);
         console.log('[DRE] chunks carregados:', DRE_RAW.length, 'linhas de', saved.chunks, 'partes');
       }
-      // Valida snapshot — se canal vazio, descarta e busca bruto
-      var _sampleCanal = DRE_RAW.length ? (DRE_RAW[0].canal||DRE_RAW[0].CANAL||'') : 'ok';
-      if(!_sampleCanal && DRE_RAW.length > 0){
-        console.warn('[DRE] snapshot inválido (canal vazio) — buscando bruto');
-        DRE_SNAPSHOT = false;
-        if(progLbl) progLbl.textContent = 'Snapshot inválido, buscando dados brutos...';
-        DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre', dreShowProgress);
-        try{ DRE_FOLHA_RAW   = await fetchAll(TBLS.folha,   null, 'folha'); } catch(e){ DRE_FOLHA_RAW=[]; }
-        try{ DRE_DESP_RAW    = await fetchAll(TBLS.despesa); } catch(e){ DRE_DESP_RAW=[]; }
-        try{ DRE_CANAIS_RAW  = await fetchAll(TBLS.canais); }  catch(e){ DRE_CANAIS_RAW=[]; }
-        try{ DRE_CLUSTER_RAW = await fetchAll(TBLS.cluster); } catch(e){ DRE_CLUSTER_RAW=[];}
-      } else {
-        DRE_SNAPSHOT = true;
-        dreShowProgress(100, 100);
-        console.log('[DRE] snapshot carregado:', DRE_RAW.length, 'linhas canal='+_sampleCanal);
-      }
-      // Se buscou bruto por snapshot inválido, reinicia initDre com dados corretos
-      if(!DRE_SNAPSHOT && DRE_RAW.length > 0){
-        console.log('[DRE] reiniciando com dados brutos corretos...');
-        // Re-run initDre to rebuild panels with correct data
-        DRE_LOADED = true;
-        if(loadingEl) loadingEl.style.display='none';
-        setTimeout(function(){
-          initDre();
-          setTimeout(function(){ handleSaveDre(document.getElementById('btnSaveDre')||{textContent:'💾',disabled:false}); }, 1000);
-        }, 100);
-        return; // Don't continue current initDre
-      }
+      DRE_SNAPSHOT = true;
+      dreShowProgress(100, 100);
+      console.log('[DRE] snapshot carregado:', DRE_RAW.length, 'linhas');
     } else {
       DRE_SNAPSHOT = false;
       var reason = !saved ? 'sem save' : (!saved.snapshot && !saved.chunks) ? 'sem snapshot no save' : 'snapshot vazio';
@@ -2176,6 +2151,7 @@ function dreRender(){
   else if(DRE_TAB==='fornecedor') dreRenderDim('FORNECEDOR','dre-ano-forn','dre-mes-forn','dre-canal-forn','forn');
 }
 function dreRenderMensal(){
+  console.log('[dreRenderMensal] DRE_RAW.length='+DRE_RAW.length);
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
   var ano=dreGv('dre-ano-mensal'),q=dreGv('dre-q-mensal'),mes=dreGv('dre-mes-mensal'),canal=dreGv('dre-canal-mensal'),cluster=dreGv('dre-cluster-mensal'),regiao=dreGv('dre-reg-mensal'),forn=dreGv('dre-forn-mensal');
   var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn);
