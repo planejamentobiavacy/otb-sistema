@@ -638,34 +638,24 @@ async function fetchAll(table, extraFilter, tableKey, onProgress){
   if(first.rows.length >= total) return first.rows;
 
   var numPages = Math.ceil(total / PAGE);
-  // Busca em paralelo com retry sequencial para páginas que falham
-  var promises = [];
-  for(var p = 1; p < numPages; p++) promises.push(
-    fetchPage(p * PAGE).catch(function(e){
-      console.warn('[fetchAll] página falhou, tentando sem count:', e.message);
-      return fetchPage(p * PAGE, true).catch(function(){ return {rows:[]}; });
-    })
-  );
-
-  var results = await Promise.all(promises);
+  // Busca em lotes de 10 páginas para evitar timeout por sobrecarga
   var out = first.rows.slice();
-  results.forEach(function(res){
-    out = out.concat(res.rows||[]);
-    if(onProgress) onProgress(out.length, total);
-  });
-  // Verifica se alguma página veio vazia e busca sequencialmente
-  if(out.length < total * 0.95){
-    console.warn('[fetchAll] paralelo incompleto ('+out.length+'/'+total+'), completando sequencial...');
-    var got = new Set();
-    out.forEach(function(r,i){ got.add(Math.floor(i/PAGE)); });
-    for(var pp=1; pp<numPages; pp++){
-      if(!got.has(pp) || (results[pp-1]&&!results[pp-1].rows.length)){
-        try{
-          var retry = await fetchPage(pp*PAGE, true);
-          if(retry.rows.length) out = out.concat(retry.rows);
-        }catch(e){}
-      }
+  var BATCH = 10;
+  for(var batchStart = 1; batchStart < numPages; batchStart += BATCH){
+    var batchEnd = Math.min(batchStart + BATCH, numPages);
+    var batchPromises = [];
+    for(var bp = batchStart; bp < batchEnd; bp++){
+      batchPromises.push(
+        fetchPage(bp * PAGE).catch(function(e){
+          return fetchPage(bp * PAGE, true).catch(function(){ return {rows:[]}; });
+        })
+      );
     }
+    var batchResults = await Promise.all(batchPromises);
+    batchResults.forEach(function(res){
+      out = out.concat(res.rows||[]);
+    });
+    if(onProgress) onProgress(out.length, total);
   }
   return out;
 }
@@ -1970,6 +1960,18 @@ async function loadDreFromSupabase(forceRaw){
         DRE_SNAPSHOT = true;
         dreShowProgress(100, 100);
         console.log('[DRE] snapshot carregado:', DRE_RAW.length, 'linhas canal='+_sampleCanal);
+      }
+      // Se buscou bruto por snapshot inválido, reinicia initDre com dados corretos
+      if(!DRE_SNAPSHOT && DRE_RAW.length > 0){
+        console.log('[DRE] reiniciando com dados brutos corretos...');
+        // Re-run initDre to rebuild panels with correct data
+        DRE_LOADED = true;
+        if(loadingEl) loadingEl.style.display='none';
+        setTimeout(function(){
+          initDre();
+          setTimeout(function(){ handleSaveDre(document.getElementById('btnSaveDre')||{textContent:'💾',disabled:false}); }, 1000);
+        }, 100);
+        return; // Don't continue current initDre
       }
     } else {
       DRE_SNAPSHOT = false;
