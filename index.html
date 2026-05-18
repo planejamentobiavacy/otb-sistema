@@ -2146,8 +2146,8 @@ function dreFilt(ano,mes,canal,q,cluster,regiao,forn){
   if(ano&&ano!=='TODOS') r=r.filter(function(x){return String(x.ano||x.ANO)===String(ano);});
   var qMeses=dreQuarterMeses(q); if(qMeses) r=r.filter(function(x){return qMeses.includes(String(x.mes||x.MES||'').padStart(2,'0'));});
   if(mes&&mes!=='TODOS') r=r.filter(function(x){return String(x.mes||x.MES||'').padStart(2,'0')===mes;});
-  if(canal&&canal!=='TODOS') r=r.filter(function(x){return (x.canal||x.CANAL)===canal;});
-  if(cluster&&cluster!=='TODOS') r=r.filter(function(x){return (x.cluster||x.CLUSTER)===cluster;});
+  if(canal&&canal!=='TODOS') r=r.filter(function(x){return String(x.canal||x.CANAL||'').toUpperCase()===canal.toUpperCase();});
+  if(cluster&&cluster!=='TODOS') r=r.filter(function(x){return String(x.cluster||x.CLUSTER||'').toUpperCase()===cluster.toUpperCase();});
   if(regiao&&regiao!=='TODOS') r=r.filter(function(x){return (x.regiao||x.REGIAO)===regiao;});
   if(forn&&forn!=='TODOS') r=r.filter(function(x){return (x.fornecedor||x.FORNECEDOR)===forn;});
   return r;
@@ -2183,17 +2183,19 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   var dimLabelMap = {}; // code -> display label
   if(refRaw.length){
     refRaw.forEach(function(r){
-      var code = String(r.canal||r.CANAL||r.cluster||r.CLUSTER||r.codigo||r.CODIGO||r.code||r.CODE||'').trim();
+      var code = String(r.canal||r.CANAL||r.cluster||r.CLUSTER||r.codigo||r.CODIGO||r.code||r.CODE||'').trim().toUpperCase();
       var label= String(r.nome||r.NOME||r.label||r.LABEL||r.descricao||r.DESCRICAO||code).trim();
       if(code) dimLabelMap[code] = label;
     });
   }
 
-  var dimsFromData = Array.from(new Set(rows.map(function(r){return r[dimKey]||r[dim]||'';}))).filter(Boolean);
+  // Normaliza para maiúsculo para comparação consistente (snapshot usa minúsculo, raw usa maiúsculo)
+  var dimVal = function(r){ return String(r[dimKey]||r[dim]||'').toUpperCase(); };
+  var dimsFromData = Array.from(new Set(rows.map(dimVal))).filter(Boolean);
   // Order: if refRaw defines order, use it; else sort alphabetically
   var dims;
   if(Object.keys(dimLabelMap).length){
-    var refOrder = refRaw.map(function(r){return String(r.canal||r.CANAL||r.cluster||r.CLUSTER||r.codigo||r.CODIGO||r.code||r.CODE||'').trim();}).filter(Boolean);
+    var refOrder = refRaw.map(function(r){return String(r.canal||r.CANAL||r.cluster||r.CLUSTER||r.codigo||r.CODIGO||r.code||r.CODE||'').trim().toUpperCase();}).filter(Boolean);
     dims = refOrder.filter(function(d){ return dimsFromData.indexOf(d)>-1; });
     // add any dims in data but not in ref table
     dimsFromData.forEach(function(d){ if(dims.indexOf(d)===-1) dims.push(d); });
@@ -2205,7 +2207,7 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
     var label = dimLabelMap[d] || d;
     // Pass canal context so dreCalc can allocate Leads 100% to Closer
     var canalCtx = dimKey==='canal' ? d : null;
-    return{label:label,d:dreCalcShare(rows.filter(function(r){return (r[dimKey]||r[dim])===d;}),rows,canalCtx)};
+    return{label:label,d:dreCalcShare(rows.filter(function(r){return dimVal(r)===d;}),rows,canalCtx)};
   });
   var anos=Array.from(new Set(rows.map(function(r){return r.ano||r.ANO;})));
   var anosLY=anos.map(function(a){return String(+a-1);}),rowsLY=DRE_RAW.filter(function(r){return anosLY.includes(String(r.ano||r.ANO));});
