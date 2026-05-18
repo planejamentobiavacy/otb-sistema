@@ -2176,6 +2176,10 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   var ano=dreGv(anoId),mes=dreGv(mesId),canal=canalId?dreGv(canalId):null;
   var q=dreGv('dre-q-'+suffix),cluster=dreGv('dre-cluster-'+suffix),regiao=dreGv('dre-reg-'+suffix),forn=dreGv('dre-forn-'+suffix);
   var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn);
+  // DEBUG
+  var sample = rows[0];
+  console.log('[dreRenderDim] dim='+dim+' rows='+rows.length+' sample keys='+(sample?Object.keys(sample).join(','):'none'));
+  console.log('[dreRenderDim] first dimVal='+(sample?(sample[dim.toLowerCase()]||sample[dim]||'EMPTY'):'none'));
   var dimKey=dim.toLowerCase();
 
   // Use reference table (DRE_CANAIS_RAW / DRE_CLUSTER_RAW) for canonical dim list + order
