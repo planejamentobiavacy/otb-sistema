@@ -2412,7 +2412,7 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   }
   var fobAvg=getSalPct('fob');
   var fob=rl*fobAvg;
-  var gradeUnit=(function(){var s=0;a.anomesList.forEach(function(am){var v=DRE_CONFIG.custoGrade&&DRE_CONFIG.custoGrade[am]!=null?DRE_CONFIG.custoGrade[am]:(DRE_CONFIG_DEFAULTS.custoGrade||0);s+=v;});return a.anomesList.length?s/a.anomesList.length:0;})();  var grade=(a.qtdGradeHava||0)*gradeUnit;
+  var gradeUnit=getFixo('custoGrade', DRE_CONFIG_DEFAULTS.custoGrade||0);  var grade=(a.qtdGradeHava||0)*gradeUnit;
   var sv_closer=rl*getSalPct('closer')*shareRB,sv_developer=rl*getSalPct('developer')*shareRB,sv_farmer=rl*getSalPct('farmer')*shareRB;
   var com_martins=rl*getSalPct('martins')*shareRB,com_rca=rl*getSalPct('rca')*shareRB;
   var sv=sv_closer+sv_developer+sv_farmer,com=com_martins+com_rca;
@@ -2436,7 +2436,20 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   var mkt_branding = mkt_total * getSalPct('branding');
   var mkt_leads = isCloser===true ? mkt_total : (isCloser===false ? 0 : mkt_total * getSalPct('leads'));
   var mkt = mkt_branding + mkt_leads;
-  var mcon=mc+rf_rec-cf-mkt,sa=FIXOS_DEF.sal_adm*shareRB,dg=FIXOS_DEF.desp_gerais*shareRB,cd=FIXOS_DEF.cd_mensal*shareQTD;
+  // Lê fixos por mês se disponível, senão usa default global
+  function getFixo(key, def){
+    if(!a.anomesList.length) return def;
+    var total=0;
+    a.anomesList.forEach(function(am){
+      var p=DRE_CFG_PARAMS[am];
+      total += (p && p[key]!=null) ? p[key] : def;
+    });
+    return total / a.anomesList.length;
+  }
+  var sa_unit = getFixo('sal_adm', FIXOS_DEF.sal_adm);
+  var dg_unit = getFixo('desp_gerais', FIXOS_DEF.desp_gerais);
+  var cd_unit = getFixo('cd_mensal', FIXOS_DEF.cd_mensal);
+  var mcon=mc+rf_rec-cf-mkt,sa=sa_unit*shareRB,dg=dg_unit*shareRB,cd=cd_unit*shareQTD;
   var ebt=mcon-sa-dg-cd;
   return{rb_dev,dev,rb_gross,rb,imp,icms:a.icms,pc:a.cofins+a.pis+a.fecpst,rl,qtd:a.qtd,cmv_b,cmv,mkp,mg_prod,fob,mb,sv,sv_closer,sv_developer,sv_farmer,com,com_martins,com_rca,mc,rf:rf_rec,cf,mkt,mkt_branding,mkt_leads,mcon,grade,sa,dg,cd,ebt};
 }
@@ -2778,11 +2791,11 @@ function openDreCfg(){
     +'<div class="dre-cfg-sec">'
     +'<div class="dre-cfg-sec-hd">🏢 Despesas Fixas</div>'
     +'<div class="dre-cfg-grid">'
-    +fieldBrl('Salários Adm (R$)', 'sal_adm', FIXOS_DEF.sal_adm,
+    +fieldBrl('Salários Adm (R$)', 'sal_adm', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].sal_adm!=null)?DRE_CFG_PARAMS[am].sal_adm:FIXOS_DEF.sal_adm,
       folhaAdm ? '👥 Folha ADM: '+fmt(folhaAdm) : '')
-    +fieldBrl('Despesas Gerais (R$)', 'desp_gerais', FIXOS_DEF.desp_gerais,
+    +fieldBrl('Despesas Gerais (R$)', 'desp_gerais', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].desp_gerais!=null)?DRE_CFG_PARAMS[am].desp_gerais:FIXOS_DEF.desp_gerais,
       despGerais ? '💸 Base: '+fmt(despGerais) : '')
-    +fieldBrl('CD — Centro de Dist. (R$)', 'cd_mensal', FIXOS_DEF.cd_mensal,
+    +fieldBrl('CD — Centro de Dist. (R$)', 'cd_mensal', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].cd_mensal!=null)?DRE_CFG_PARAMS[am].cd_mensal:FIXOS_DEF.cd_mensal,
       despCd ? '💸 Base: '+fmt(despCd) : '')
     +'</div></div>'
 
@@ -2790,7 +2803,7 @@ function openDreCfg(){
     +'<div class="dre-cfg-sec">'
     +'<div class="dre-cfg-sec-hd">👟 Montagem de Grade — Havaianas</div>'
     +'<div class="dre-cfg-grid">'
-    +fieldBrl('Custo por Par (R$)', 'custoGrade', DRE_CONFIG_DEFAULTS.custoGrade||0)
+    +fieldBrl('Custo por Par (R$)', 'custoGrade', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].custoGrade!=null)?DRE_CFG_PARAMS[am].custoGrade:(DRE_CONFIG_DEFAULTS.custoGrade||0))
     +'</div></div>';
   document.getElementById('dreCfgOverlay').style.display='flex';
 }
@@ -2850,12 +2863,22 @@ function applyDreCfg(){
     });
   }
 
-  FIXOS_DEF.marketing   = gv('desp_mkt');
-  FIXOS_DEF.sal_adm     = gv('sal_adm');
-  FIXOS_DEF.desp_gerais = gv('desp_gerais');
-  FIXOS_DEF.cd_mensal   = gv('cd_mensal');
-  DRE_CONFIG_DEFAULTS.custoGrade = gv('custoGrade');
-  DRE_CONFIG.custoGrade = {};
+  if(am){
+    // Salva fixos por mês
+    DRE_CFG_PARAMS[am].desp_mkt   = gv('desp_mkt');
+    DRE_CFG_PARAMS[am].sal_adm    = gv('sal_adm');
+    DRE_CFG_PARAMS[am].desp_gerais= gv('desp_gerais');
+    DRE_CFG_PARAMS[am].cd_mensal  = gv('cd_mensal');
+    DRE_CFG_PARAMS[am].custoGrade = gv('custoGrade');
+  } else {
+    // Sem mês: atualiza defaults globais
+    FIXOS_DEF.marketing   = gv('desp_mkt');
+    FIXOS_DEF.sal_adm     = gv('sal_adm');
+    FIXOS_DEF.desp_gerais = gv('desp_gerais');
+    FIXOS_DEF.cd_mensal   = gv('cd_mensal');
+    DRE_CONFIG_DEFAULTS.custoGrade = gv('custoGrade');
+    DRE_CONFIG.custoGrade = {};
+  }
 
   closeDreCfg();
   dreRender();
