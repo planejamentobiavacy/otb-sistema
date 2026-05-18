@@ -583,8 +583,7 @@ async function supaFetch(path, opts){
 // Buscar todas as linhas paginadas — tableKey opcional para select otimizado
 // Estratégia: busca 1a pagina com count=exact, depois demais em PARALELO
 async function fetchAll(table, extraFilter, tableKey, onProgress){
-  // Tabelas grandes usam página menor para evitar timeout do Supabase
-  var PAGE = (table && (table.indexOf('venda_dre')>-1 || table.indexOf('dw_otb')>-1)) ? 2000 : 1000;
+  var PAGE = 1000;
   var sel = tableKey ? buildSelect(tableKey) : 'select=*';
   var base = '/rest/v1/' + table + '?' + sel + (extraFilter||'');
 
@@ -639,15 +638,35 @@ async function fetchAll(table, extraFilter, tableKey, onProgress){
   if(first.rows.length >= total) return first.rows;
 
   var numPages = Math.ceil(total / PAGE);
+  // Busca em paralelo com retry sequencial para páginas que falham
   var promises = [];
-  for(var p = 1; p < numPages; p++) promises.push(fetchPage(p * PAGE));
+  for(var p = 1; p < numPages; p++) promises.push(
+    fetchPage(p * PAGE).catch(function(e){
+      console.warn('[fetchAll] página falhou, tentando sem count:', e.message);
+      return fetchPage(p * PAGE, true).catch(function(){ return {rows:[]}; });
+    })
+  );
 
   var results = await Promise.all(promises);
   var out = first.rows.slice();
   results.forEach(function(res){
-    out = out.concat(res.rows);
+    out = out.concat(res.rows||[]);
     if(onProgress) onProgress(out.length, total);
   });
+  // Verifica se alguma página veio vazia e busca sequencialmente
+  if(out.length < total * 0.95){
+    console.warn('[fetchAll] paralelo incompleto ('+out.length+'/'+total+'), completando sequencial...');
+    var got = new Set();
+    out.forEach(function(r,i){ got.add(Math.floor(i/PAGE)); });
+    for(var pp=1; pp<numPages; pp++){
+      if(!got.has(pp) || (results[pp-1]&&!results[pp-1].rows.length)){
+        try{
+          var retry = await fetchPage(pp*PAGE, true);
+          if(retry.rows.length) out = out.concat(retry.rows);
+        }catch(e){}
+      }
+    }
+  }
   return out;
 }
 
@@ -675,28 +694,17 @@ async function supaSave(saveTable, rowKey, value){
   var body = JSON.stringify({key: rowKey, value: JSON.stringify(value)});
   var kb = Math.round(body.length/1024);
   if(kb > 100) console.log('[supaSave] sending', kb, 'KB for key='+rowKey);
-  // Usa upsert (POST com Prefer: resolution=merge-duplicates) para garantir unicidade
+  // DELETE + POST garante unicidade sem precisar de unique constraint
+  try{ await supaFetch('/rest/v1/' + saveTable + '?key=eq.' + rowKey, {method:'DELETE'}); } catch(ed){}
   try{
     var r = await supaFetch('/rest/v1/' + saveTable, {
-      method:'POST', body: body,
-      headers:{'Prefer':'resolution=merge-duplicates,return=minimal','Content-Type':'application/json'}
+      method:'POST', body: body, headers:{'Prefer':'return=minimal','Content-Type':'application/json'}
     });
-    console.log('[supaSave] upsert ok:', rowKey, kb+'KB');
+    console.log('[supaSave] ok:', rowKey, kb+'KB');
     return r;
   } catch(e){
-    // Fallback: DELETE then POST
-    console.warn('[supaSave] upsert falhou, tentando DELETE+POST:', e.message);
-    try{ await supaFetch('/rest/v1/' + saveTable + '?key=eq.' + rowKey, {method:'DELETE', headers:{}}); }catch(ed){}
-    try{
-      var r2 = await supaFetch('/rest/v1/' + saveTable, {
-        method:'POST', body: body, headers:{'Prefer':'return=minimal','Content-Type':'application/json'}
-      });
-      console.log('[supaSave] POST ok:', rowKey);
-      return r2;
-    } catch(e2){
-      console.error('[supaSave] POST também falhou:', e2.message);
-      throw e2;
-    }
+    console.error('[supaSave] falhou:', rowKey, e.message);
+    throw e;
   }
 }
 async function supaLoad(saveTable, rowKey){
