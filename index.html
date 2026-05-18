@@ -1923,6 +1923,13 @@ async function loadDreFromSupabase(forceRaw){
     dreShowProgress(0, 100);
 
     var saved = await supaLoad(TBLS.save_dre, 'dre_current');
+    console.log('[DRE load] saved keys:', saved ? Object.keys(saved).join(',') : 'null');
+    console.log('[DRE load] snapshot rows:', saved && saved.snapshot ? saved.snapshot.length : 0, 'chunks:', saved ? saved.chunks : 0);
+    if(saved && saved.snapshot && saved.snapshot.length > 0){
+      var s0 = saved.snapshot[0];
+      console.log('[DRE load] snapshot[0] keys:', Object.keys(s0).join(','));
+      console.log('[DRE load] snapshot[0] canal:', s0.canal||s0.CANAL||s0.c||'EMPTY');
+    }
     if(saved && saved.config) DRE_CONFIG = Object.assign(DRE_CONFIG, saved.config);
     if(saved && saved.fixos)  Object.assign(FIXOS_DEF, saved.fixos);
     if(saved && saved.cfgParams) DRE_CFG_PARAMS = Object.assign(DRE_CFG_PARAMS, saved.cfgParams);
