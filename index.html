@@ -534,8 +534,10 @@ var COLS = {
   // otb_produto: cod_produto, fornecedor, categoria
   produto: ['cod_produto','fornecedor','categoria'],
 
-  // dw_otb_venda_dre: usa select=* pois colunas são em maiúsculo e PostgREST é case-sensitive
-  venda_dre: null,
+  // dw_otb_venda_dre — só as colunas que dreAgg usa (reduz payload ~80%)
+  venda_dre: ['ANO','MES','CANAL','CLUSTER','REGIAO','FORNECEDOR',
+              'FATURAMENTO_VENDA','DEVOLUCAO_VENDA','QTD','CUSTO',
+              'ICMS','COFINS','PIS','FECPST','REC_FRETE','CUSTO_FRETE','QTD_GRADE_HAVA'],
 
   // otb_folha: todas as colunas úteis já são diretas
   folha: ['ano_mes','area','cargo','pessoa','valor'],
