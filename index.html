@@ -167,7 +167,9 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
 /* ── DRE ────────────────────────────────────────── */
 .dre-header-bar{background:#fff;border-bottom:2px solid #dde3f0;flex-shrink:0;display:flex;align-items:center;padding:0 20px}
 .dre-tab-btn{font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;font-family:inherit}
-.dre-panels{flex:1;overflow:auto;padding:16px 20px;background:#f4f6fb}
+.dre-panels{flex:1;overflow:auto;padding:0 0 20px 0;background:#f4f6fb}
+.dre-fbar-wrap{padding:12px 20px 0}
+.dre-kpi-wrap{padding:0 20px 12px}
 .dre-empty{flex:1;display:flex;align-items:center;justify-content:center;font-size:14px;color:#7a8ab0}
 .dre-loading{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px}
 .dre-prog-wrap{width:320px;background:#e4e9f4;border-radius:8px;height:8px;overflow:hidden}
@@ -2048,11 +2050,7 @@ async function initDre(){
   var selForn=function(id){return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Fornecedor</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:120px">'+fornecs.map(function(v){return'<option value="'+v+'">'+v+'</option>';}).join('')+'</select></div>';};
   var fBar=function(ids){return '<div style="display:flex;align-items:flex-end;gap:10px;padding:10px 0 14px;flex-wrap:wrap">'+ids.join('')+'</div>';};
   document.getElementById('drePanels').innerHTML=
-    '<div id="drePanel-mensal">'+fBar([selAno('dre-ano-mensal'),selQ('dre-q-mensal'),selMes('dre-mes-mensal'),selCanal('dre-canal-mensal'),selCluster('dre-cluster-mensal'),selRegiao('dre-reg-mensal'),selForn('dre-forn-mensal')])+'<div id="dreKpi-mensal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px"></div><div id="dreTable-mensal"></div></div>'+
-    '<div id="drePanel-canal" style="display:none">'+fBar([selAno('dre-ano-canal'),selQ('dre-q-canal'),selMes('dre-mes-canal'),selCluster('dre-cluster-canal'),selRegiao('dre-reg-canal'),selForn('dre-forn-canal')])+'<div id="dreKpi-canal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px"></div><div id="dreTable-canal"></div></div>'+
-    '<div id="drePanel-cluster" style="display:none">'+fBar([selAno('dre-ano-cluster'),selQ('dre-q-cluster'),selMes('dre-mes-cluster'),selCanal('dre-canal-cluster'),selRegiao('dre-reg-cluster'),selForn('dre-forn-cluster')])+'<div id="dreKpi-cluster" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px"></div><div id="dreTable-cluster"></div></div>'+
-    '<div id="drePanel-regiao" style="display:none">'+fBar([selAno('dre-ano-regiao'),selQ('dre-q-regiao'),selMes('dre-mes-regiao'),selCanal('dre-canal-regiao'),selCluster('dre-cluster-regiao'),selForn('dre-forn-regiao')])+'<div id="dreKpi-regiao" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px"></div><div id="dreTable-regiao"></div></div>'+
-    '<div id="drePanel-fornecedor" style="display:none">'+fBar([selAno('dre-ano-forn'),selQ('dre-q-forn'),selMes('dre-mes-forn'),selCanal('dre-canal-forn'),selCluster('dre-cluster-forn'),selRegiao('dre-reg-forn')])+'<div id="dreKpi-forn" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin-bottom:16px"></div><div id="dreTable-forn"></div></div>';
+    '<div id="drePanel-mensal">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-mensal'),selQ('dre-q-mensal'),selMes('dre-mes-mensal'),selCanal('dre-canal-mensal'),selCluster('dre-cluster-mensal'),selRegiao('dre-reg-mensal'),selForn('dre-forn-mensal')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-mensal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="drePanel-canal" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-canal'),selQ('dre-q-canal'),selMes('dre-mes-canal'),selCluster('dre-cluster-canal'),selRegiao('dre-reg-canal'),selForn('dre-forn-canal')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-canal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="drePanel-cluster" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-cluster'),selQ('dre-q-cluster'),selMes('dre-mes-cluster'),selCanal('dre-canal-cluster'),selRegiao('dre-reg-cluster'),selForn('dre-forn-cluster')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-cluster" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="drePanel-regiao" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-regiao'),selQ('dre-q-regiao'),selMes('dre-mes-regiao'),selCanal('dre-canal-regiao'),selCluster('dre-cluster-regiao'),selForn('dre-forn-regiao')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-regiao" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="drePanel-fornecedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-forn'),selQ('dre-q-forn'),selMes('dre-mes-forn'),selCanal('dre-canal-forn'),selCluster('dre-cluster-forn'),selRegiao('dre-reg-forn')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-forn" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-forn"></div></div>';
   dreSwitchTab('mensal');
 }
 
@@ -2222,7 +2220,7 @@ function dreTabela(cols){
   var ebitdaRow='<tr style="font-weight:800;color:#1a2a6c;font-size:15px;background:rgba(35,82,200,.07);border-top:2px solid #2352c8;border-bottom:2px solid #2352c8"><td>EBITDA</td>'+cols.map(function(c){var v=c.d.ebt;var cl=v<0?'color:#c0181a;font-weight:700':v<c.d.rl*0.03?'color:#b07a00;font-weight:700':'color:#0a7c4e;font-weight:700';return'<td><span style="'+cl+'">'+dreBrl(v)+'</span></td>';}).join('')+'</tr>';
   var ebitdaPct='<tr style="font-size:13px;font-weight:700;color:#1a2a6c;border-bottom:1px dashed rgba(35,82,200,.3)"><td style="padding-left:28px">EBITDA %</td>'+cols.map(function(c){var p=c.d.rl>0?(c.d.ebt/c.d.rl*100).toFixed(1)+'%':'-';var cl=c.d.ebt<0?'color:#c0181a':c.d.ebt<c.d.rl*0.03?'color:#b07a00':'color:#0a7c4e';return'<td><span style="'+cl+'">'+p+'</span></td>';}).join('')+'</tr>';
   return'<style>'+
-  '.dre-tbl-wrap{overflow:auto;max-height:calc(100vh - 220px)}'+
+  '.dre-tbl-wrap{overflow-x:auto;width:100%}'+
   '.dre-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;background:#fff;font-family:inherit}'+
   '.dre-tbl td,.dre-tbl th{white-space:nowrap}'+
   '.dre-tbl td{text-align:center;padding:8px 14px;font-size:12px;font-weight:500;color:#3a4a7a;border-bottom:1px solid #d0d8ee}'+
@@ -2230,11 +2228,13 @@ function dreTabela(cols){
   '.dre-tbl tr.row-total td:first-child{background:#eef2fc}'+
   '.dre-tbl tr.row-sub td:first-child{background:#fafbff}'+
   '.dre-tbl tr.row-sec td:first-child{position:sticky;left:0;z-index:3}'+
+  '.dre-tbl thead th{position:sticky;top:0;z-index:4}'+
+  '.dre-tbl thead th:first-child{position:sticky;top:0;left:0;z-index:10}'+
   '</style>'+
   '<div class="dre-tbl-wrap">'+
   '<table class="dre-tbl">'+
   '<thead><tr>'+
-  '<th style="font-size:14px;text-transform:uppercase;letter-spacing:1px;font-weight:700;color:#fff;padding:12px 14px;text-align:left;min-width:270px;background:linear-gradient(90deg,#1a2a6c 80%,#2352c8);position:sticky;top:0;left:0;z-index:20;border-right:2px solid rgba(255,255,255,.2)">Indicador</th>'+th+
+  '<th style="font-size:14px;text-transform:uppercase;letter-spacing:1px;font-weight:700;color:#fff;padding:12px 14px;text-align:left;min-width:270px;background:linear-gradient(90deg,#1a2a6c 80%,#2352c8);border-right:2px solid rgba(255,255,255,.2)">Indicador</th>'+th+
   '</tr></thead><tbody>'
   +sec('📊 RECEITA')+row('Receita Bruta',function(d){return dreBrl(d.rb_gross);})+row('Devolução (-)',function(d){return dreBrl(d.dev);},'row-sub')+rowP('% Devolução',function(d){return drePct(d.dev,d.rb_gross);})+rowT('Receita Bruta s/ Dev',function(d){return dreBrl(d.rb_dev);})
   +sp()+row('Impostos (-)',function(d){return dreBrl(d.imp);},'row-sub')+row('&nbsp;&nbsp;ICMS',function(d){return dreBrl(d.icms);},'row-sub')+rowP('&nbsp;&nbsp;% ICMS',function(d){return drePct(d.icms,d.rb);})+row('&nbsp;&nbsp;PIS/COFINS',function(d){return dreBrl(d.pc);},'row-sub')+rowP('&nbsp;&nbsp;% PIS/COFINS',function(d){return drePct(d.pc,d.rb);})+rowT('Receita Líquida',function(d){return dreBrl(d.rl);})
