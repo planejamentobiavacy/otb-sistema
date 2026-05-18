@@ -1965,7 +1965,6 @@ async function loadDreFromSupabase(forceRaw){
     }
 
     DRE_LOADED = DRE_RAW.length > 0;
-    console.log('[DRE] load done, DRE_RAW='+DRE_RAW.length+' DRE_LOADED='+DRE_LOADED);
     if(loadingEl) loadingEl.style.display='none';
     return DRE_LOADED;
   } catch(e){
@@ -2078,6 +2077,7 @@ async function initDre(){
   if(!DRE_LOADED){
     document.getElementById('dreTabsBar').innerHTML='';
     document.getElementById('drePanels').innerHTML='';
+    DRE_TAB = 'mensal'; // reset tab
     var ok = await loadDreFromSupabase();
     if(!ok){
       document.getElementById('dreHeaderMeta').textContent='Sem dados DRE';
@@ -2085,6 +2085,9 @@ async function initDre(){
       return;
     }
   }
+  // Always rebuild panels to use current DRE_RAW years
+  document.getElementById('dreTabsBar').innerHTML='';
+  document.getElementById('drePanels').innerHTML='';
   document.getElementById('dreEmpty').style.display='none';
   document.getElementById('dreLoading').style.display='none';
   var anos=Array.from(new Set(DRE_RAW.map(function(r){return r.ano||r.ANO;}))).filter(Boolean).sort();
@@ -2137,8 +2140,8 @@ function dreGv(id){var el=document.getElementById(id);return el?el.value:'TODOS'
 function dreQuarterMeses(q){if(!q||q==='TODOS') return null;return{T1:['01','02','03'],T2:['04','05','06'],T3:['07','08','09'],T4:['10','11','12']}[q]||null;}
 function dreFilt(ano,mes,canal,q,cluster,regiao,forn){
   var r=DRE_RAW;
-  if(r.length) console.log('[dreFilt] ano='+ano+' r[0].ano='+r[0].ano+' r[0].ANO='+r[0].ANO+' r.length='+r.length);
-  if(ano&&ano!=='TODOS') r=r.filter(function(x){return String(x.ano||x.ANO)===String(ano);});
+
+  if(ano&&ano!=='TODOS') r=r.filter(function(x){var y=x.ano!=null?x.ano:(x.ANO!=null?x.ANO:'');return String(y)===String(ano);});
   var qMeses=dreQuarterMeses(q); if(qMeses) r=r.filter(function(x){return qMeses.includes(String(x.mes||x.MES||'').padStart(2,'0'));});
   if(mes&&mes!=='TODOS') r=r.filter(function(x){return String(x.mes||x.MES||'').padStart(2,'0')===mes;});
   if(canal&&canal!=='TODOS') r=r.filter(function(x){return String(x.canal||x.CANAL||'').toUpperCase()===canal.toUpperCase();});
