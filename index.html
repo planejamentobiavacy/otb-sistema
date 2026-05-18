@@ -1927,7 +1927,7 @@ async function loadDreFromSupabase(forceRaw){
     if(!forceRaw && saved && saved.snapshot && saved.snapshot.length){
       var reason = 'snapshot';
       if(progLbl) progLbl.textContent = 'Carregando snapshot ('+saved.snapshot.length.toLocaleString('pt-BR')+' linhas)...';
-      DRE_RAW = saved.snapshot;
+      DRE_RAW = dreExpandSnapshot(saved.snapshot);
       DRE_SNAPSHOT = true;
       dreShowProgress(100, 100);
       console.log('[DRE] snapshot carregado:', DRE_RAW.length, 'linhas');
@@ -1957,37 +1957,50 @@ async function loadDreFromSupabase(forceRaw){
 
 // Agrega DRE_RAW por (ano,mes,canal,cluster,regiao,fornecedor) somando campos numéricos
 // Reduz tipicamente de 50k+ linhas para ~500 combinações — cabe num único save key
+// Compacta snapshot usando nomes curtos (~70% menor que raw)
+// Mapeamento: a=ano,m=mes,c=canal,cl=cluster,r=regiao,f=fornecedor
+//             fv=faturamento_venda,dv=devolucao_venda,q=qtd,cu=custo,
+//             ic=icms,co=cofins,pi=pis,fe=fecpst,rf=rec_frete,cf=custo_frete,qg=qtd_grade_hava
 function dreAggregateFull(raw){
   var map = {};
   var nk = function(v){ return dreNum(v)||0; };
   raw.forEach(function(r){
-    var ano  = String(r.ano||r.ANO||'');
-    var mes  = String(r.mes||r.MES||'').padStart(2,'0');
-    var canal= String(r.canal||r.CANAL||'');
-    var clus = String(r.cluster||r.CLUSTER||'');
-    var reg  = String(r.regiao||r.REGIAO||'');
-    var forn = String(r.fornecedor||r.FORNECEDOR||'');
-    var key  = [ano,mes,canal,clus,reg,forn].join('|');
-    if(!map[key]){
-      map[key]={ano,mes,canal,cluster:clus,regiao:reg,fornecedor:forn,
-        faturamento:0,faturamento_venda:0,devolucao_venda:0,qtd:0,custo:0,
-        icms:0,cofins:0,pis:0,fecpst:0,rec_frete:0,custo_frete:0,qtd_grade_hava:0};
-    }
-    var a=map[key];
-    a.faturamento        += nk(r.faturamento       ||r.FATURAMENTO);
-    a.faturamento_venda  += nk(r.faturamento_venda ||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO);
-    a.devolucao_venda    += nk(r.devolucao_venda   ||r.DEVOLUCAO_VENDA);
-    a.qtd                += nk(r.qtd               ||r.QTD);
-    a.custo              += nk(r.custo             ||r.CUSTO);
-    a.icms               += nk(r.icms              ||r.ICMS);
-    a.cofins             += nk(r.cofins            ||r.COFINS);
-    a.pis                += nk(r.pis               ||r.PIS);
-    a.fecpst             += nk(r.fecpst            ||r.FECPST);
-    a.rec_frete          += nk(r.rec_frete         ||r.REC_FRETE);
-    a.custo_frete        += nk(r.custo_frete       ||r.CUSTO_FRETE);
-    a.qtd_grade_hava     += nk(r.qtd_grade_hava    ||r.QTD_GRADE_HAVA);
+    var a  = String(r.ano||r.ANO||'');
+    var m  = String(r.mes||r.MES||'').padStart(2,'0');
+    var c  = String(r.canal||r.CANAL||'');
+    var cl = String(r.cluster||r.CLUSTER||'');
+    var rg = String(r.regiao||r.REGIAO||'');
+    var f  = String(r.fornecedor||r.FORNECEDOR||'');
+    var key= a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f;
+    if(!map[key]) map[key]={a,m,c,cl,rg,f,fv:0,dv:0,q:0,cu:0,ic:0,co:0,pi:0,fe:0,rf:0,cf:0,qg:0};
+    var x=map[key];
+    x.fv += nk(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO);
+    x.dv += nk(r.devolucao_venda  ||r.DEVOLUCAO_VENDA);
+    x.q  += nk(r.qtd              ||r.QTD);
+    x.cu += nk(r.custo            ||r.CUSTO);
+    x.ic += nk(r.icms             ||r.ICMS);
+    x.co += nk(r.cofins           ||r.COFINS);
+    x.pi += nk(r.pis              ||r.PIS);
+    x.fe += nk(r.fecpst           ||r.FECPST);
+    x.rf += nk(r.rec_frete        ||r.REC_FRETE);
+    x.cf += nk(r.custo_frete      ||r.CUSTO_FRETE);
+    x.qg += nk(r.qtd_grade_hava   ||r.QTD_GRADE_HAVA);
   });
   return Object.values(map);
+}
+
+// Expande snapshot compacto de volta para o formato que dreAgg entende
+function dreExpandSnapshot(snap){
+  return snap.map(function(x){
+    // Suporta tanto formato compacto (x.a) quanto legado (x.ano)
+    if(x.ano !== undefined) return x; // formato antigo — devolve como está
+    return {
+      ano:x.a, mes:x.m, canal:x.c, cluster:x.cl, regiao:x.rg, fornecedor:x.f,
+      faturamento_venda:x.fv, devolucao_venda:x.dv, qtd:x.q, custo:x.cu,
+      icms:x.ic, cofins:x.co, pis:x.pi, fecpst:x.fe,
+      rec_frete:x.rf, custo_frete:x.cf, qtd_grade_hava:x.qg
+    };
+  });
 }
 
 async function handleSaveDre(btn){
@@ -2007,10 +2020,10 @@ async function handleSaveDre(btn){
     // Verifica tamanho (~5MB limite Supabase por célula)
     var json = JSON.stringify(payload);
     var kb = Math.round(json.length/1024);
-    if(json.length > 4800000){
-      // Snapshot muito grande: salva só config sem snapshot
+    if(json.length > 8000000){
+      // Snapshot muito grande mesmo compactado — salva só config
       toast('⚠️ Snapshot grande demais ('+kb+'KB) — salvando só configurações', 'warn');
-      await supaSave(TBLS.save_dre,'dre_current',{config:DRE_CONFIG,fixos:FIXOS_DEF,exportedAt:new Date().toISOString()});
+      await supaSave(TBLS.save_dre,'dre_current',{config:DRE_CONFIG,fixos:FIXOS_DEF,cfgParams:DRE_CFG_PARAMS,exportedAt:new Date().toISOString()});
     } else {
       await supaSave(TBLS.save_dre,'dre_current', payload);
       toast('✔ DRE salvo — snapshot de '+snapshot.length.toLocaleString('pt-BR')+' linhas ('+kb+'KB), era '+DRE_RAW.length.toLocaleString('pt-BR')+' linhas brutas');
