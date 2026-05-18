@@ -1946,7 +1946,7 @@ async function loadDreFromSupabase(forceRaw){
     if(!forceRaw && snapOk){
       DRE_RAW = snapRows;
       // Enriquece snapshot com canal se necessário
-      if(DRE_CANAIS_RAW.length) DRE_RAW = dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW);
+      if(DRE_CANAIS_RAW.length||DRE_CLUSTER_RAW.length) DRE_RAW = dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
       DRE_SNAPSHOT = true;
       dreShowProgress(100, 100);
       console.log('[DRE] snapshot OK:', DRE_RAW.length, 'linhas');
@@ -1963,7 +1963,7 @@ async function loadDreFromSupabase(forceRaw){
       try{ DRE_CANAIS_RAW  = await fetchAll(TBLS.canais); }  catch(e){ DRE_CANAIS_RAW=[]; }
       try{ DRE_CLUSTER_RAW = await fetchAll(TBLS.cluster); } catch(e){ DRE_CLUSTER_RAW=[];}
       // Join canal/cluster via otb_canais (ano_mes + cod_vendedor)
-      DRE_RAW = dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW);
+      DRE_RAW = dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
       console.log('[DRE] após join canal:', DRE_RAW.filter(function(r){return r.canal;}).length, 'com canal');
       // Auto-salva snapshot correto após 3s
       setTimeout(function(){ var b=document.getElementById('btnSaveDre'); if(b&&!b.disabled) b.click(); }, 3000);
@@ -2026,35 +2026,61 @@ function dreExpandSnapshot(snap){
   });
 }
 
-// Enriquece DRE_RAW com canal/cluster via join em otb_canais (ano_mes + cod_vendedor)
-// otb_canais esperado: {ano_mes, cod_vendedor, canal, cluster}
-function dreEnrichWithCanais(raw, canaisRaw){
-  if(!canaisRaw || !canaisRaw.length) return raw;
-  // Constrói lookup: "YYYYMM|cod_vendedor" -> {canal, cluster}
-  var lookup = {};
-  canaisRaw.forEach(function(c){
-    var am  = String(c.ano_mes||c.ANO_MES||'').replace(/\D/g,'').slice(0,6);
-    var cod = String(c.cod_vendedor||c.COD_VENDEDOR||c.vendedor||c.VENDEDOR||'').trim();
-    var canal   = String(c.canal||c.CANAL||'').trim();
-    var cluster = String(c.cluster||c.CLUSTER||'').trim();
-    if(am && cod) lookup[am+'|'+cod] = {canal:canal, cluster:cluster};
-  });
-  if(!Object.keys(lookup).length) return raw;
+// Enriquece DRE_RAW com canal via join em otb_canais (ano_mes + cod_vendedor)
+// e cluster via join em otb_cluster (cod_cliente). Sem match -> cluster = "Demais"
+function dreEnrichWithCanais(raw, canaisRaw, clusterRaw){
+  // ── Canal lookup: YYYYMM|cod_vendedor -> canal ──────────────
+  var canalLookup = {};
+  if(canaisRaw && canaisRaw.length){
+    canaisRaw.forEach(function(c){
+      var am  = String(c.ano_mes||c.ANO_MES||'').replace(/\D/g,'').slice(0,6);
+      var cod = String(c.cod_vendedor||c.COD_VENDEDOR||c.vendedor||c.VENDEDOR||'').trim();
+      var canal = String(c.canal||c.CANAL||'').trim();
+      if(am && cod && canal) canalLookup[am+'|'+cod] = canal;
+    });
+  }
+
+  // ── Cluster lookup: cod_cliente -> cluster ──────────────────
+  var clusterLookup = {};
+  if(clusterRaw && clusterRaw.length){
+    clusterRaw.forEach(function(c){
+      var cod     = String(c.cod_cliente||c.COD_CLIENTE||c.cliente||c.CLIENTE||c.codigo||c.CODIGO||'').trim();
+      var cluster = String(c.cluster||c.CLUSTER||c.nome||c.NOME||'').trim();
+      if(cod && cluster) clusterLookup[cod] = cluster;
+    });
+  }
+
+  var hasCanalLookup   = Object.keys(canalLookup).length > 0;
+  var hasClusterLookup = Object.keys(clusterLookup).length > 0;
+  if(!hasCanalLookup && !hasClusterLookup) return raw;
+
   return raw.map(function(r){
-    // Só enriquece se canal ainda está vazio
-    if(r.canal||r.CANAL) return r;
-    var ano = String(r.ano||r.ANO||'');
-    var mes = String(r.mes||r.MES||'').padStart(2,'0');
-    var am  = ano+mes;
-    var cod = String(r.cod_vendedor||r.COD_VENDEDOR||r.vendedor||r.VENDEDOR||'').trim();
-    var match = lookup[am+'|'+cod];
-    if(match){
-      var out = Object.assign({}, r);
-      out.canal   = match.canal;
-      out.cluster = match.cluster;
-      return out;
+    var needsCanal   = !(r.canal  ||r.CANAL);
+    var needsCluster = !(r.cluster||r.CLUSTER);
+    if(!needsCanal && !needsCluster) return r;
+
+    var out = Object.assign({}, r);
+
+    // Canal: join por ano_mes + cod_vendedor
+    if(needsCanal && hasCanalLookup){
+      var ano = String(r.ano||r.ANO||'');
+      var mes = String(r.mes||r.MES||'').padStart(2,'0');
+      var cod = String(r.cod_vendedor||r.COD_VENDEDOR||r.vendedor||r.VENDEDOR||'').trim();
+      var canal = canalLookup[ano+mes+'|'+cod];
+      if(canal) out.canal = canal;
     }
-    return r;
+
+    // Cluster: join por cod_cliente; sem match -> "Demais"
+    if(needsCluster){
+      if(hasClusterLookup){
+        var codCli = String(r.cod_cliente||r.COD_CLIENTE||r.cliente||r.CLIENTE||'').trim();
+        out.cluster = clusterLookup[codCli] || 'Demais';
+      } else {
+        out.cluster = 'Demais';
+      }
+    }
+
+    return out;
   });
 }
 
