@@ -2589,18 +2589,28 @@ async function openBudget(){
   renderBudget();
 }
 
-async function loadBudget(){
+async function loadBudget(forceRaw){
   var meta = document.getElementById('budgetHeaderMeta');
   if(meta) meta.textContent = 'Carregando...';
-  // Load despesa and saved config
-  try{ BUDGET_DESP_RAW = await fetchAll(TBLS.despesa); } catch(e){ BUDGET_DESP_RAW=[]; }
+  // Load saved config + possible snapshot
+  var saved;
+  try{ saved = await supaLoad(TBLS.save_dre,'budget_cfg'); }catch(e){}
+  if(saved && saved.classif) BUDGET_CFG.classif = saved.classif;
+
+  if(!forceRaw && saved && saved.snapshot && saved.snapshot.length){
+    // Use compact snapshot — loads instantly
+    BUDGET_DESP_RAW = saved.snapshot;
+    if(meta){
+      meta.innerHTML = saved.snapshotRows.toLocaleString('pt-BR')+' linhas agregadas'
+        +'<span style="background:#e8f0fe;color:#1a56c4;font-size:10px;padding:2px 7px;border-radius:10px;margin-left:8px;font-weight:600">⚡ snapshot</span>';
+    }
+  } else {
+    // Full load from Supabase
+    try{ BUDGET_DESP_RAW = await fetchAll(TBLS.despesa); } catch(e){ BUDGET_DESP_RAW=[]; }
+    if(meta) meta.textContent = BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' lançamentos 🔴 dados brutos';
+  }
   // Also make sure DRE data is loaded (for AVACY fatVal)
   if(!DRE_LOADED){ try{ DRE_RAW = await fetchAll(TBLS.venda_dre,null,'venda_dre'); DRE_LOADED=DRE_RAW.length>0; }catch(e){} }
-  // Load saved config
-  try{
-    var saved = await supaLoad(TBLS.save_dre,'budget_cfg');
-    if(saved && saved.classif) BUDGET_CFG.classif = saved.classif;
-  }catch(e){}
   BUDGET_LOADED = true;
 }
 
@@ -2781,6 +2791,53 @@ function renderBudget(){
 }
 
 // ── Budget Config ──────────────────────────────────────
+// Agrega despesa por (ano_mes_venc, e2_nomfor, e2_hist) somando valor
+// Reduz de milhares para centenas de combinações únicas
+function budgetAggregate(raw){
+  var map = {};
+  raw.forEach(function(r){
+    var am    = budgetDespAm(r);
+    var nomfor= String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
+    var hist  = String(r.e2_hist||r.E2_HIST||'').trim();
+    var key   = am+'|'+nomfor+'|'+hist;
+    if(!map[key]) map[key]={ano_mes_venc:am, e2_nomfor:nomfor, e2_hist:hist, valor:0};
+    map[key].valor += parseFloat(r.valor||r.VALOR||r.e2_valor||r.E2_VALOR)||0;
+  });
+  return Object.values(map);
+}
+
+async function handleSaveBudget(btn){
+  var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
+  try{
+    var snapshot = BUDGET_DESP_RAW.length ? budgetAggregate(BUDGET_DESP_RAW) : null;
+    var payload = {
+      classif: BUDGET_CFG.classif,
+      snapshot: snapshot,
+      snapshotAt: new Date().toISOString(),
+      snapshotRows: snapshot ? snapshot.length : 0,
+      rawRows: BUDGET_DESP_RAW.length
+    };
+    var kb = Math.round(JSON.stringify(payload).length/1024);
+    await supaSave(TBLS.save_dre,'budget_cfg', payload);
+    toast('✔ Budget salvo — snapshot de '+(snapshot?snapshot.length.toLocaleString('pt-BR'):0)+' linhas ('+kb+'KB), era '+BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' linhas brutas');
+    // Badge
+    var meta = document.getElementById('budgetHeaderMeta');
+    if(meta) meta.innerHTML = meta.innerHTML.replace(/<span[^>]*>.*?<\/span>/,'')
+      + '<span style="background:#e8f0fe;color:#1a56c4;font-size:10px;padding:2px 7px;border-radius:10px;margin-left:8px;font-weight:600">⚡ snapshot</span>';
+  } catch(e){ toast('Erro ao salvar: '+e.message,'err'); }
+  btn.disabled=false; btn.textContent=orig;
+}
+
+async function budgetForceReload(btn){
+  var orig=btn?btn.textContent:''; if(btn){btn.disabled=true;btn.textContent='⏳';}
+  BUDGET_LOADED=false; BUDGET_DESP_RAW=[];
+  try{ BUDGET_DESP_RAW = await fetchAll(TBLS.despesa); } catch(e){ BUDGET_DESP_RAW=[]; }
+  BUDGET_LOADED=true;
+  renderBudget();
+  toast('✔ Despesas recarregadas — '+BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' linhas. Salve para atualizar o snapshot.');
+  if(btn){btn.disabled=false;btn.textContent=orig;}
+}
+
 function openBudgetCfg(){
   var body = document.getElementById('budgetCfgBody');
   if(!body) return;
@@ -2903,7 +2960,9 @@ async function saveBudgetCfg(btn){
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn" id="btnReloadBudget" onclick="budgetForceReload(this)" style="background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.2);color:#cdd5f0;font-size:12px">🔄 Recarregar</button>
       <button class="btn" onclick="openBudgetCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button>
+      <button class="btn save" id="btnSaveBudget" onclick="handleSaveBudget(this)">💾 Salvar</button>
     </div>
   </header>
   <div style="flex:1;overflow:auto;padding:16px 20px" id="budgetBody">
