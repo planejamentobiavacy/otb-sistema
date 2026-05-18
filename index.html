@@ -1955,9 +1955,22 @@ async function loadDreFromSupabase(forceRaw){
         DRE_RAW = dreExpandSnapshot(allRows);
         console.log('[DRE] chunks carregados:', DRE_RAW.length, 'linhas de', saved.chunks, 'partes');
       }
-      DRE_SNAPSHOT = true;
-      dreShowProgress(100, 100);
-      console.log('[DRE] snapshot carregado:', DRE_RAW.length, 'linhas');
+      // Valida snapshot — se canal vazio, descarta e busca bruto
+      var _sampleCanal = DRE_RAW.length ? (DRE_RAW[0].canal||DRE_RAW[0].CANAL||'') : 'ok';
+      if(!_sampleCanal && DRE_RAW.length > 0){
+        console.warn('[DRE] snapshot inválido (canal vazio) — buscando bruto');
+        DRE_SNAPSHOT = false;
+        if(progLbl) progLbl.textContent = 'Snapshot inválido, buscando dados brutos...';
+        DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre', dreShowProgress);
+        try{ DRE_FOLHA_RAW   = await fetchAll(TBLS.folha,   null, 'folha'); } catch(e){ DRE_FOLHA_RAW=[]; }
+        try{ DRE_DESP_RAW    = await fetchAll(TBLS.despesa); } catch(e){ DRE_DESP_RAW=[]; }
+        try{ DRE_CANAIS_RAW  = await fetchAll(TBLS.canais); }  catch(e){ DRE_CANAIS_RAW=[]; }
+        try{ DRE_CLUSTER_RAW = await fetchAll(TBLS.cluster); } catch(e){ DRE_CLUSTER_RAW=[];}
+      } else {
+        DRE_SNAPSHOT = true;
+        dreShowProgress(100, 100);
+        console.log('[DRE] snapshot carregado:', DRE_RAW.length, 'linhas canal='+_sampleCanal);
+      }
     } else {
       DRE_SNAPSHOT = false;
       var reason = !saved ? 'sem save' : (!saved.snapshot && !saved.chunks) ? 'sem snapshot no save' : 'snapshot vazio';
@@ -2192,9 +2205,7 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
 
   // Normaliza para maiúsculo para comparação consistente (snapshot usa minúsculo, raw usa maiúsculo)
   var dimVal = function(r){ return String(r[dimKey]||r[dim]||'').toUpperCase(); };
-  if(rows.length) console.log('[dim] sample canal='+rows[0].canal+' CANAL='+rows[0].CANAL+' dimKey='+dimKey+' dimVal='+dimVal(rows[0]));
   var dimsFromData = Array.from(new Set(rows.map(dimVal))).filter(Boolean);
-  console.log('[dim] dimsFromData='+JSON.stringify(dimsFromData));
   // Order: if refRaw defines order, use it; else sort alphabetically
   var dims;
   if(Object.keys(dimLabelMap).length){
