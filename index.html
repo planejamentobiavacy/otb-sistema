@@ -673,15 +673,19 @@ async function fetchNew(table, rows, dateCol, tableKey){
 async function supaSave(saveTable, rowKey, value){
   var body = JSON.stringify({key: rowKey, value: JSON.stringify(value)});
   var kb = Math.round(body.length/1024);
-  if(kb > 500) console.log('[supaSave] sending', kb, 'KB for key='+rowKey);
+  if(kb > 100) console.log('[supaSave] sending', kb, 'KB for key='+rowKey);
+  // Usa upsert (POST com Prefer: resolution=merge-duplicates) para garantir unicidade
   try{
-    var r = await supaFetch('/rest/v1/' + saveTable + '?key=eq.' + rowKey, {
-      method:'PATCH', body: body, headers:{'Prefer':'return=minimal','Content-Type':'application/json'}
+    var r = await supaFetch('/rest/v1/' + saveTable, {
+      method:'POST', body: body,
+      headers:{'Prefer':'resolution=merge-duplicates,return=minimal','Content-Type':'application/json'}
     });
-    console.log('[supaSave] PATCH ok:', rowKey, kb+'KB');
+    console.log('[supaSave] upsert ok:', rowKey, kb+'KB');
     return r;
   } catch(e){
-    console.warn('[supaSave] PATCH falhou, tentando POST:', e.message);
+    // Fallback: DELETE then POST
+    console.warn('[supaSave] upsert falhou, tentando DELETE+POST:', e.message);
+    try{ await supaFetch('/rest/v1/' + saveTable + '?key=eq.' + rowKey, {method:'DELETE', headers:{}}); }catch(ed){}
     try{
       var r2 = await supaFetch('/rest/v1/' + saveTable, {
         method:'POST', body: body, headers:{'Prefer':'return=minimal','Content-Type':'application/json'}
@@ -696,14 +700,14 @@ async function supaSave(saveTable, rowKey, value){
 }
 async function supaLoad(saveTable, rowKey){
   try{
-    var rows = await supaFetch('/rest/v1/' + saveTable + '?key=eq.' + rowKey + '&select=value');
+    // order=id.desc + limit=1 garante que pegamos o registro mais recente
+    var rows = await supaFetch('/rest/v1/' + saveTable + '?key=eq.' + rowKey + '&select=id,value&order=id.desc&limit=1');
     if(!rows || !rows.length) return null;
     var raw = rows[0].value;
     if(!raw) return null;
     try{ return JSON.parse(raw); }
     catch(pe){
-      console.warn('[supaLoad] JSON.parse failed for key='+rowKey+', size='+raw.length+'. Payload may be truncated or corrupted.');
-      // Try to load config-only fallback (first 50KB should always parse)
+      console.warn('[supaLoad] JSON.parse failed for key='+rowKey+', size='+raw.length);
       return null;
     }
   } catch(e){ console.warn('[supaLoad] error:', e.message); return null; }
