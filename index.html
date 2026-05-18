@@ -2166,6 +2166,9 @@ function dreRender(){
   else if(DRE_TAB==='fornecedor') dreRenderDim('FORNECEDOR','dre-ano-forn','dre-mes-forn','dre-canal-forn','forn');
 }
 function dreRenderMensal(){
+  var _rows0=dreFilt(dreGv('dre-ano-mensal'),dreGv('dre-mes-mensal'),dreGv('dre-canal-mensal'),dreGv('dre-q-mensal'),dreGv('dre-cluster-mensal'),dreGv('dre-reg-mensal'),dreGv('dre-forn-mensal'));
+  console.log('[mensal] rows='+_rows0.length+' ano='+dreGv('dre-ano-mensal'));
+  if(_rows0.length) console.log('[mensal] r0.ano='+_rows0[0].ano+'/'+_rows0[0].ANO+' r0.mes='+_rows0[0].mes+'/'+_rows0[0].MES);
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
   var ano=dreGv('dre-ano-mensal'),q=dreGv('dre-q-mensal'),mes=dreGv('dre-mes-mensal'),canal=dreGv('dre-canal-mensal'),cluster=dreGv('dre-cluster-mensal'),regiao=dreGv('dre-reg-mensal'),forn=dreGv('dre-forn-mensal');
   var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn);
