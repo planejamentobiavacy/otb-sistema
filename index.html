@@ -1991,12 +1991,12 @@ function dreAggregateFull(raw){
   var map = {};
   var nk = function(v){ return dreNum(v)||0; };
   raw.forEach(function(r){
-    var a  = String(r.ano||r.ANO||'');
-    var m  = String(r.mes||r.MES||'').padStart(2,'0');
-    var c  = String(r.canal||r.CANAL||'');
-    var cl = String(r.cluster||r.CLUSTER||'');
-    var rg = String(r.regiao||r.REGIAO||'');
-    var f  = String(r.fornecedor||r.FORNECEDOR||'');
+    var a  = String(r.ANO||r.ano||'');
+    var m  = String(r.MES||r.mes||'').padStart(2,'0');
+    var c  = String(r.CANAL||r.canal||'');
+    var cl = String(r.CLUSTER||r.cluster||'');
+    var rg = String(r.REGIAO||r.regiao||'');
+    var f  = String(r.FORNECEDOR||r.fornecedor||'');
     var key= a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f;
     if(!map[key]) map[key]={a,m,c,cl,rg,f,fv:0,dv:0,q:0,cu:0,ic:0,co:0,pi:0,fe:0,rf:0,cf:0,qg:0};
     var x=map[key];
@@ -2176,10 +2176,7 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   var ano=dreGv(anoId),mes=dreGv(mesId),canal=canalId?dreGv(canalId):null;
   var q=dreGv('dre-q-'+suffix),cluster=dreGv('dre-cluster-'+suffix),regiao=dreGv('dre-reg-'+suffix),forn=dreGv('dre-forn-'+suffix);
   var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn);
-  // DEBUG
-  var sample = rows[0];
-  console.log('[dreRenderDim] dim='+dim+' rows='+rows.length+' sample keys='+(sample?Object.keys(sample).join(','):'none'));
-  console.log('[dreRenderDim] first dimVal='+(sample?(sample[dim.toLowerCase()]||sample[dim]||'EMPTY'):'none'));
+
   var dimKey=dim.toLowerCase();
 
   // Use reference table (DRE_CANAIS_RAW / DRE_CLUSTER_RAW) for canonical dim list + order
