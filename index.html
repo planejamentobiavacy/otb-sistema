@@ -2159,6 +2159,9 @@ function dreRender(){
 }
 function dreRenderMensal(){
   console.log('[dreRenderMensal] DRE_RAW.length='+DRE_RAW.length);
+  var _testRows=dreFilt(dreGv('dre-ano-mensal'),'TODOS','TODOS','TODOS','TODOS','TODOS','TODOS');
+  console.log('[dreRenderMensal] after dreFilt rows='+_testRows.length+' ano='+dreGv('dre-ano-mensal'));
+  if(DRE_RAW.length>0) console.log('[dreRenderMensal] sample r.ano='+DRE_RAW[0].ano+' r.ANO='+DRE_RAW[0].ANO+' r.mes='+DRE_RAW[0].mes);
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
   var ano=dreGv('dre-ano-mensal'),q=dreGv('dre-q-mensal'),mes=dreGv('dre-mes-mensal'),canal=dreGv('dre-canal-mensal'),cluster=dreGv('dre-cluster-mensal'),regiao=dreGv('dre-reg-mensal'),forn=dreGv('dre-forn-mensal');
   var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn);
