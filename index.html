@@ -510,6 +510,8 @@ var TBLS = (function(){
     frete_dre: localStorage.getItem('otb_tbl_frete_dre') || 'otb_frete_dre',
     despesa:   (localStorage.getItem('otb_tbl_despesa')==='otb_despesa'?(localStorage.removeItem('otb_tbl_despesa'),null):localStorage.getItem('otb_tbl_despesa')) || 'dw_otb_despesa',
     folha:     localStorage.getItem('otb_tbl_folha')     || 'otb_folha',
+    canais:    localStorage.getItem('otb_tbl_canais')    || 'otb_canais',
+    cluster:   localStorage.getItem('otb_tbl_cluster')   || 'otb_cluster',
     save_otb:  localStorage.getItem('otb_tbl_save_otb')  || 'otb_simulations',
     save_dre:  localStorage.getItem('otb_tbl_save_dre')  || 'otb_simulations',
     save_folha:localStorage.getItem('otb_tbl_save_folha')|| 'otb_simulations',
@@ -917,6 +919,8 @@ function openConfig(){
     {key:'frete_dre', label:'🚚 Frete DRE'},
     {key:'folha',     label:'👥 Folha Pag.'},
     {key:'despesa',   label:'💸 Despesas'},
+    {key:'canais',    label:'📣 Canais DRE'},
+    {key:'cluster',   label:'🏷️ Cluster DRE'},
   ];
   document.getElementById('cfgDreRows').innerHTML = dreDefs.map(function(d){
     var tbl = TBLS[d.key];
@@ -1893,7 +1897,7 @@ function renderTable(){
 //  DRE DATA + CALC (mantido exatamente do original)
 // ═══════════════════════════════════════════════════════
 var DRE_RAW=[], DRE_LOADED=false, DRE_TAB='mensal', DRE_SNAPSHOT=false;
-var DRE_FOLHA_RAW=[], DRE_DESP_RAW=[], DRE_CFG_PARAMS={}; // params por ano_mes
+var DRE_FOLHA_RAW=[], DRE_DESP_RAW=[], DRE_CFG_PARAMS={}, DRE_CANAIS_RAW=[], DRE_CLUSTER_RAW=[]; // params por ano_mes
 var FIXOS_DEF={sal_vend:191500,sal_adm:409000,marketing:79800,desp_gerais:579000,cd_mensal:270000};
 var DRE_CONFIG={freteMetodo:'qtd',fob:{},closer:{},developer:{},farmer:{},martins:{},rca:{},branding:{},leads:{},grade:{},custoGrade:{},canaisBranding:{},canaisLeads:{}};
 var DRE_CONFIG_DEFAULTS={fob:0.006,closer:0.008,developer:0.006,farmer:0.006,martins:0.003,rca:0.005,branding:0.025,leads:0.015,grade:0,custoGrade:0};
@@ -1935,8 +1939,10 @@ async function loadDreFromSupabase(forceRaw){
       DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre', dreShowProgress);
       console.log('[DRE] bruto carregado:', DRE_RAW.length, 'linhas');
       // Carrega folha e despesa para referência no Config
-      try{ DRE_FOLHA_RAW = await fetchAll(TBLS.folha, null, 'folha'); } catch(e){ DRE_FOLHA_RAW=[]; }
-      try{ DRE_DESP_RAW  = await fetchAll(TBLS.despesa); } catch(e){ DRE_DESP_RAW=[]; }
+      try{ DRE_FOLHA_RAW   = await fetchAll(TBLS.folha,   null, 'folha'); } catch(e){ DRE_FOLHA_RAW=[]; }
+      try{ DRE_DESP_RAW    = await fetchAll(TBLS.despesa); } catch(e){ DRE_DESP_RAW=[]; }
+      try{ DRE_CANAIS_RAW  = await fetchAll(TBLS.canais); }  catch(e){ DRE_CANAIS_RAW=[]; }
+      try{ DRE_CLUSTER_RAW = await fetchAll(TBLS.cluster); } catch(e){ DRE_CLUSTER_RAW=[];}
     }
 
     DRE_LOADED = DRE_RAW.length > 0;
@@ -2106,8 +2112,36 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   var q=dreGv('dre-q-'+suffix),cluster=dreGv('dre-cluster-'+suffix),regiao=dreGv('dre-reg-'+suffix),forn=dreGv('dre-forn-'+suffix);
   var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn);
   var dimKey=dim.toLowerCase();
-  var dims=Array.from(new Set(rows.map(function(r){return r[dimKey]||r[dim]||'';}))).filter(Boolean).sort();
-  var cols=dims.map(function(d){return{label:d,d:dreCalcShare(rows.filter(function(r){return (r[dimKey]||r[dim])===d;}),rows)};});
+
+  // Use reference table (DRE_CANAIS_RAW / DRE_CLUSTER_RAW) for canonical dim list + order
+  var refRaw = dimKey==='canal' ? DRE_CANAIS_RAW : (dimKey==='cluster' ? DRE_CLUSTER_RAW : []);
+  var dimLabelMap = {}; // code -> display label
+  if(refRaw.length){
+    refRaw.forEach(function(r){
+      var code = String(r.canal||r.CANAL||r.cluster||r.CLUSTER||r.codigo||r.CODIGO||r.code||r.CODE||'').trim();
+      var label= String(r.nome||r.NOME||r.label||r.LABEL||r.descricao||r.DESCRICAO||code).trim();
+      if(code) dimLabelMap[code] = label;
+    });
+  }
+
+  var dimsFromData = Array.from(new Set(rows.map(function(r){return r[dimKey]||r[dim]||'';}))).filter(Boolean);
+  // Order: if refRaw defines order, use it; else sort alphabetically
+  var dims;
+  if(Object.keys(dimLabelMap).length){
+    var refOrder = refRaw.map(function(r){return String(r.canal||r.CANAL||r.cluster||r.CLUSTER||r.codigo||r.CODIGO||r.code||r.CODE||'').trim();}).filter(Boolean);
+    dims = refOrder.filter(function(d){ return dimsFromData.indexOf(d)>-1; });
+    // add any dims in data but not in ref table
+    dimsFromData.forEach(function(d){ if(dims.indexOf(d)===-1) dims.push(d); });
+  } else {
+    dims = dimsFromData.sort();
+  }
+
+  var cols=dims.map(function(d){
+    var label = dimLabelMap[d] || d;
+    // Pass canal context so dreCalc can allocate Leads 100% to Closer
+    var canalCtx = dimKey==='canal' ? d : null;
+    return{label:label,d:dreCalcShare(rows.filter(function(r){return (r[dimKey]||r[dim])===d;}),rows,canalCtx)};
+  });
   var anos=Array.from(new Set(rows.map(function(r){return r.ano||r.ANO;})));
   var anosLY=anos.map(function(a){return String(+a-1);}),rowsLY=DRE_RAW.filter(function(r){return anosLY.includes(String(r.ano||r.ANO));});
   var mSet=new Set(rows.map(function(r){return String(r.mes||r.MES||'').padStart(2,'0');})),cSet=new Set(rows.map(function(r){return r.canal||r.CANAL||'';}));
@@ -2116,10 +2150,10 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   document.getElementById('dreKpi-'+suffix).innerHTML=cols.length?dreKpis(cols.map(function(c){return c.d;}),dLY):'';
   document.getElementById('dreTable-'+suffix).innerHTML=cols.length?dreTabela(cols):'<div style="text-align:center;padding:60px;color:#7a8ab0;font-size:13px">Sem dados.</div>';
 }
-function dreCalcShare(sliceRows,allRows){
+function dreCalcShare(sliceRows,allRows,canalCtx){
   var aSlice=dreAgg(sliceRows),aAll=dreAgg(allRows);
   var sRB=aAll.fat_v>0?aSlice.fat_v/aAll.fat_v:1,sQTD=aAll.qtd>0?aSlice.qtd/aAll.qtd:1;
-  return dreCalc(aSlice,sRB,sQTD);
+  return dreCalc(aSlice,sRB,sQTD,canalCtx);
 }
 var dreNum=function(v){if(!v&&v!==0) return 0;var s=String(v).trim();if(s.includes(',')&&!s.includes('.')) return parseFloat(s.replace(',','.'))||0;if(s.includes(',')&&s.includes('.')) return parseFloat(s.replace(/\./g,'').replace(',','.'))||0;return parseFloat(s)||0;};
 function dreAgg(rows){
@@ -2146,8 +2180,9 @@ function dreAgg(rows){
   var anomesList=Object.keys(_aSet).sort();
   return{fat,fat_v,dev,qtd,custo,icms,cofins,pis,fecpst,rec_frete:rf,custo_frete:cf,qtdGradeHava,anomesList};
 }
-function dreCalc(a,shareRB,shareQTD){
+function dreCalc(a,shareRB,shareQTD,canalCtx){
   shareRB=shareRB||1;shareQTD=shareQTD||1;
+  var isCloser = canalCtx ? String(canalCtx).toUpperCase()==='CLOSER' : null; // null = unknown (mensal total)
   var rb_dev=a.fat_v,dev=a.dev,rb_gross=rb_dev+dev,rb=rb_dev,rl_base=rb,imp=a.icms+a.cofins+a.pis+a.fecpst,rl=rb-imp,cmv=a.custo;
   var cmv_b=cmv>0?cmv/0.79:0,mkp=cmv_b>0?(rb/cmv_b-1):0,mg_prod=rl>0?(1-cmv/rl):0;
   // Para cada mês usa o parâmetro salvo; se não tiver, usa o default global
@@ -2184,7 +2219,11 @@ function dreCalc(a,shareRB,shareQTD){
     return total / a.anomesList.length;
   })();
   var mkt_total=mktBase*shareRB;
-  var mkt_branding=mkt_total*getSalPct('branding'),mkt_leads=mkt_total*getSalPct('leads'),mkt=mkt_branding+mkt_leads;
+  // Leads Novos: 100% alocado ao canal Closer
+  // isCloser=null (total/outros): usa share normal; isCloser=true: mkt_total*1; isCloser=false: 0
+  var mkt_branding = mkt_total * getSalPct('branding');
+  var mkt_leads = isCloser===true ? mkt_total : (isCloser===false ? 0 : mkt_total * getSalPct('leads'));
+  var mkt = mkt_branding + mkt_leads;
   var mcon=mc+rf_rec-cf-mkt,sa=FIXOS_DEF.sal_adm*shareRB,dg=FIXOS_DEF.desp_gerais*shareRB,cd=FIXOS_DEF.cd_mensal*shareQTD;
   var ebt=mcon-sa-dg-cd;
   return{rb_dev,dev,rb_gross,rb,imp,icms:a.icms,pc:a.cofins+a.pis+a.fecpst,rl,qtd:a.qtd,cmv_b,cmv,mkp,mg_prod,fob,mb,sv,sv_closer,sv_developer,sv_farmer,com,com_martins,com_rca,mc,rf:rf_rec,cf,mkt,mkt_branding,mkt_leads,mcon,grade,sa,dg,cd,ebt};
