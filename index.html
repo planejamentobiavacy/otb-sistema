@@ -2137,6 +2137,7 @@ function dreGv(id){var el=document.getElementById(id);return el?el.value:'TODOS'
 function dreQuarterMeses(q){if(!q||q==='TODOS') return null;return{T1:['01','02','03'],T2:['04','05','06'],T3:['07','08','09'],T4:['10','11','12']}[q]||null;}
 function dreFilt(ano,mes,canal,q,cluster,regiao,forn){
   var r=DRE_RAW;
+  if(r.length) console.log('[dreFilt] ano='+ano+' r[0].ano='+r[0].ano+' r[0].ANO='+r[0].ANO+' r.length='+r.length);
   if(ano&&ano!=='TODOS') r=r.filter(function(x){return String(x.ano||x.ANO)===String(ano);});
   var qMeses=dreQuarterMeses(q); if(qMeses) r=r.filter(function(x){return qMeses.includes(String(x.mes||x.MES||'').padStart(2,'0'));});
   if(mes&&mes!=='TODOS') r=r.filter(function(x){return String(x.mes||x.MES||'').padStart(2,'0')===mes;});
