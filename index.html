@@ -1916,6 +1916,17 @@ function renderTable(){
           if(row.aggType==='sum') v=vals.reduce(function(a,b){return a+b;},0);
           else v=vals.length?vals.reduce(function(a,b){return a+b;},0)/vals.length:null;
         } else { v=cell[key]; }
+        // Compute estVarLy on the fly if null
+        if(v===null&&key==='estVarLyQty'){
+          var lyYm2=(parseInt(yearNum)-1)+'-'+monthNum;
+          var lyCell2=matrix[lyYm2];
+          v=(lyCell2&&lyCell2.estQty>0&&cell.estQty!=null)?(cell.estQty/lyCell2.estQty-1)*100:null;
+        }
+        if(v===null&&key==='estVarLyVal'){
+          var lyYm3=(parseInt(yearNum)-1)+'-'+monthNum;
+          var lyCell3=matrix[lyYm3];
+          v=(lyCell3&&lyCell3.estVal>0&&cell.estVal!=null)?(cell.estVal/lyCell3.estVal-1)*100:null;
+        }
         var isFut=ym>=cur,editable=editableInBlock&&isFut&&sup!=='AVACY'&&catIsAll;
         var cls=['value'];
         if(isFut) cls.push('future');
