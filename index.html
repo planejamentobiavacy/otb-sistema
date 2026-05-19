@@ -1209,6 +1209,12 @@ async function reloadAllOtbTables(){
     state.cart   = await fetchAll(TBLS.carteira, null, 'carteira');
     state.prod   = await fetchAll(TBLS.produto,  null, 'produto');
     updateOtbStatus();
+    // O overlay de "Dados desatualizados" destrói #tableWrap ao limpar #otbMain.
+    // Restaura a estrutura necessária antes de renderizar.
+    var otbMain = document.getElementById('otbMain');
+    if(otbMain && !document.getElementById('tableWrap')){
+      otbMain.innerHTML = '<div class="table-wrap" id="tableWrap"><div class="empty" id="otbEmpty"></div></div>';
+    }
     processAll(); renderTabs(); renderTable();
   } catch(e){ console.warn('Erro ao recarregar tabelas OTB:', e.message); }
 }
@@ -1280,7 +1286,13 @@ async function handleReloadAll(btn){
     catch(e){ erros.push(steps[i].label + ': ' + e.message); }
   }
   btn.textContent = '⏳ Processando OTB...';
-  try{ processAll(); updateOtbStatus(); renderTabs(); renderTable(); }
+  try{
+    var otbMain2 = document.getElementById('otbMain');
+    if(otbMain2 && !document.getElementById('tableWrap')){
+      otbMain2.innerHTML = '<div class="table-wrap" id="tableWrap"><div class="empty" id="otbEmpty"></div></div>';
+    }
+    processAll(); updateOtbStatus(); renderTabs(); renderTable();
+  }
   catch(e){ erros.push('processAll: ' + e.message); }
   if(erros.length > 0){
     toast('⚠️ ' + erros.join(' | '), 'err', 8000);
