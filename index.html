@@ -600,13 +600,14 @@ async function supaFetch(path, opts){
 // Estratégia: busca 1a pagina com count=exact, depois demais em PARALELO
 async function fetchAll(table, extraFilter, tableKey, onProgress){
   var PAGE = 1000;
-  // Tables with RLS issues use sequential fetch
-  var SEQUENTIAL_TABLES = ['dw_otb_stk','dw_otb_venda_dre'];
+  // Tabelas grandes ou com problemas de RLS/timeout: fetch sequencial (evita 500 por sobrecarga paralela)
+  var SEQUENTIAL_TABLES = ['dw_otb_stk','dw_otb_venda','dw_otb_venda_dre'];
   var forceSeq = SEQUENTIAL_TABLES.indexOf(table) > -1;
   var sel = tableKey ? buildSelect(tableKey) : 'select=*';
 
   var base = '/rest/v1/' + table + '?' + sel + (extraFilter||'');
 
+  // Busca uma página com retry automático em caso de 500 (backoff exponencial)
   async function fetchPage(from, noCount){
     var to = from + PAGE - 1;
     if(!_session) throw new Error('Nao autenticado');
@@ -615,18 +616,28 @@ async function fetchAll(table, extraFilter, tableKey, onProgress){
       'apikey': SUPA_ANON_KEY, 'Authorization': 'Bearer ' + token,
       'Content-Type': 'application/json', 'Accept': 'application/json',
       'Range': from + '-' + to, 'Range-Unit': 'items',
-      'x-statement-timeout': '30000'
+      'x-statement-timeout': '55000'
     };
     if(!noCount) headers['Prefer'] = 'count=exact';
-    var r = await fetch(SUPA_URL + base, {headers: headers});
-    if(r.status === 416) return {rows:[], total:0};
-    if(!r.ok){ var t=await r.text(); throw new Error(t); }
-    var cr = r.headers.get('content-range')||'';
-    var total = 0;
-    var m = cr.match(/\/(\d+)$/);
-    if(m) total = parseInt(m[1], 10);
-    var rows = await r.json();
-    return {rows: Array.isArray(rows)?rows:[], total: total};
+    var lastErr;
+    for(var attempt=0; attempt<3; attempt++){
+      if(attempt>0) await new Promise(function(res){ setTimeout(res, attempt*1500); });
+      var r = await fetch(SUPA_URL + base, {headers: headers});
+      if(r.status === 416) return {rows:[], total:0};
+      if(r.status === 500){
+        lastErr = new Error('500 Internal Server Error');
+        console.warn('[fetchAll] 500 em', table, 'offset', from, '— tentativa', attempt+1, '/3');
+        continue;
+      }
+      if(!r.ok){ var t=await r.text(); throw new Error(t); }
+      var cr = r.headers.get('content-range')||'';
+      var total = 0;
+      var m = cr.match(/\/(\d+)$/);
+      if(m) total = parseInt(m[1], 10);
+      var rows = await r.json();
+      return {rows: Array.isArray(rows)?rows:[], total: total};
+    }
+    throw lastErr;
   }
 
   var first;
@@ -659,16 +670,17 @@ async function fetchAll(table, extraFilter, tableKey, onProgress){
 
   var numPages = Math.ceil(total / PAGE);
   var out = first.rows.slice();
-  // Sequential for tables with RLS issues
+  // Sequencial para tabelas grandes — evita 500 por excesso de conexões simultâneas
   if(forceSeq){
     for(var sq=1; sq<numPages; sq++){
       try{ var sqr=await fetchPage(sq*PAGE,true); out=out.concat(sqr.rows||[]); }catch(e){ break; }
       if(onProgress) onProgress(out.length, total);
     }
+    console.log('[fetchAll]', table, '— total final (seq):', out.length);
     return out;
   }
-  // Busca em lotes de 10 páginas para evitar timeout por sobrecarga
-  var BATCH = 10;
+  // Busca em lotes de 5 páginas para evitar timeout por sobrecarga
+  var BATCH = 5;
   for(var batchStart = 1; batchStart < numPages; batchStart += BATCH){
     var batchEnd = Math.min(batchStart + BATCH, numPages);
     var batchPromises = [];
@@ -1498,12 +1510,12 @@ function processAll(){
   state.diagnostics=[];
   var stkAgg=aggregate(stkDedup,{date:['ano_mes','ANO_MES'],qty:['estoque_qtd','ESTOQUE_QTD'],val:['estoque_valor','ESTOQUE_VALOR']},'stk');
 
-  // Totais globais de estoque por mês (todos os fornecedores somados), usado para escalar por fornecedor
+  // Totais globais de estoque por mês (todos os fornecedores somados) — usado para escalar stkRaw por fornecedor
   var stkTotalByYm=(function(){
     var tot={};
     stkDedup.forEach(function(r){
       var ym=monthFromDate(r.ano_mes||r.ANO_MES); if(!ym) return;
-      var q=parseNum(r.estoque_qtd||r.ESTOQUE_QTD||0), v=parseNum(r.estoque_valor||r.ESTOQUE_VALOR||0);
+      var q=parseNum(r.estoque_qtd||r.ESTOQUE_QTD||0),v=parseNum(r.estoque_valor||r.ESTOQUE_VALOR||0);
       if(!tot[ym]) tot[ym]={qty:0,val:0};
       tot[ym].qty+=q; tot[ym].val+=v;
     });
