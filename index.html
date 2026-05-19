@@ -1495,26 +1495,31 @@ function processAll(){
   }
   state.suppliers.filter(function(s){return s!=='AVACY';}).forEach(function(sup){recomputeFuture(sup);});
   buildAvacyMatrix(vendaAgg);
-  // Populate margProd from DRE_RAW for historical months
-  if(DRE_RAW.length){
-    var dreByYm={};
-    DRE_RAW.forEach(function(r){
-      var a=String(r.ano||r.ANO||''),m2=String(r.mes||r.MES||'').padStart(2,'0');
-      var ym2=a+'-'+m2;
-      if(!dreByYm[ym2]) dreByYm[ym2]={fat:0,custo:0};
-      dreByYm[ym2].fat   += parseFloat(r.faturamento_venda||r.FATURAMENTO_VENDA||0);
-      dreByYm[ym2].custo += parseFloat(r.custo||r.CUSTO||0);
-    });
-    state.suppliers.forEach(function(sup){
-      var mat=state.matrices[sup]; if(!mat) return;
-      state.months.forEach(function(ym){
-        if(!mat[ym]) return;
-        var d=dreByYm[ym];
-        if(d&&d.fat>0 && !mat[ym].isFuture) mat[ym].margProd=(d.fat-d.custo)/d.fat;
-      });
-    });
-  }
   renderTabs(); renderTable();
+  // Populate margProd once after build (not on every recalc)
+  if(DRE_RAW.length && !state._margProdBuilt) buildMargProdFromDre();
+}
+
+function buildMargProdFromDre(){
+  if(!DRE_RAW.length) return;
+  var dreByYm={};
+  DRE_RAW.forEach(function(r){
+    var a=String(r.ano||r.ANO||''),m2=String(r.mes||r.MES||'').padStart(2,'0');
+    var ym2=a+'-'+m2;
+    if(!dreByYm[ym2]) dreByYm[ym2]={fat:0,custo:0};
+    dreByYm[ym2].fat   += parseFloat(r.faturamento_venda||r.FATURAMENTO_VENDA||0);
+    dreByYm[ym2].custo += parseFloat(r.custo||r.CUSTO||0);
+  });
+  state.suppliers.forEach(function(sup){
+    var mat=state.matrices[sup]; if(!mat) return;
+    state.months.forEach(function(ym){
+      if(!mat[ym]||mat[ym].isFuture) return;
+      var d=dreByYm[ym];
+      if(d&&d.fat>0) mat[ym].margProd=(d.fat-d.custo)/d.fat;
+    });
+  });
+  state._margProdBuilt = true;
+  renderTable();
 }
 
 function recomputeFuture(sup){
