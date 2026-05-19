@@ -539,7 +539,7 @@ var TBLS = (function(){
 // Reduz egress ~70% buscando só o necessário em vez de select=*
 var COLS = {
   // dw_otb_stk: ano_mes, grade, estoque_qtd, estoque_valor
-  stk: ['ano_mes','grade','qtd','valor'], // dw_otb_stk columns
+  stk: ['ano_mes','grade','estoque_qtd','estoque_valor'],
 
   // dw_otb_venda: ano_mes, cod_grade, qtd, faturamento, custo, imposto
   venda: ['ano_mes','cod_grade','qtd','faturamento','custo','imposto'],
@@ -561,7 +561,7 @@ var COLS = {
 // cai de volta para select=* para não quebrar tabelas desconhecidas.
 function buildSelect(tableKey){
   var cols = COLS[tableKey];
-  if(!cols || !cols.length){ console.warn('[buildSelect] no COLS for', tableKey, '— using select=*'); return 'select=*'; }
+  if(!cols || !cols.length) return 'select=*';
   // Supabase aceita lista de colunas separada por vírgula
   // Usamos distinct para evitar duplicatas na lista
   var unique = cols.filter(function(c,i,a){ return a.indexOf(c) === i; });
@@ -601,6 +601,8 @@ async function supaFetch(path, opts){
 async function fetchAll(table, extraFilter, tableKey, onProgress){
   var PAGE = 1000;
   var sel = tableKey ? buildSelect(tableKey) : 'select=*';
+  // For stk: if select=* fails, it will retry with discovered columns
+
   var base = '/rest/v1/' + table + '?' + sel + (extraFilter||'');
 
   async function fetchPage(from, noCount){
@@ -1444,7 +1446,7 @@ function processAll(){
     return out;
   })();
   state.diagnostics=[];
-  var stkAgg=aggregate(stkDedup,{date:['ano_mes','ANO_MES'],qty:['estoque_qtd','ESTOQUE_QTD','qtd','QTD','QUANTIDADE'],val:['estoque_valor','ESTOQUE_VALOR','valor','VALOR']},'stk');
+  var stkAgg=aggregate(stkDedup,{date:['ano_mes','ANO_MES'],qty:['estoque_qtd','ESTOQUE_QTD'],val:['estoque_valor','ESTOQUE_VALOR']},'stk');
   // Diagnóstico: mostra o que o stkAgg tem para março
   var vendaAgg=aggregate(vendaDedup,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['faturamento','FATURAMENTO','VALOR']},'venda');
   var cartAgg=aggregate(state.cart,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['valor','VALOR','VL_CARTEIRA']},'cart');
