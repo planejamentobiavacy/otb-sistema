@@ -1130,9 +1130,16 @@ async function loadOtbFromSupabase(){
       importOtbPayload(saved);
       toast('[OK] OTB carregado do Supabase — ' + (saved.exportedAt ? new Date(saved.exportedAt).toLocaleString('pt-BR') : ''));
       if(state._supMismatch){
-        toast('⚠️ Fornecedores atualizados — recarregando dados...', 'warn');
-        await reloadAllOtbTables();
         state._supMismatch = false;
+        // Show reload button instead of auto-reloading
+        setTimeout(function(){
+          var wrap = document.getElementById('otbWrap');
+          if(wrap) wrap.innerHTML = '<div style="text-align:center;padding:60px;color:#0f1a3a">'
+            +'<div style="font-size:18px;font-weight:700;margin-bottom:16px">⚠️ Dados desatualizados</div>'
+            +'<div style="color:#7a8ab0;margin-bottom:24px">Os fornecedores foram atualizados. Recarregue os dados para continuar.</div>'
+            +'<button class="btn save" style="font-size:14px;padding:12px 32px" onclick="reloadAllOtbTables().then(function(){renderTabs();renderTable();})">↺ Recarregar Dados Agora</button>'
+            +'</div>';
+        }, 100);
         return;
       }
       // Check if margProd already saved in matrices
