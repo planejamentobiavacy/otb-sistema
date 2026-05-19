@@ -1498,6 +1498,18 @@ function processAll(){
   state.diagnostics=[];
   var stkAgg=aggregate(stkDedup,{date:['ano_mes','ANO_MES'],qty:['estoque_qtd','ESTOQUE_QTD'],val:['estoque_valor','ESTOQUE_VALOR']},'stk');
 
+  // Totais globais de estoque por mês (todos os fornecedores somados), usado para escalar por fornecedor
+  var stkTotalByYm=(function(){
+    var tot={};
+    stkDedup.forEach(function(r){
+      var ym=monthFromDate(r.ano_mes||r.ANO_MES); if(!ym) return;
+      var q=parseNum(r.estoque_qtd||r.ESTOQUE_QTD||0), v=parseNum(r.estoque_valor||r.ESTOQUE_VALOR||0);
+      if(!tot[ym]) tot[ym]={qty:0,val:0};
+      tot[ym].qty+=q; tot[ym].val+=v;
+    });
+    return tot;
+  })();
+
   // Diagnóstico: mostra o que o stkAgg tem para março
   var vendaAgg=aggregate(vendaDedup,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['faturamento','FATURAMENTO','VALOR']},'venda');
   var cartAgg=aggregate(state.cart,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['valor','VALOR','VL_CARTEIRA']},'cart');
