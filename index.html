@@ -1499,7 +1499,7 @@ function processAll(){
   buildAvacyMatrix(vendaAgg);
   renderTabs(); renderTable();
   // Populate margProd once after build (not on every recalc)
-  if(DRE_RAW.length && !state._margProdBuilt) buildMargProdFromDre();
+  if(!state._margProdBuilt && state.venda && state.venda.length) buildMargProdFromDre();
 }
 
 function buildMargProdFromDre(){
