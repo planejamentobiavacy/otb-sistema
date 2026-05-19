@@ -561,7 +561,7 @@ var COLS = {
 // cai de volta para select=* para não quebrar tabelas desconhecidas.
 function buildSelect(tableKey){
   var cols = COLS[tableKey];
-  if(!cols || !cols.length) return 'select=*';
+  if(!cols || !cols.length){ console.warn('[buildSelect] no COLS for', tableKey, '— using select=*'); return 'select=*'; }
   // Supabase aceita lista de colunas separada por vírgula
   // Usamos distinct para evitar duplicatas na lista
   var unique = cols.filter(function(c,i,a){ return a.indexOf(c) === i; });
