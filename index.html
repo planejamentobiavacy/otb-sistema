@@ -1133,12 +1133,21 @@ async function loadOtbFromSupabase(){
         state._supMismatch = false;
         // Show reload button instead of auto-reloading
         setTimeout(function(){
-          var wrap = document.getElementById('otbWrap');
-          if(wrap) wrap.innerHTML = '<div style="text-align:center;padding:60px;color:#0f1a3a">'
-            +'<div style="font-size:18px;font-weight:700;margin-bottom:16px">⚠️ Dados desatualizados</div>'
-            +'<div style="color:#7a8ab0;margin-bottom:24px">Os fornecedores foram atualizados. Recarregue os dados para continuar.</div>'
-            +'<button class="btn save" style="font-size:14px;padding:12px 32px" onclick="reloadAllOtbTables().then(function(){renderTabs();renderTable();})">↺ Recarregar Dados Agora</button>'
-            +'</div>';
+          var wrap = document.getElementById('otbMain');
+          if(wrap){
+            var reloadBtn = document.createElement('div');
+            reloadBtn.style.cssText = 'text-align:center;padding:60px;color:#0f1a3a';
+            reloadBtn.innerHTML = '<div style="font-size:18px;font-weight:700;margin-bottom:16px">⚠️ Dados desatualizados</div>'
+              +'<div style="color:#7a8ab0;margin-bottom:24px">Os fornecedores foram atualizados. Recarregue os dados para continuar.</div>';
+            var reloadBtnEl = document.createElement('button');
+            reloadBtnEl.className = 'btn save';
+            reloadBtnEl.style.cssText = 'font-size:14px;padding:12px 32px';
+            reloadBtnEl.textContent = '↺ Recarregar Dados Agora';
+            reloadBtnEl.onclick = function(){ this.disabled=true; this.textContent='Carregando...'; reloadAllOtbTables(); };
+            reloadBtn.appendChild(reloadBtnEl);
+            wrap.innerHTML = '';
+            wrap.appendChild(reloadBtn);
+          }
         }, 100);
         return;
       }
