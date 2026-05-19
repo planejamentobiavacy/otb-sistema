@@ -1212,10 +1212,27 @@ function importOtbPayload(p){
   if(p.edits)    state.edits = p.edits;
   if(p.months)   state.months = p.months;
   if(p.currentMonth) state.currentMonth = p.currentMonth;
+  if(p.margByYm) state._margByYm = p.margByYm;
+  // Validate suppliers
+  var currentSups = ['AVACY','ALPARG','BEIRAR','VULCAB','DEMAIS'];
+  var savedSups = p.suppliers || [];
+  var supMismatch = currentSups.some(function(s){ return savedSups.indexOf(s)<0; });
+  state.suppliers = supMismatch ? currentSups : savedSups;
   if(p.activeSupplier && state.suppliers.indexOf(p.activeSupplier)>-1) state.activeSupplier = p.activeSupplier;
   else state.activeSupplier = 'AVACY';
   if(p.collapsedYears) state.collapsedYears = p.collapsedYears;
   if(p.gradeMap) state.gradeMap = p.gradeMap;
+  // Check if matrices have real data
+  var curYmCheck = new Date().getFullYear()+'-'+(String(new Date().getMonth()+1).padStart(2,'0'));
+  var hasData = currentSups.some(function(s){
+    if(s==='AVACY') return false;
+    var mat=state.matrices[s]; if(!mat) return false;
+    return Object.keys(mat).some(function(ym){
+      return ym<curYmCheck && mat[ym] && (mat[ym].fatQty>0 || mat[ym].stkQty>0 || mat[ym].vendaQty>0);
+    });
+  });
+  console.log('[OTB] supMismatch='+supMismatch+' hasData='+hasData);
+  if(supMismatch || !hasData) state._supMismatch = true;
   document.getElementById('btnSaveOtb').disabled = false;
   if(p.exportedAt){
     document.getElementById('otbLastSaved').textContent = new Date(p.exportedAt).toLocaleString('pt-BR');
