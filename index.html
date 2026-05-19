@@ -1495,6 +1495,25 @@ function processAll(){
   }
   state.suppliers.filter(function(s){return s!=='AVACY';}).forEach(function(sup){recomputeFuture(sup);});
   buildAvacyMatrix(vendaAgg);
+  // Populate margProd from DRE_RAW for historical months
+  if(DRE_RAW.length){
+    var dreByYm={};
+    DRE_RAW.forEach(function(r){
+      var a=String(r.ano||r.ANO||''),m2=String(r.mes||r.MES||'').padStart(2,'0');
+      var ym2=a+'-'+m2;
+      if(!dreByYm[ym2]) dreByYm[ym2]={fat:0,custo:0};
+      dreByYm[ym2].fat   += parseFloat(r.faturamento_venda||r.FATURAMENTO_VENDA||0);
+      dreByYm[ym2].custo += parseFloat(r.custo||r.CUSTO||0);
+    });
+    state.suppliers.forEach(function(sup){
+      var mat=state.matrices[sup]; if(!mat) return;
+      state.months.forEach(function(ym){
+        if(!mat[ym]) return;
+        var d=dreByYm[ym];
+        if(d&&d.fat>0 && !mat[ym].isFuture) mat[ym].margProd=(d.fat-d.custo)/d.fat;
+      });
+    });
+  }
   renderTabs(); renderTable();
 }
 
@@ -1795,6 +1814,9 @@ function renderTable(){
     {id:'OTB',            qKey:'otbQty',         vKey:'otbVal',         editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
     {id:'OTB+CARTEIRA',   qKey:'otbCartRealQty', vKey:'otbCartRealVal', editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
   ];
+  var kpiMarg=[
+    {id:'MARG PROD',      qKey:'margProd',       vKey:'margProd',       editableQ:true, editableV:true, isCob:false,isVar:false,aggType:'avg',isPct:true},
+  ];
   var html=['<table class="otb"><thead><tr>'];
   html.push('<th class="corner-ribbon" rowspan="2"></th>');
   var catLabel=(cat&&cat!=='TODAS')?' · '+cat:'';
@@ -1864,6 +1886,41 @@ function renderTable(){
   renderBlock('PARES','q');
   html.push('<tr class="blank-sep"><td colspan="'+(months.length+2)+'"></td></tr>');
   renderBlock('VALOR','v');
+  html.push('<tr class="blank-sep"><td colspan="'+(months.length+2)+'"></td></tr>');
+  // MARGEM % block
+  (function(){
+    var blockRows=kpiMarg;
+    html.push('<tr class="block-header"><td class="block-label" rowspan="'+blockRows.length+'">MARGEM %</td>');
+    blockRows.forEach(function(row,ri){
+      if(ri>0) html.push('<tr>');
+      var editableInBlock=true;
+      var lc=['label'];
+      if(editableInBlock&&sup!=='AVACY'&&catIsAll) lc.push('sim');
+      html.push('<td class="'+lc.join(' ')+'">'+row.id+'</td>');
+      months.forEach(function(ym){
+        var cell=matrix[ym],v=cell[row.qKey];
+        var yearNum=ym.split('-')[0],monthNum=ym.split('-')[1];
+        var isCollapsed=state.collapsedYears&&state.collapsedYears[yearNum];
+        var hidden=isCollapsed&&monthNum!=='12';
+        var isYearTotal=isCollapsed&&monthNum==='12';
+        if(isYearTotal){
+          var yearMs=months.filter(function(m){return m.startsWith(yearNum);});
+          var vals=yearMs.map(function(m){return matrix[m][row.qKey];}).filter(function(x){return x!==null&&x!==undefined;});
+          v=vals.length?vals.reduce(function(a,b){return a+b;},0)/vals.length:null;
+        }
+        var isFut=ym>=cur,editable=isFut&&sup!=='AVACY'&&catIsAll;
+        var cls=['value'];
+        if(isFut) cls.push('future');
+        if(editable) cls.push('editable');
+        var display;
+        if(v===null||v===undefined||isNaN(v)) display='';
+        else { display=(v*100).toFixed(1)+'%'; if(v<0) cls.push('negative'); }
+        var attrs=editable?'contenteditable="true" data-sup="'+sup+'" data-ym="'+ym+'" data-key="'+row.qKey+'" data-type="pct"':'';
+        html.push('<td class="'+cls.join(' ')+'" '+attrs+(hidden?' style="display:none"':'')+'>'+display+'</td>');
+      });
+      html.push('</tr>');
+    });
+  })();
   html.push('</tbody></table>');
   wrap.innerHTML=html.join('');
 
@@ -1899,7 +1956,8 @@ function renderTable(){
       var mBlur=state.matrices[sup],cell=mBlur[ym];
       if(type==='var'){
         var lyYm=(parseInt(ym.split('-')[0])-1)+'-'+ym.split('-')[1],ly=mBlur[lyYm];
-        if(key==='varLyQty'&&ly&&ly.fatQty>0){cell.fatQty=Math.max(0,Math.round(ly.fatQty*(1+num/100)));state.edits[sup][ym].varLyQty=num;state.edits[sup][ym].fatQty=cell.fatQty;}
+        if(type==='pct'){cell.margProd=num/100;state.edits[sup][ym].margProd=num/100;}
+      else if(key==='varLyQty'&&ly&&ly.fatQty>0){cell.fatQty=Math.max(0,Math.round(ly.fatQty*(1+num/100)));state.edits[sup][ym].varLyQty=num;state.edits[sup][ym].fatQty=cell.fatQty;}
       } else {cell[key]=num;state.edits[sup][ym][key]=num;}
       recomputeFuture(sup);
       state.suppliers.filter(function(s){return s!=='AVACY';}).forEach(function(s){if(s!==sup) recomputeFuture(s);});
@@ -2931,8 +2989,29 @@ async function loadBudget(forceRaw){
     try{ BUDGET_DESP_RAW = await fetchAll(TBLS.despesa); } catch(e){ BUDGET_DESP_RAW=[]; }
     if(meta) meta.textContent = BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' lançamentos 🔴 dados brutos';
   }
-  // Also make sure DRE data is loaded (for AVACY fatVal)
-  if(!DRE_LOADED){ try{ DRE_RAW = await fetchAll(TBLS.venda_dre,null,'venda_dre'); DRE_LOADED=DRE_RAW.length>0; }catch(e){} }
+  // DRE data: try snapshot first, skip full raw fetch (too slow for Budget)
+  if(!DRE_LOADED){
+    try{
+      var dreSaved = await supaLoad(TBLS.save_dre,'dre_current');
+      if(dreSaved && dreSaved.config) DRE_CONFIG = Object.assign(DRE_CONFIG, dreSaved.config);
+      var snapRows = null;
+      if(dreSaved && dreSaved.snapshot && dreSaved.snapshot.length) snapRows = dreExpandSnapshot(dreSaved.snapshot);
+      else if(dreSaved && dreSaved.chunks > 1){
+        var ck=[]; for(var _i=0;_i<dreSaved.chunks;_i++) ck.push('dre_snap_'+_i);
+        var cr = await Promise.all(ck.map(function(k){ return supaLoad(TBLS.save_dre,k).catch(function(){return null;}); }));
+        var ar=[]; cr.forEach(function(r){ if(r&&r.rows) ar=ar.concat(r.rows); });
+        if(ar.length) snapRows = dreExpandSnapshot(ar);
+      }
+      var snapOk = snapRows && snapRows.length > 0 && snapRows.some(function(r,i){ return i<5 && r.canal; });
+      if(snapOk){
+        DRE_RAW = snapRows;
+        dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
+        DRE_LOADED = true;
+        console.log('[Budget] DRE snapshot carregado:', DRE_RAW.length, 'linhas');
+      }
+      // If no valid snapshot, Budget still works via state.matrices for AVACY
+    } catch(e){ console.warn('[Budget] DRE load error:', e.message); }
+  }
   BUDGET_LOADED = true;
 }
 
