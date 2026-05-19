@@ -539,7 +539,7 @@ var TBLS = (function(){
 // Reduz egress ~70% buscando só o necessário em vez de select=*
 var COLS = {
   // dw_otb_stk: ano_mes, grade, estoque_qtd, estoque_valor
-  stk: ['ano_mes','grade','estoque_qtd','estoque_valor'],
+  stk: null, // select=* — column names vary (estoque_qtd or qtd)
 
   // dw_otb_venda: ano_mes, cod_grade, qtd, faturamento, custo, imposto
   venda: ['ano_mes','cod_grade','qtd','faturamento','custo','imposto'],
@@ -1443,7 +1443,7 @@ function processAll(){
     return out;
   })();
   state.diagnostics=[];
-  var stkAgg=aggregate(stkDedup,{date:['ano_mes','ANO_MES'],qty:['estoque_qtd','ESTOQUE_QTD','QUANTIDADE'],val:['estoque_valor','ESTOQUE_VALOR','VALOR']},'stk');
+  var stkAgg=aggregate(stkDedup,{date:['ano_mes','ANO_MES'],qty:['estoque_qtd','ESTOQUE_QTD','qtd','QTD','QUANTIDADE'],val:['estoque_valor','ESTOQUE_VALOR','valor','VALOR']},'stk');
   // Diagnóstico: mostra o que o stkAgg tem para março
   console.log('[OTB] stkAgg 2026-03:', JSON.stringify(Object.fromEntries(state.suppliers.map(function(s){return [s, stkAgg[s]&&stkAgg[s]['2026-03']||null];}))));
   var vendaAgg=aggregate(vendaDedup,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['faturamento','FATURAMENTO','VALOR']},'venda');
