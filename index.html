@@ -539,7 +539,7 @@ var TBLS = (function(){
 // Reduz egress ~70% buscando só o necessário em vez de select=*
 var COLS = {
   // dw_otb_stk: ano_mes, grade, estoque_qtd, estoque_valor
-  stk: null, // select=* — column names vary (estoque_qtd or qtd)
+  stk: ['ano_mes','grade','qtd','valor'], // dw_otb_stk columns
 
   // dw_otb_venda: ano_mes, cod_grade, qtd, faturamento, custo, imposto
   venda: ['ano_mes','cod_grade','qtd','faturamento','custo','imposto'],
@@ -1138,8 +1138,7 @@ async function loadOtbFromSupabase(){
         renderTable();
       } else if(state._margByYm && Object.keys(state._margByYm).length){
         // Rebuild from cached byYm (no fetch needed)
-        console.log('[margProd] rebuilding from cached byYm');
-        applyMargByYm(state._margByYm);
+              applyMargByYm(state._margByYm);
       } else {
         // Fetch venda in background for MARG block
         fetchAll(TBLS.venda, null, 'venda').then(function(rows){
@@ -1447,8 +1446,6 @@ function processAll(){
   state.diagnostics=[];
   var stkAgg=aggregate(stkDedup,{date:['ano_mes','ANO_MES'],qty:['estoque_qtd','ESTOQUE_QTD','qtd','QTD','QUANTIDADE'],val:['estoque_valor','ESTOQUE_VALOR','valor','VALOR']},'stk');
   // Diagnóstico: mostra o que o stkAgg tem para março
-  console.log('[OTB] stkAgg 2026-02:', JSON.stringify(Object.fromEntries(state.suppliers.map(function(s){return [s, stkAgg[s]&&stkAgg[s]['2026-02']||null];}))));
-  console.log('[OTB] stkAgg 2026-03:', JSON.stringify(Object.fromEntries(state.suppliers.map(function(s){return [s, stkAgg[s]&&stkAgg[s]['2026-03']||null];}))));
   var vendaAgg=aggregate(vendaDedup,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['faturamento','FATURAMENTO','VALOR']},'venda');
   var cartAgg=aggregate(state.cart,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['valor','VALOR','VL_CARTEIRA']},'cart');
   var minYm='2024-01',maxYm='2026-12',months=[],ym=minYm;
@@ -1545,7 +1542,6 @@ function buildMargProdFromDre(){
   if(!state || !state.matrices) return;
   var src = (state.venda && state.venda.length) ? state.venda : null;
   if(!src){ console.log('[margProd] state.venda not ready'); return; }
-  console.log('[margProd] building from state.venda:', src.length, 'rows');
   if(src.length){ var r0=src[0]; console.log('[margProd] row0 raw:', JSON.stringify({ano_mes:r0.ano_mes||r0.ANO_MES, fat:r0.faturamento||r0.FATURAMENTO, custo:r0.custo||r0.CUSTO, imp:r0.imposto||r0.IMPOSTO})); }
   var byYm={};
   src.forEach(function(r){
@@ -1557,7 +1553,6 @@ function buildMargProdFromDre(){
     byYm[ym2].imp   += parseFloat(r.imposto||r.IMPOSTO||0);
   });
   var bySample=Object.keys(byYm).slice(0,3);
-  console.log('[margProd] all byYm months:', Object.keys(byYm).sort().join(', '));
   console.log('[margProd] state.months sample:', state.months ? state.months.slice(0,3).join(',') : 'none');
   state.suppliers.forEach(function(sup){
     var mat=state.matrices[sup]; if(!mat) return;
@@ -1577,7 +1572,6 @@ function buildMargProdFromDre(){
     var mat=state.matrices[sup]; if(!mat) return n;
     return n + state.months.filter(function(ym){return mat[ym]&&mat[ym].margProdVal!==null&&mat[ym].margProdVal!==undefined;}).length;
   },0);
-  console.log('[margProd] done, matched', matched, 'cells');
   state._margByYm = byYm; // cache for save
   state._margProdBuilt=true;
   renderTable();
