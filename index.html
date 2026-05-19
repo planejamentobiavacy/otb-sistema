@@ -1515,7 +1515,11 @@ function buildMargProdFromDre(){
     state.months.forEach(function(ym){
       if(!mat[ym]||mat[ym].isFuture) return;
       var d=dreByYm[ym];
-      if(d&&d.fat>0) mat[ym].margProd=(d.fat-d.custo)/d.fat;
+      if(d&&d.fat>0){
+        var _rl = d.fat - d.imp;
+        mat[ym].margProdVal = _rl - d.custo;                          // fat - imp - custo
+        mat[ym].margProd    = _rl>0 ? 1 - d.custo/_rl : 0;           // 1 - custo/(fat-imp)
+      }
     });
   });
   state._margProdBuilt = true;
@@ -1820,7 +1824,8 @@ function renderTable(){
     {id:'OTB+CARTEIRA',   qKey:'otbCartRealQty', vKey:'otbCartRealVal', editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
   ];
   var kpiMarg=[
-    {id:'MARG PROD',      qKey:'margProd',       vKey:'margProd',       editableQ:true, editableV:true, isCob:false,isVar:false,aggType:'avg',isPct:true},
+    {id:'Marg Prod R$',   qKey:'margProdVal',    vKey:'margProdVal',    editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum',isPct:false},
+    {id:'Marg Prod %',    qKey:'margProd',       vKey:'margProd',       editableQ:true, editableV:true, isCob:false,isVar:false,aggType:'avg',isPct:true},
   ];
   var html=['<table class="otb"><thead><tr>'];
   html.push('<th class="corner-ribbon" rowspan="2"></th>');
@@ -1894,7 +1899,7 @@ function renderTable(){
   html.push('<tr class="blank-sep"><td colspan="'+(months.length+2)+'"></td></tr>');
   renderBlock('VALOR','v');
   html.push('<tr class="blank-sep"><td colspan="'+(months.length+2)+'"></td></tr>');
-  renderBlock('MARGEM %','q',kpiMarg);
+  renderBlock('MARG','q',kpiMarg);
   html.push('</tbody></table>');
   wrap.innerHTML=html.join('');
 
