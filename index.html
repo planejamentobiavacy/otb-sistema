@@ -1118,12 +1118,22 @@ async function loadOtbFromSupabase(){
       importOtbPayload(saved);
       toast('[OK] OTB carregado do Supabase — ' + (saved.exportedAt ? new Date(saved.exportedAt).toLocaleString('pt-BR') : ''));
       // Check if margProd already saved in matrices
-      var hasMarg = state.matrices && Object.keys(state.matrices).some(function(sup){
-        var mat=state.matrices[sup]; if(!mat) return false;
-        return Object.keys(mat).some(function(ym){ return mat[ym]&&mat[ym].margProd!=null; });
-      });
+      // Count how many past months have margProd data
+      var curYm = new Date().getFullYear()+'-'+(String(new Date().getMonth()+1).padStart(2,'0'));
+      var margCount = 0, pastMonths = 0;
+      if(state.matrices && state.months){
+        state.months.forEach(function(ym){
+          if(ym >= curYm) return;
+          pastMonths++;
+          Object.keys(state.matrices).forEach(function(sup){
+            var mat=state.matrices[sup];
+            if(mat&&mat[ym]&&mat[ym].margProd!=null) margCount++;
+          });
+        });
+      }
+      var hasMarg = margCount > 0 && margCount >= pastMonths * 0.8; // 80% coverage
       if(hasMarg){
-        console.log('[margProd] loaded from saved payload');
+        console.log('[margProd] loaded from saved payload, coverage:', margCount+'/'+pastMonths);
         state._margProdBuilt = true;
         renderTable();
       } else {
