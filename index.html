@@ -548,7 +548,7 @@ var COLS = {
   carteira: ['ano_mes','cod_produto','qtd','valor'],
 
   // otb_produto: cod_produto, fornecedor, categoria
-  produto: ['cod_produto','fornecedor','categoria'],
+  produto: ['grade','fornecedor','categoria'],
 
   venda_dre: null, // select=* — colunas uppercase, PostgREST case-sensitive. Inclui cod_vendedor para join com otb_canais
 
@@ -601,7 +601,7 @@ async function supaFetch(path, opts){
 async function fetchAll(table, extraFilter, tableKey, onProgress){
   var PAGE = 1000;
   // Tables with RLS issues use sequential fetch
-  var SEQUENTIAL_TABLES = ['dw_otb_stk'];
+  var SEQUENTIAL_TABLES = ['dw_otb_stk','dw_otb_venda_dre'];
   var forceSeq = SEQUENTIAL_TABLES.indexOf(table) > -1;
   var sel = tableKey ? buildSelect(tableKey) : 'select=*';
 
