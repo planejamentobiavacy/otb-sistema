@@ -1513,6 +1513,7 @@ function buildMargProdFromDre(){
   var src = (state.venda && state.venda.length) ? state.venda : null;
   if(!src){ console.log('[margProd] state.venda not ready'); return; }
   console.log('[margProd] building from state.venda:', src.length, 'rows');
+  if(src.length){ var r0=src[0]; console.log('[margProd] row0 raw:', JSON.stringify({ano_mes:r0.ano_mes||r0.ANO_MES, fat:r0.faturamento||r0.FATURAMENTO, custo:r0.custo||r0.CUSTO, imp:r0.imposto||r0.IMPOSTO})); }
   var byYm={};
   src.forEach(function(r){
     var ym2=String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
@@ -1528,7 +1529,7 @@ function buildMargProdFromDre(){
   state.suppliers.forEach(function(sup){
     var mat=state.matrices[sup]; if(!mat) return;
     state.months.forEach(function(ym){
-      if(!mat[ym]||mat[ym].isFuture) return;
+      if(!mat[ym]) return;
       var d=byYm[ym];
       if(d&&d.fat>0){
         var rl=d.fat-d.imp;
@@ -1537,6 +1538,11 @@ function buildMargProdFromDre(){
       }
     });
   });
+  var matched = state.suppliers.reduce(function(n,sup){
+    var mat=state.matrices[sup]; if(!mat) return n;
+    return n + state.months.filter(function(ym){return mat[ym]&&mat[ym].margProdVal!==null&&mat[ym].margProdVal!==undefined;}).length;
+  },0);
+  console.log('[margProd] done, matched', matched, 'cells');
   state._margProdBuilt=true;
   renderTable();
 }
