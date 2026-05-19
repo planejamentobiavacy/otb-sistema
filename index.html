@@ -1129,6 +1129,12 @@ async function loadOtbFromSupabase(){
     if(saved && saved.matrices && Object.keys(saved.matrices).length > 0){
       importOtbPayload(saved);
       toast('[OK] OTB carregado do Supabase — ' + (saved.exportedAt ? new Date(saved.exportedAt).toLocaleString('pt-BR') : ''));
+      if(state._supMismatch){
+        toast('⚠️ Fornecedores atualizados — recarregando dados...', 'warn');
+        await reloadAllOtbTables();
+        state._supMismatch = false;
+        return;
+      }
       // Check if margProd already saved in matrices
       // Count how many past months have margProd data
       var curYm = new Date().getFullYear()+'-'+(String(new Date().getMonth()+1).padStart(2,'0'));
