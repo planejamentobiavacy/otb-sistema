@@ -1117,6 +1117,12 @@ async function loadOtbFromSupabase(){
     if(saved && saved.matrices && Object.keys(saved.matrices).length > 0){
       importOtbPayload(saved);
       toast('[OK] OTB carregado do Supabase — ' + (saved.exportedAt ? new Date(saved.exportedAt).toLocaleString('pt-BR') : ''));
+      // Fetch venda in background for MARG block (doesn't block OTB display)
+      fetchAll(TBLS.venda, null, 'venda').then(function(rows){
+        state.venda = rows;
+        state._margProdBuilt = false;
+        buildMargProdFromDre();
+      }).catch(function(){});
     } else {
       // Nenhum dado salvo: carrega tabelas brutas
       await reloadAllOtbTables();
