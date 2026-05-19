@@ -1074,7 +1074,7 @@ function makeState(){
   return {
     stk: null, venda: null, cart: null, prod: null,
     gradeMap: {}, currentMonth: null, months: [],
-    suppliers: ['AVACY','HAVAIANAS','BEIRA RIO','OLYMPIKUS','DEMAIS'],
+    suppliers: ['AVACY','ALPARG','BEIRAR','VULCAB','DEMAIS'],
     activeSupplier: 'AVACY', matrices: {}, edits: {},
     collapsedYears: {}, activeCategory: 'TODAS', savedScrollLeft: null,
     vendaDre: null, frete: null,
@@ -1345,7 +1345,7 @@ var findCol = function(sample,candidates){
 function buildGradeMap(){
   if(!state.prod||!state.prod.length) return;
   var sample=state.prod[0], ov=state.mapping.prod||{};
-  var colGrade=ov.grade     ||findCol(sample,['cod_produto','GRADE','GRADE_ID','COD_GRADE','CODIGO_GRADE','SKU']);
+  var colGrade=ov.grade     ||findCol(sample,['grade','GRADE','cod_produto','COD_PRODUTO','GRADE_ID','COD_GRADE','CODIGO_GRADE','SKU']);
   var colForn =ov.fornecedor||findCol(sample,['fornecedor','FORNECEDOR','SUPPLIER','FABRICANTE']);
   var colMarca=ov.marca     ||findCol(sample,['marca','MARCA','BRAND']);
   var colCateg=ov.categoria ||findCol(sample,['categoria','CATEGORIA','CATEGORY','CAT']);
@@ -1372,9 +1372,9 @@ function buildGradeMap(){
 function supplierFromFornecedor(fornecedor){
   if(!fornecedor) return 'DEMAIS';
   var f=fornecedor.toUpperCase().trim();
-  if(f.includes('ALPARG')||f.includes('HAVAIANA')) return 'HAVAIANAS';
-  if(f.includes('BEIRAR')||f.includes('BEIRA'))    return 'BEIRA RIO';
-  if(f.includes('VULCAB')||f.includes('OLYMPIK'))  return 'OLYMPIKUS';
+  if(f.includes('ALPARG')||f.includes('HAVAIANA')) return 'ALPARG';
+  if(f.includes('BEIRAR')||f.includes('BEIRA'))    return 'BEIRAR';
+  if(f.includes('VULCAB')||f.includes('OLYMPIK'))  return 'VULCAB';
   return 'DEMAIS';
 }
 
@@ -1457,6 +1457,7 @@ function processAll(){
   })();
   state.diagnostics=[];
   var stkAgg=aggregate(stkDedup,{date:['ano_mes','ANO_MES'],qty:['estoque_qtd','ESTOQUE_QTD'],val:['estoque_valor','ESTOQUE_VALOR']},'stk');
+
   // Diagnóstico: mostra o que o stkAgg tem para março
   var vendaAgg=aggregate(vendaDedup,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['faturamento','FATURAMENTO','VALOR']},'venda');
   var cartAgg=aggregate(state.cart,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['valor','VALOR','VL_CARTEIRA']},'cart');
@@ -1489,7 +1490,14 @@ function processAll(){
     var sup=state.suppliers[_si]; if(sup==='AVACY') continue;
     var m={};
     months.forEach(function(ym){
-      var stk=stkAgg[sup]&&stkAgg[sup][ym]||{qty:0,val:0};
+      // Scale supplier stk to match real total (accounts for grades not in gradeMap)
+      var stkRaw=stkAgg[sup]&&stkAgg[sup][ym]||{qty:0,val:0};
+      var stkTotal=stkTotalByYm[ym]||{qty:0,val:0};
+      // Compute all-suppliers sum for this ym
+      var stkAllSup=0;
+      state.suppliers.forEach(function(s){ if(s!=='AVACY'&&stkAgg[s]&&stkAgg[s][ym]) stkAllSup+=stkAgg[s][ym].qty; });
+      var stkScale = (stkAllSup>0 && stkTotal.qty>0) ? stkTotal.qty/stkAllSup : 1;
+      var stk={qty:Math.round(stkRaw.qty*stkScale), val:Math.round(stkRaw.val*stkScale)};
       var vnd=vendaAgg[sup]&&vendaAgg[sup][ym]||{qty:0,val:0};
       var ctr=cartAgg[sup]&&cartAgg[sup][ym]||{qty:0,val:0};
       m[ym]={stkQty:stk.qty,stkVal:stk.val,vendaQty:vnd.qty,vendaVal:vnd.val,cartFileQty:ctr.qty,cartFileVal:ctr.val};
