@@ -3064,11 +3064,14 @@ function budgetDreMetric(ym, key){
 }
 
 function budgetDespAm(r){
-  // Usa ano_mes_venc como coluna de referência de mês
   var v = r.ano_mes_venc||r.ANO_MES_VENC||r.ano_mes||r.ANO_MES||'';
   if(!v) return '';
   var am = String(v).replace(/\D/g,'').slice(0,6);
-  return am.length===6 ? am : '';
+  if(am.length!==6) return '';
+  // Valida ano realista (2015-2030)
+  var ano = parseInt(am.slice(0,4));
+  if(ano < 2015 || ano > 2030) return '';
+  return am;
 }
 function budgetDespByTipoArea(ym, tipo, area){
   var am = ym.replace('-','');
@@ -3094,7 +3097,9 @@ function renderBudget(anoFilter){
   if(anoFilter !== undefined) BUDGET_ANO_FILTER = anoFilter;
 
   // Months: union of DRE data + OTB projected months + despesa months
-  var allMonths = budgetGetMonths();
+  var allMonths = budgetGetMonths().filter(function(ym){
+    var y=parseInt(ym.split('-')[0]); return y>=2015 && y<=2030;
+  });
 
   // Add OTB projection months (from state.matrices for all suppliers)
   if(state && state.matrices){
@@ -3108,7 +3113,10 @@ function renderBudget(anoFilter){
 
   // Year filter
   var anos = Array.from(new Set(allMonths.map(function(ym){ return ym.split('-')[0]; }))).sort();
-  var selectedAno = BUDGET_ANO_FILTER || anos[anos.length-1] || '';
+  // Default: most recent year from DRE (reliable), fallback to last in list
+  var dreYears = Array.from(new Set(DRE_RAW.map(function(r){return String(r.ano||r.ANO||'');}))).filter(function(y){return y>='2015'&&y<='2030';}).sort();
+  var defaultAno = dreYears.length ? dreYears[dreYears.length-1] : (anos.length ? anos[anos.length-1] : '');
+  var selectedAno = BUDGET_ANO_FILTER || defaultAno || '';
   var months = allMonths.filter(function(ym){ return !selectedAno || ym.startsWith(selectedAno+'-'); });
 
   var meta = document.getElementById('budgetHeaderMeta');
