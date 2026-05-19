@@ -1538,7 +1538,7 @@ function buildMargProdFromDre(){
     byYm[ym2].imp   += parseFloat(r.imposto||r.IMPOSTO||0);
   });
   var bySample=Object.keys(byYm).slice(0,3);
-  console.log('[margProd] byYm sample:', bySample.join(','), '| first values:', bySample.map(function(k){return k+':fat='+Math.round(byYm[k].fat)+' imp='+Math.round(byYm[k].imp)+' custo='+Math.round(byYm[k].custo);}).join(' | '));
+  console.log('[margProd] all byYm months:', Object.keys(byYm).sort().join(', '));
   console.log('[margProd] state.months sample:', state.months ? state.months.slice(0,3).join(',') : 'none');
   state.suppliers.forEach(function(sup){
     var mat=state.matrices[sup]; if(!mat) return;
