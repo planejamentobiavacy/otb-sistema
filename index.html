@@ -1196,7 +1196,8 @@ function importOtbPayload(p){
   if(p.edits)    state.edits = p.edits;
   if(p.months)   state.months = p.months;
   if(p.currentMonth) state.currentMonth = p.currentMonth;
-  if(p.activeSupplier) state.activeSupplier = p.activeSupplier;
+  if(p.activeSupplier && state.suppliers.indexOf(p.activeSupplier)>-1) state.activeSupplier = p.activeSupplier;
+  else state.activeSupplier = 'AVACY';
   if(p.collapsedYears) state.collapsedYears = p.collapsedYears;
   if(p.gradeMap) state.gradeMap = p.gradeMap;
   document.getElementById('btnSaveOtb').disabled = false;
