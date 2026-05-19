@@ -1136,6 +1136,10 @@ async function loadOtbFromSupabase(){
         console.log('[margProd] loaded from saved payload, coverage:', margCount+'/'+pastMonths);
         state._margProdBuilt = true;
         renderTable();
+      } else if(state._margByYm && Object.keys(state._margByYm).length){
+        // Rebuild from cached byYm (no fetch needed)
+        console.log('[margProd] rebuilding from cached byYm');
+        applyMargByYm(state._margByYm);
       } else {
         // Fetch venda in background for MARG block
         fetchAll(TBLS.venda, null, 'venda').then(function(rows){
@@ -1277,6 +1281,8 @@ async function handleSaveAll(btn){
 }
 
 function buildOtbPayload(){
+  // Save margByYm for fast reload (avoids fetching 91k rows)
+  var margByYm = state._margByYm || null;
   var matrices = {};
   state.suppliers.forEach(function(sup){
     if(!state.matrices[sup]) return;
@@ -1569,6 +1575,7 @@ function buildMargProdFromDre(){
     return n + state.months.filter(function(ym){return mat[ym]&&mat[ym].margProdVal!==null&&mat[ym].margProdVal!==undefined;}).length;
   },0);
   console.log('[margProd] done, matched', matched, 'cells');
+  state._margByYm = byYm; // cache for save
   state._margProdBuilt=true;
   renderTable();
 }
