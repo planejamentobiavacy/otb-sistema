@@ -1840,10 +1840,11 @@ function renderTable(){
   });
   html.push('</tr></thead><tbody>');
 
-  function renderBlock(blockLabel,accessor){
-    kpiDef.forEach(function(row,idx){
+  function renderBlock(blockLabel,accessor,customRows){
+    var rows = customRows || kpiDef;
+    rows.forEach(function(row,idx){
       html.push('<tr>');
-      if(idx===0) html.push('<td class="ribbon-col" rowspan="'+kpiDef.length+'">'+blockLabel+'</td>');
+      if(idx===0) html.push('<td class="ribbon-col" rowspan="'+rows.length+'">'+blockLabel+'</td>');
       var editableInBlock=accessor==='q'?row.editableQ:row.editableV;
       var catIsAll=!cat||cat==='TODAS';
       var lc=['label'];
@@ -1874,10 +1875,11 @@ function renderTable(){
         if(isYearTotal) cls.push('year-total');
         var display;
         if(v===null||v===undefined||isNaN(v)) display='';
+        else if(row.isPct){ display=(v*100).toFixed(1)+'%'; if(v<0) cls.push('negative'); }
         else if(row.isVar){ var sign=v>0?'+':''; display=(v===0)?'0':sign+v.toFixed(1)+'%'; if(v<0) cls.push('negative'); if(v===null) display=''; }
         else if(row.isCob) display=(v===0||v===null||v===undefined||isNaN(v))?'0':v.toFixed(1);
         else display=fmtNum(v);
-        var attrs=editable?'contenteditable="true" data-sup="'+sup+'" data-ym="'+ym+'" data-key="'+key+'" data-type="'+(row.isVar?'var':row.isCob?'cob':'num')+'"':'';
+        var attrs=editable?'contenteditable="true" data-sup="'+sup+'" data-ym="'+ym+'" data-key="'+key+'" data-type="'+(row.isPct?'pct':row.isVar?'var':row.isCob?'cob':'num')+'"':'';
         html.push('<td class="'+cls.join(' ')+'" '+attrs+(hidden?' style="display:none"':'')+(v===0?' class="value zero"':'')+'>'+display+'</td>');
       });
       html.push('</tr>');
@@ -1887,40 +1889,7 @@ function renderTable(){
   html.push('<tr class="blank-sep"><td colspan="'+(months.length+2)+'"></td></tr>');
   renderBlock('VALOR','v');
   html.push('<tr class="blank-sep"><td colspan="'+(months.length+2)+'"></td></tr>');
-  // MARGEM % block
-  (function(){
-    var blockRows=kpiMarg;
-    html.push('<tr class="block-header"><td class="block-label" rowspan="'+blockRows.length+'">MARGEM %</td>');
-    blockRows.forEach(function(row,ri){
-      if(ri>0) html.push('<tr>');
-      var editableInBlock=true;
-      var lc=['label'];
-      if(editableInBlock&&sup!=='AVACY'&&catIsAll) lc.push('sim');
-      html.push('<td class="'+lc.join(' ')+'">'+row.id+'</td>');
-      months.forEach(function(ym){
-        var cell=matrix[ym],v=cell[row.qKey];
-        var yearNum=ym.split('-')[0],monthNum=ym.split('-')[1];
-        var isCollapsed=state.collapsedYears&&state.collapsedYears[yearNum];
-        var hidden=isCollapsed&&monthNum!=='12';
-        var isYearTotal=isCollapsed&&monthNum==='12';
-        if(isYearTotal){
-          var yearMs=months.filter(function(m){return m.startsWith(yearNum);});
-          var vals=yearMs.map(function(m){return matrix[m][row.qKey];}).filter(function(x){return x!==null&&x!==undefined;});
-          v=vals.length?vals.reduce(function(a,b){return a+b;},0)/vals.length:null;
-        }
-        var isFut=ym>=cur,editable=isFut&&sup!=='AVACY'&&catIsAll;
-        var cls=['value'];
-        if(isFut) cls.push('future');
-        if(editable) cls.push('editable');
-        var display;
-        if(v===null||v===undefined||isNaN(v)) display='';
-        else { display=(v*100).toFixed(1)+'%'; if(v<0) cls.push('negative'); }
-        var attrs=editable?'contenteditable="true" data-sup="'+sup+'" data-ym="'+ym+'" data-key="'+row.qKey+'" data-type="pct"':'';
-        html.push('<td class="'+cls.join(' ')+'" '+attrs+(hidden?' style="display:none"':'')+'>'+display+'</td>');
-      });
-      html.push('</tr>');
-    });
-  })();
+  renderBlock('MARGEM %','q',kpiMarg);
   html.push('</tbody></table>');
   wrap.innerHTML=html.join('');
 
