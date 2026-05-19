@@ -944,7 +944,7 @@ function openConfig(){
   ];
   document.getElementById('cfgDreRows').innerHTML = dreDefs.map(function(d){
     var tbl = TBLS[d.key];
-    var testBtn = d.key==='despesa' ? '<button class="btn" onclick="gcTestTable(this)" style="font-size:11px;padding:5px 8px;background:#e8f0fe;border-color:#2352c8;color:#2352c8">🔍 Testar</button>' : '';
+    var testBtn = '';
     var spanCols = (d.key==='despesa') ? '' : 'grid-column:span 2;';
     return '<div class="cfg-row">'
       + '<div><span>'+d.label+'</span>'
