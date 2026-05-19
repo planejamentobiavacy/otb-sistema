@@ -1117,12 +1117,23 @@ async function loadOtbFromSupabase(){
     if(saved && saved.matrices && Object.keys(saved.matrices).length > 0){
       importOtbPayload(saved);
       toast('[OK] OTB carregado do Supabase — ' + (saved.exportedAt ? new Date(saved.exportedAt).toLocaleString('pt-BR') : ''));
-      // Fetch venda in background for MARG block (doesn't block OTB display)
-      fetchAll(TBLS.venda, null, 'venda').then(function(rows){
-        state.venda = rows;
-        state._margProdBuilt = false;
-        buildMargProdFromDre();
-      }).catch(function(){});
+      // Check if margProd already saved in matrices
+      var hasMarg = state.matrices && Object.keys(state.matrices).some(function(sup){
+        var mat=state.matrices[sup]; if(!mat) return false;
+        return Object.keys(mat).some(function(ym){ return mat[ym]&&mat[ym].margProd!=null; });
+      });
+      if(hasMarg){
+        console.log('[margProd] loaded from saved payload');
+        state._margProdBuilt = true;
+        renderTable();
+      } else {
+        // Fetch venda in background for MARG block
+        fetchAll(TBLS.venda, null, 'venda').then(function(rows){
+          state.venda = rows;
+          state._margProdBuilt = false;
+          buildMargProdFromDre();
+        }).catch(function(){});
+      }
     } else {
       // Nenhum dado salvo: carrega tabelas brutas
       await reloadAllOtbTables();
@@ -1268,7 +1279,8 @@ function buildOtbPayload(){
         fatQty:c.fatQty,fatVal:c.fatVal,estQty:c.estQty,estVal:c.estVal,
         otbQty:c.otbQty,otbVal:c.otbVal,otbCartRealQty:c.otbCartRealQty,otbCartRealVal:c.otbCartRealVal,
         coberturaQ:c.coberturaQ,coberturaV:c.coberturaV,isFuture:c.isFuture,
-        varLyQty:c.varLyQty,varLyVal:c.varLyVal
+        varLyQty:c.varLyQty,varLyVal:c.varLyVal,estVarLyQty:c.estVarLyQty,estVarLyVal:c.estVarLyVal,
+        margProdVal:c.margProdVal,margProd:c.margProd
       };
     });
     matrices[sup] = compact;
@@ -1498,6 +1510,8 @@ function processAll(){
       var cell=m[ym],lyYm=(parseInt(ym.split('-')[0])-1)+'-'+ym.split('-')[1],ly=m[lyYm];
       cell.varLyQty=(ly&&ly.fatQty>0)?(cell.fatQty/ly.fatQty-1)*100:null;
       cell.varLyVal=(ly&&ly.fatVal>0)?(cell.fatVal/ly.fatVal-1)*100:null;
+      cell.estVarLyQty=(ly&&ly.estQty>0)?(cell.estQty/ly.estQty-1)*100:null;
+      cell.estVarLyVal=(ly&&ly.estVal>0)?(cell.estVal/ly.estVal-1)*100:null;
     });
     state.matrices[sup]=m;
   }
@@ -1530,6 +1544,8 @@ function buildMargProdFromDre(){
     var mat=state.matrices[sup]; if(!mat) return;
     state.months.forEach(function(ym){
       if(!mat[ym]) return;
+      // Skip if already loaded from saved payload
+      if(mat[ym].margProd!=null) return;
       var d=byYm[ym];
       if(d&&d.fat>0){
         var rl=d.fat-d.imp;
@@ -1618,6 +1634,8 @@ function buildAvacyMatrix(vendaAgg){
       var lyYm=(parseInt(ym.split('-')[0])-1)+'-'+ym.split('-')[1],ly=m[lyYm];
       cell.varLyQty=(ly&&ly.fatQty>0)?(cell.fatQty/ly.fatQty-1)*100:null;
       cell.varLyVal=(ly&&ly.fatVal>0)?(cell.fatVal/ly.fatVal-1)*100:null;
+      cell.estVarLyQty=(ly&&ly.estQty>0)?(cell.estQty/ly.estQty-1)*100:null;
+      cell.estVarLyVal=(ly&&ly.estVal>0)?(cell.estVal/ly.estVal-1)*100:null;
     });
   });
 
@@ -1668,6 +1686,8 @@ function getMatrixForCategory(sup,cat){
       var lyYm=(parseInt(ym.split('-')[0])-1)+'-'+ym.split('-')[1],ly=result[lyYm];
       cell.varLyQty=(ly&&ly.fatQty>0)?(cell.fatQty/ly.fatQty-1)*100:null;
       cell.varLyVal=(ly&&ly.fatVal>0)?(cell.fatVal/ly.fatVal-1)*100:null;
+      cell.estVarLyQty=(ly&&ly.estQty>0)?(cell.estQty/ly.estQty-1)*100:null;
+      cell.estVarLyVal=(ly&&ly.estVal>0)?(cell.estVal/ly.estVal-1)*100:null;
       cell.coberturaQ=0;cell.coberturaV=0;result[ym]=cell;
     });
     months.forEach(function(ym,i){
@@ -1839,6 +1859,7 @@ function renderTable(){
     {id:'FATURAMENTO',    qKey:'fatQty',         vKey:'fatVal',         editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
     {id:'VAR. LY',        qKey:'varLyQty',       vKey:'varLyVal',       editableQ:true, editableV:false,isCob:false,isVar:true, aggType:'avg'},
     {id:'ESTOQUE',        qKey:'estQty',         vKey:'estVal',         editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'avg'},
+    {id:'VAR. LY EST',    qKey:'estVarLyQty',    vKey:'estVarLyVal',    editableQ:false,editableV:false,isCob:false,isVar:true, aggType:'avg'},
     {id:'COB FUTURA',     qKey:'coberturaQ',     vKey:'coberturaV',     editableQ:true, editableV:false,isCob:true, isVar:false,aggType:'avg'},
     {id:'CARTEIRA',       qKey:'cartQty',        vKey:'cartVal',        editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
     {id:'OTB',            qKey:'otbQty',         vKey:'otbVal',         editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
@@ -1910,6 +1931,7 @@ function renderTable(){
         else if(row.isVar){ var sign=v>0?'+':''; display=(v===0)?'0':sign+v.toFixed(1)+'%'; if(v<0) cls.push('negative'); if(v===null) display=''; }
         else if(row.isCob) display=(v===0||v===null||v===undefined||isNaN(v))?'0':v.toFixed(1);
         else display=fmtNum(v);
+        var editDisplay = (editable&&row.isPct&&v!=null&&!isNaN(v)) ? (v*100).toFixed(1) : display;
         var attrs=editable?'contenteditable="true" data-sup="'+sup+'" data-ym="'+ym+'" data-key="'+key+'" data-type="'+(row.isPct?'pct':row.isVar?'var':row.isCob?'cob':'num')+'"':'';
         html.push('<td class="'+cls.join(' ')+'" '+attrs+(hidden?' style="display:none"':'')+(v===0?' class="value zero"':'')+'>'+display+'</td>');
       });
