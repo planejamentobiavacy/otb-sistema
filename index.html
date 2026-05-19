@@ -1502,34 +1502,33 @@ function processAll(){
 }
 
 function buildMargProdFromDre(){
-  if(!DRE_RAW.length || !state || !state.matrices) return;
-  console.log('[margProd] building from', DRE_RAW.length, 'rows');
-  if(DRE_RAW.length){
-    var r0=DRE_RAW[0];
-    console.log('[margProd] row0: ano='+r0.ano+'/'+r0.ANO+' mes='+r0.mes+'/'+r0.MES+' fat_v='+r0.faturamento_venda+'/'+r0.FATURAMENTO_VENDA+' custo='+r0.custo+'/'+r0.CUSTO);
-  }
-  console.log('[margProd] state months:', state.months ? state.months.slice(0,3).join(',') : 'none');
-  var dreByYm={};
-  DRE_RAW.forEach(function(r){
-    var a=String(r.ano||r.ANO||''),m2=String(r.mes||r.MES||'').padStart(2,'0');
-    var ym2=a+'-'+m2;
-    if(!dreByYm[ym2]) dreByYm[ym2]={fat:0,custo:0};
-    dreByYm[ym2].fat   += parseFloat(r.faturamento_venda||r.FATURAMENTO_VENDA||0);
-    dreByYm[ym2].custo += parseFloat(r.custo||r.CUSTO||0);
+  if(!state || !state.matrices) return;
+  var src = (state.venda && state.venda.length) ? state.venda : null;
+  if(!src){ console.log('[margProd] state.venda not ready'); return; }
+  console.log('[margProd] building from state.venda:', src.length, 'rows');
+  var byYm={};
+  src.forEach(function(r){
+    var ym2=String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
+    if(ym2.length===6) ym2=ym2.slice(0,4)+'-'+ym2.slice(4,6); else return;
+    if(!byYm[ym2]) byYm[ym2]={fat:0,custo:0,imp:0};
+    byYm[ym2].fat   += parseFloat(r.faturamento||r.FATURAMENTO||0);
+    byYm[ym2].custo += parseFloat(r.custo||r.CUSTO||0);
+    byYm[ym2].imp   += parseFloat(r.imposto||r.IMPOSTO||0);
   });
+  console.log('[margProd] byYm sample:', Object.keys(byYm).slice(0,3).join(','));
   state.suppliers.forEach(function(sup){
     var mat=state.matrices[sup]; if(!mat) return;
     state.months.forEach(function(ym){
       if(!mat[ym]||mat[ym].isFuture) return;
-      var d=dreByYm[ym];
+      var d=byYm[ym];
       if(d&&d.fat>0){
-        var _rl = d.fat - d.imp;
-        mat[ym].margProdVal = _rl - d.custo;                          // fat - imp - custo
-        mat[ym].margProd    = _rl>0 ? 1 - d.custo/_rl : 0;           // 1 - custo/(fat-imp)
+        var rl=d.fat-d.imp;
+        mat[ym].margProdVal=rl-d.custo;
+        mat[ym].margProd=rl>0?1-d.custo/rl:0;
       }
     });
   });
-  state._margProdBuilt = true;
+  state._margProdBuilt=true;
   renderTable();
 }
 
@@ -1978,6 +1977,7 @@ var DRE_CONFIG_DEFAULTS={fob:0.006,closer:0.008,developer:0.006,farmer:0.006,mar
 function dreShowProgress(loaded, total){
   var bar = document.getElementById('dreProgBar');
   var lbl = document.getElementById('dreProgLabel');
+  if(!bar && !lbl) return;
   var pct = total > 0 ? Math.min(100, Math.round(loaded/total*100)) : 0;
   if(bar) bar.style.width = pct + '%';
   if(lbl) lbl.textContent = loaded.toLocaleString('pt-BR') + ' de ' + total.toLocaleString('pt-BR') + ' registros (' + pct + '%)';
@@ -2216,6 +2216,8 @@ async function initDre(){
   document.getElementById('drePanels').innerHTML='';
   document.getElementById('dreEmpty').style.display='none';
   document.getElementById('dreLoading').style.display='none';
+  // Rebuild margProd after DRE is ready
+  if(state && state.matrices){ state._margProdBuilt=false; setTimeout(buildMargProdFromDre, 200); }
   var anos=Array.from(new Set(DRE_RAW.map(function(r){return r.ano||r.ANO;}))).filter(Boolean).sort();
   var meses=Array.from(new Set(DRE_RAW.map(function(r){return String(r.mes||r.MES||'').padStart(2,'0');}))).filter(function(m){return m!=='00';}).sort();
   var canais=Array.from(new Set(DRE_RAW.map(function(r){return r.canal||r.CANAL||'';}))).filter(Boolean).sort();
@@ -3226,7 +3228,7 @@ function renderBudget(anoFilter){
 
   h += '</tbody></table></div></div>';
   document.getElementById('budgetBody').innerHTML = h;
-  document.getElementById('budgetEmpty').style.display='none';
+  var _be=document.getElementById('budgetEmpty'); if(_be) _be.style.display='none';
 }
 
 // ── Budget Config ──────────────────────────────────────
