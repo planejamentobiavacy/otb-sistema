@@ -600,8 +600,10 @@ async function supaFetch(path, opts){
 // Estratégia: busca 1a pagina com count=exact, depois demais em PARALELO
 async function fetchAll(table, extraFilter, tableKey, onProgress){
   var PAGE = 1000;
+  // Tables with RLS issues use sequential fetch
+  var SEQUENTIAL_TABLES = ['dw_otb_stk'];
+  var forceSeq = SEQUENTIAL_TABLES.indexOf(table) > -1;
   var sel = tableKey ? buildSelect(tableKey) : 'select=*';
-  // For stk: if select=* fails, it will retry with discovered columns
 
   var base = '/rest/v1/' + table + '?' + sel + (extraFilter||'');
 
@@ -656,8 +658,16 @@ async function fetchAll(table, extraFilter, tableKey, onProgress){
   if(first.rows.length >= total) return first.rows;
 
   var numPages = Math.ceil(total / PAGE);
-  // Busca em lotes de 10 páginas para evitar timeout por sobrecarga
   var out = first.rows.slice();
+  // Sequential for tables with RLS issues
+  if(forceSeq){
+    for(var sq=1; sq<numPages; sq++){
+      try{ var sqr=await fetchPage(sq*PAGE,true); out=out.concat(sqr.rows||[]); }catch(e){ break; }
+      if(onProgress) onProgress(out.length, total);
+    }
+    return out;
+  }
+  // Busca em lotes de 10 páginas para evitar timeout por sobrecarga
   var BATCH = 10;
   for(var batchStart = 1; batchStart < numPages; batchStart += BATCH){
     var batchEnd = Math.min(batchStart + BATCH, numPages);
