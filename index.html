@@ -1240,6 +1240,20 @@ function importOtbPayload(p){
   else state.activeSupplier = 'AVACY';
   if(p.collapsedYears) state.collapsedYears = p.collapsedYears;
   if(p.gradeMap) state.gradeMap = p.gradeMap;
+  // Corrige estQty do último mês (ex: dezembro) que foi salvo como 0
+  // porque não há meses à frente para calcular cobertura
+  if(state.matrices && state.months && state.months.length >= 2){
+    var lastYm = state.months[state.months.length-1];
+    var prevYm = state.months[state.months.length-2];
+    state.suppliers.forEach(function(sup){
+      var mat = state.matrices[sup]; if(!mat) return;
+      var last = mat[lastYm]; var prev = mat[prevYm];
+      if(last && prev && (last.estQty===0||last.estQty==null)){
+        last.estQty = Math.max(0, Math.round((prev.estQty||0) - (last.fatQty||0)));
+        last.estVal = Math.max(0, Math.round((prev.estVal||0) - (last.fatVal||0)));
+      }
+    });
+  }
   // Check if matrices have real data
   var curYmCheck = new Date().getFullYear()+'-'+(String(new Date().getMonth()+1).padStart(2,'0'));
   var hasData = currentSups.some(function(s){
