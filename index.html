@@ -131,7 +131,7 @@ table.otb td.label{position:sticky;left:44px;z-index:3;background:#f3f5f8;color:
 table.otb td.label.sub{font-weight:400;font-size:11px;color:var(--text-dim);padding-left:26px;background:#f7f9fc}
 table.otb td.label.sim{background:#dceeff;color:#0b4a8a;border-left:3px solid var(--blue);padding-left:11px}
 table.otb td.label.sim.sub{background:#e8f4ff;border-left:3px solid #5b9fe0}
-table.otb td.value{padding:9px 12px;min-width:92px;background:#fff;color:var(--text)}
+table.otb td.value{padding:9px 12px;min-width:92px;background:#fff;color:var(--text);text-align:center}
 table.otb td.value.future{background:var(--future)}
 table.otb td.value.pct{font-size:11px;font-weight:500;color:var(--text-dim);background:#f7f9fc}
 table.otb td.value.pct.future{background:#fbf5e0}
@@ -1143,24 +1143,16 @@ async function loadOtbFromSupabase(){
       toast('[OK] OTB carregado do Supabase — ' + (saved.exportedAt ? new Date(saved.exportedAt).toLocaleString('pt-BR') : ''));
       if(state._supMismatch){
         state._supMismatch = false;
-        // Show reload button instead of auto-reloading
-        setTimeout(function(){
-          var wrap = document.getElementById('otbMain');
-          if(wrap){
-            var reloadBtn = document.createElement('div');
-            reloadBtn.style.cssText = 'text-align:center;padding:60px;color:#0f1a3a';
-            reloadBtn.innerHTML = '<div style="font-size:18px;font-weight:700;margin-bottom:16px">⚠️ Dados desatualizados</div>'
-              +'<div style="color:#7a8ab0;margin-bottom:24px">Os fornecedores foram atualizados. Recarregue os dados para continuar.</div>';
-            var reloadBtnEl = document.createElement('button');
-            reloadBtnEl.className = 'btn save';
-            reloadBtnEl.style.cssText = 'font-size:14px;padding:12px 32px';
-            reloadBtnEl.textContent = '↺ Recarregar Dados Agora';
-            reloadBtnEl.onclick = function(){ this.disabled=true; this.textContent='Carregando...'; reloadAllOtbTables(); };
-            reloadBtn.appendChild(reloadBtnEl);
-            wrap.innerHTML = '';
-            wrap.appendChild(reloadBtn);
-          }
-        }, 100);
+        // Recarrega direto — sem mostrar overlay, pois os dados já estão desatualizados
+        var otbMain2 = document.getElementById('otbMain');
+        if(otbMain2){
+          otbMain2.innerHTML = '<div style="text-align:center;padding:80px;color:#7a8ab0">'
+            +'<div style="font-size:32px;margin-bottom:12px">⏳</div>'
+            +'<div style="font-size:15px;font-weight:600;color:#0f1a3a;margin-bottom:6px">Atualizando dados...</div>'
+            +'<div style="font-size:12px">Os fornecedores foram atualizados. Recarregando automaticamente.</div>'
+            +'</div>';
+        }
+        await reloadAllOtbTables();
         return;
       }
       // Check if margProd already saved in matrices
@@ -1216,6 +1208,14 @@ async function reloadAllOtbTables(){
       otbMain.innerHTML = '<div class="table-wrap" id="tableWrap"><div class="empty" id="otbEmpty"></div></div>';
     }
     processAll(); renderTabs(); renderTable();
+    // Salva automaticamente para que na próxima abertura não apareça o overlay de mismatch
+    try{
+      var payload = buildOtbPayload();
+      await supaSave(TBLS.save_otb, 'otb_current', payload);
+      var ts = new Date().toLocaleString('pt-BR');
+      if(document.getElementById('otbLastSaved')) document.getElementById('otbLastSaved').textContent = ts;
+      toast('✔ Dados recarregados e salvos automaticamente');
+    } catch(saveErr){ console.warn('[reloadAllOtbTables] auto-save falhou:', saveErr.message); }
   } catch(e){ console.warn('Erro ao recarregar tabelas OTB:', e.message); }
 }
 
@@ -1250,7 +1250,8 @@ function importOtbPayload(p){
     });
   });
   console.log('[OTB] supMismatch='+supMismatch+' hasData='+hasData);
-  if(supMismatch || !hasData) state._supMismatch = true;
+  // Só força reload se realmente não tem dados — diferença de lista de fornecedores não é crítica
+  if(!hasData) state._supMismatch = true;
   document.getElementById('btnSaveOtb').disabled = false;
   if(p.exportedAt){
     document.getElementById('otbLastSaved').textContent = new Date(p.exportedAt).toLocaleString('pt-BR');
@@ -2063,7 +2064,8 @@ function renderTable(){
         else display=fmtNum(v);
         var editDisplay = (editable&&row.isPct&&v!=null&&!isNaN(v)) ? (v*100).toFixed(1) : display;
         var attrs=editable?'contenteditable="true" data-sup="'+sup+'" data-ym="'+ym+'" data-key="'+key+'" data-type="'+(row.isPct?'pct':row.isVar?'var':row.isCob?'cob':'num')+'"':'';
-        html.push('<td class="'+cls.join(' ')+'" '+attrs+(hidden?' style="display:none"':'')+(v===0?' class="value zero"':'')+'>'+display+'</td>');
+        if(v===0) cls.push('zero');
+        html.push('<td class="'+cls.join(' ')+'" '+attrs+(hidden?' style="display:none"':'')+'>'+display+'</td>');
       });
       html.push('</tr>');
     });
@@ -2851,6 +2853,9 @@ async function dreForceReload(btn){
 // ═══════════════════════════════════════════════════════
 //  DRE CONFIG PANEL
 // ═══════════════════════════════════════════════════════
+// Mês selecionado no Config DRE — persistido fora do DOM para sobreviver reconstruções
+var _dreCfgSelectedAm = '';
+
 function openDreCfg(){
   var body = document.getElementById('dreCfgBody');
   if(!body) return;
@@ -2888,7 +2893,8 @@ function openDreCfg(){
     var a=String(r.ano||r.ANO||''), m=String(r.mes||r.MES||'').padStart(2,'0');
     return (a&&m)?a+m:'';
   }))).filter(Boolean).sort();
-  var selectedAm = body._selectedAm || anomesList[anomesList.length-1] || '';
+  var selectedAm = _dreCfgSelectedAm || (body._selectedAm) || anomesList[anomesList.length-1] || '';
+  _dreCfgSelectedAm = selectedAm;
   body._selectedAm = selectedAm;
 
   // Pega parâmetro salvo para o ano_mes (ou default global)
@@ -3030,6 +3036,7 @@ function closeDreCfg(){
 }
 
 function dreAmChange(am){
+  _dreCfgSelectedAm = am;
   var body = document.getElementById('dreCfgBody');
   if(body) body._selectedAm = am;
   openDreCfg();
@@ -3037,7 +3044,7 @@ function dreAmChange(am){
 
 async function saveAndApplyDreCfg(btn){
   var orig = btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
-  applyDreCfg(); // aplica e re-renderiza
+  applyDreCfg(); // lê os campos, grava em DRE_CFG_PARAMS, re-renderiza DRE
   try{
     var snapshot = DRE_RAW.length ? dreAggregateFull(DRE_RAW) : null;
     var payload = {
@@ -3056,14 +3063,14 @@ async function saveAndApplyDreCfg(btn){
       await supaSave(TBLS.save_dre,'dre_current', payload);
     }
     toast('✔ Parâmetros salvos no Supabase');
+    closeDreCfg();
   } catch(e){ toast('Erro ao salvar: '+e.message,'err'); }
   btn.disabled=false; btn.textContent=orig;
 }
 
 function applyDreCfg(){
   function gv(id){ var el=document.getElementById('dcf_'+id); return el?(parseFloat(el.value)||0):0; }
-  var body = document.getElementById('dreCfgBody');
-  var am = body && body._selectedAm ? body._selectedAm : '';
+  var am = _dreCfgSelectedAm || (function(){ var b=document.getElementById('dreCfgBody'); return b&&b._selectedAm?b._selectedAm:''; })();
 
   if(am){
     if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
@@ -3100,7 +3107,7 @@ function applyDreCfg(){
 
   closeDreCfg();
   dreRender();
-  toast('✔ Parâmetros de '+(am||'global')+' aplicados — DRE recalculado');
+  toast('✔ Parâmetros de '+(am||'global')+' aplicados — DRE recalculado. Clique em Salvar para persistir.');
 }
 
 
