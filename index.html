@@ -2926,7 +2926,14 @@ function openDreCfg(){
   function fieldBrl(label, id, val, refHtml){
     return '<div class="dre-cfg-field">'
       +'<label>'+label+'</label>'
-      +'<input type="number" id="dcf_'+id+'" value="'+brl(val)+'" step="100" class="brl-input">'
+      +'<input type="number" id="dcf_'+id+'" value="'+Math.round(val)+'" step="100" class="brl-input">'
+      +(refHtml ? '<span class="hint ref-val">'+refHtml+'</span>' : '')
+      +'</div>';
+  }
+  function fieldBrlDec(label, id, val, refHtml){
+    return '<div class="dre-cfg-field">'
+      +'<label>'+label+'</label>'
+      +'<input type="number" id="dcf_'+id+'" value="'+(parseFloat(val)||0).toFixed(2)+'" step="0.01" min="0" class="brl-input">'
       +(refHtml ? '<span class="hint ref-val">'+refHtml+'</span>' : '')
       +'</div>';
   }
@@ -2974,7 +2981,7 @@ function openDreCfg(){
     +'<div class="dre-cfg-sec">'
     +'<div class="dre-cfg-sec-hd">📦 FOB</div>'
     +'<div class="dre-cfg-grid">'
-    +fieldPct('FOB (% da Rec. Líquida)', 'fob', getP('fob'))
+    +fieldPct('FOB (% Custo Líquido)', 'fob', getP('fob'))
     +'</div></div>'
 
     // ── SALÁRIOS COMERCIAIS ──
@@ -3027,7 +3034,7 @@ function openDreCfg(){
     +'<div class="dre-cfg-sec">'
     +'<div class="dre-cfg-sec-hd">👟 Montagem de Grade — Havaianas</div>'
     +'<div class="dre-cfg-grid">'
-    +fieldBrl('Custo por Par (R$)', 'custoGrade', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].custoGrade!=null)?DRE_CFG_PARAMS[am].custoGrade:(DRE_CONFIG_DEFAULTS.custoGrade||0))
+    +fieldBrlDec('Custo por Par (R$)', 'custoGrade', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].custoGrade!=null)?DRE_CFG_PARAMS[am].custoGrade:(DRE_CONFIG_DEFAULTS.custoGrade||0))
     +'</div></div>';
   document.getElementById('dreCfgOverlay').style.display='flex';
 }
