@@ -1263,7 +1263,7 @@ function patchLastMonthEstQty(){
     avacy[ym]=cell;
   });
   state.matrices['AVACY'] = avacy;
-  console.log('[patchLastMonthEstQty] AVACY '+lastYm+' estQty='+avacy[lastYm].estQty);
+  
 }
 
 function updateOtbStatus(){
@@ -1336,12 +1336,12 @@ function importOtbPayload(p){
     // DEBUG: rastreia estoque dezembro AVACY
     var dbgLast = state.months[state.months.length-1];
     var dbgPrev = state.months[state.months.length-2];
-    console.log('[DEBUG-DEZ] lastYm='+dbgLast+' prevYm='+dbgPrev);
+    
     ['ALPARG','BEIRAR','VULCAB','DEMAIS','AVACY'].forEach(function(s){
       var mat=state.matrices[s];
-      if(!mat) return console.log('[DEBUG-DEZ] '+s+': no matrix');
+      if(!mat) return 
       var l=mat[dbgLast], pv=mat[dbgPrev];
-      console.log('[DEBUG-DEZ] '+s+' '+dbgLast+' estQty='+(l?l.estQty:'NO CELL')+' fatQty='+(l?l.fatQty:'?')+' | '+dbgPrev+' estQty='+(pv?pv.estQty:'NO CELL'));
+      
     });
   }
   // Check if matrices have real data
@@ -1839,7 +1839,7 @@ function buildAvacyMatrix(vendaAgg){
       if(last && prev && (last.estQty===0||last.estQty==null||last.estQty===undefined)){
         last.estQty=Math.max(0,Math.round((prev.estQty||0)-(last.fatQty||0)));
         last.estVal=Math.max(0,Math.round((prev.estVal||0)-(last.fatVal||0)));
-        console.log('[buildAvacyMatrix] patch '+sup+' '+lastYm2+' estQty='+last.estQty);
+        
       }
     });
   }
@@ -2043,11 +2043,8 @@ function renderCatTabs(){
 function applyEdits(sup,matrix){
   var edits=state.edits[sup]||{};
   Object.keys(edits).forEach(function(ym){if(!matrix[ym]) return;Object.assign(matrix[ym],edits[ym]);});
-  var lastYmDbg=state.months&&state.months[state.months.length-1];
-  var beforeDbg=matrix[lastYmDbg]&&matrix[lastYmDbg].estQty;
-  recomputeFuture(sup);
-  var afterDbg=matrix[lastYmDbg]&&matrix[lastYmDbg].estQty;
-  if(sup==='AVACY') console.log('[applyEdits] AVACY '+lastYmDbg+' estQty before='+beforeDbg+' after='+afterDbg);
+  // AVACY não tem edições diretas e não deve ser recomputada — é soma dos filhos
+  if(sup!=='AVACY') recomputeFuture(sup);
   return matrix;
 }
 
