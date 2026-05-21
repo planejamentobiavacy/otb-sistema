@@ -2300,7 +2300,18 @@ async function loadDreFromSupabase(forceRaw){
     dreShowProgress(0, 100);
 
     var saved = await supaLoad(TBLS.save_dre, 'dre_current');
-    if(saved && saved.config) DRE_CONFIG = Object.assign(DRE_CONFIG, saved.config);
+    if(saved && saved.config){
+      // Limpa floating point noise ao restaurar config salva
+      var savedCfg = saved.config;
+      Object.keys(savedCfg).forEach(function(k){
+        if(savedCfg[k] && typeof savedCfg[k]==='object'){
+          Object.keys(savedCfg[k]).forEach(function(am){
+            if(typeof savedCfg[k][am]==='number') savedCfg[k][am]=parseFloat(savedCfg[k][am].toFixed(6));
+          });
+        }
+      });
+      DRE_CONFIG = Object.assign(DRE_CONFIG, savedCfg);
+    }
     if(saved && saved.fixos)  Object.assign(FIXOS_DEF, saved.fixos);
     if(saved && saved.cfgParams) DRE_CFG_PARAMS = Object.assign(DRE_CFG_PARAMS, saved.cfgParams);
 
