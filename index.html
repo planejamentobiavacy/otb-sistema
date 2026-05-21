@@ -1354,7 +1354,7 @@ function importOtbPayload(p){
     });
   });
   console.log('[OTB] supMismatch='+supMismatch+' hasData='+hasData);
-  // Só força reload se realmente não tem dados — diferença de lista de fornecedores não é crítica
+  // Força reload apenas se não há dados reais — supMismatch sozinho não justifica reload
   if(!hasData) state._supMismatch = true;
   document.getElementById('btnSaveOtb').disabled = false;
   if(p.exportedAt){
@@ -2043,7 +2043,12 @@ function renderCatTabs(){
 function applyEdits(sup,matrix){
   var edits=state.edits[sup]||{};
   Object.keys(edits).forEach(function(ym){if(!matrix[ym]) return;Object.assign(matrix[ym],edits[ym]);});
-  recomputeFuture(sup); return matrix;
+  var lastYmDbg=state.months&&state.months[state.months.length-1];
+  var beforeDbg=matrix[lastYmDbg]&&matrix[lastYmDbg].estQty;
+  recomputeFuture(sup);
+  var afterDbg=matrix[lastYmDbg]&&matrix[lastYmDbg].estQty;
+  if(sup==='AVACY') console.log('[applyEdits] AVACY '+lastYmDbg+' estQty before='+beforeDbg+' after='+afterDbg);
+  return matrix;
 }
 
 function renderTable(){
