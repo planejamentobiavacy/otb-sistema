@@ -2361,6 +2361,7 @@ async function loadDreFromSupabase(forceRaw){
     }
 
     DRE_LOADED = DRE_RAW.length > 0;
+    if(DRE_LOADED) backfillDreConfig(); // preenche meses sem parâmetro próprio
     if(DRE_LOADED && state && state.matrices) { state._margProdBuilt=false; buildMargProdFromDre(); }
     if(loadingEl) loadingEl.style.display='none';
     return DRE_LOADED;
@@ -2370,6 +2371,53 @@ async function loadDreFromSupabase(forceRaw){
     console.warn('Erro DRE:', e.message); return false;
   }
 }
+
+// ── Backfill DRE_CONFIG: meses sem parâmetro próprio herdam o valor mais próximo salvo ──
+
+// ── Backfill DRE_CONFIG: meses sem parâmetro próprio herdam o valor do mês configurado mais próximo ──
+function backfillDreConfig(){
+  var PCT_KEYS = ['fob','closer','developer','farmer','martins','rca','branding','leads'];
+  var monthSet = {};
+  (DRE_RAW||[]).forEach(function(r){
+    var a=String(r.ano||r.ANO||''), m=String(r.mes||r.MES||'').padStart(2,'0');
+    if(a&&m&&m!=='00') monthSet[a+m]=1;
+  });
+  Object.keys(DRE_CFG_PARAMS).forEach(function(am){ if(am&&am.length===6) monthSet[am]=1; });
+  var allMonths = Object.keys(monthSet).sort();
+  if(!allMonths.length) return;
+
+  PCT_KEYS.forEach(function(k){
+    if(!DRE_CONFIG[k]) DRE_CONFIG[k] = {};
+    // Normaliza chaves para YYYYMM (sem hífen) e arredonda
+    var normalized = {};
+    Object.keys(DRE_CONFIG[k]).forEach(function(am){
+      var n = am.replace('-','');
+      if(n.length===6) normalized[n] = parseFloat((+DRE_CONFIG[k][am]).toFixed(6));
+    });
+    // Para cada mês sem entrada, herda o mês configurado mais próximo (anterior > posterior > default)
+    allMonths.forEach(function(am){
+      if(normalized[am] != null) return;
+      var best = null;
+      for(var i=allMonths.indexOf(am)-1; i>=0; i--){
+        if(normalized[allMonths[i]] != null){ best=normalized[allMonths[i]]; break; }
+      }
+      if(best == null){
+        for(var j=allMonths.indexOf(am)+1; j<allMonths.length; j++){
+          if(normalized[allMonths[j]] != null){ best=normalized[allMonths[j]]; break; }
+        }
+      }
+      normalized[am] = best != null ? best : parseFloat((DRE_CONFIG_DEFAULTS[k]||0).toFixed(6));
+    });
+    // Grava de volta (formato YYYYMM)
+    allMonths.forEach(function(am){
+      DRE_CONFIG[k][am] = normalized[am];
+      if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
+      if(DRE_CFG_PARAMS[am][k] == null) DRE_CFG_PARAMS[am][k] = normalized[am];
+    });
+  });
+  console.log('[DRE] backfill: meses='+allMonths.length+' closer='+JSON.stringify(DRE_CONFIG.closer));
+}
+
 
 // Agrega DRE_RAW por (ano,mes,canal,cluster,regiao,fornecedor) somando campos numéricos
 // Reduz tipicamente de 50k+ linhas para ~500 combinações — cabe num único save key
@@ -3234,16 +3282,20 @@ async function saveAndApplyDreCfg(btn){
 
 function applyDreCfg(){
   function gv(id){ var el=document.getElementById('dcf_'+id); return el?(parseFloat(el.value)||0):0; }
+  function pctVal(id){ return parseFloat((gv(id)/100).toFixed(6)); }
   var am = _dreCfgSelectedAm || (function(){ var b=document.getElementById('dreCfgBody'); return b&&b._selectedAm?b._selectedAm:''; })();
 
   if(am){
     if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
     ['fob','closer','developer','farmer','martins','rca','branding','leads'].forEach(function(k){
-      DRE_CFG_PARAMS[am][k] = gv(k) / 100;
+      var val = pctVal(k);
+      DRE_CFG_PARAMS[am][k] = val;
       if(!DRE_CONFIG[k]) DRE_CONFIG[k] = {};
-      DRE_CONFIG[k][am] = DRE_CFG_PARAMS[am][k];
+      DRE_CONFIG[k][am] = val;
     });
     DRE_CFG_PARAMS[am].desp_mkt = gv('desp_mkt');
+    // Após salvar, re-executa backfill para propagar para meses sem config
+    setTimeout(backfillDreConfig, 0);
   } else {
     // Sem mês selecionado: atualiza defaults globais E limpa overrides por mês
     ['fob','closer','developer','farmer','martins','rca','branding','leads'].forEach(function(k){
