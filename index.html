@@ -2849,7 +2849,14 @@ function dreAgg(rows){
     if(ano&&mes) _aSet[ano+mes]=1;
   });
   var anomesList=Object.keys(_aSet).sort();
-  return{fat,fat_v,dev,qtd,custo,icms,cofins,pis,fecpst,rec_frete:rf,custo_frete:cf,qtdGradeHava,anomesList};
+  // Agrega fat_v por canal (para cálculo correto de salários comerciais por canal)
+  var fat_v_canal={};
+  rows.forEach(function(r){
+    var c=String(r.canal||r.CANAL||'').trim().toUpperCase();
+    if(!c) return;
+    fat_v_canal[c]=(fat_v_canal[c]||0)+dreNum(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO||0);
+  });
+  return{fat,fat_v,dev,qtd,custo,icms,cofins,pis,fecpst,rec_frete:rf,custo_frete:cf,qtdGradeHava,anomesList,fat_v_canal};
 }
 function dreCalc(a,shareRB,shareQTD,canalCtx){
   shareRB=shareRB||1;shareQTD=shareQTD||1;
@@ -2877,11 +2884,22 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   var fobAvg=getSalPct('fob');
   var fob=rl*fobAvg;
   var gradeUnit=getFixo('custoGrade', DRE_CONFIG_DEFAULTS.custoGrade||0);  var grade=(a.qtdGradeHava||0)*gradeUnit;
-  // Salários e comissões: % aplicado sobre a RB real do slice (rb_dev)
-  // shareRB só é usado para alocar custos fixos — não se aplica aqui
-  var rb_canal=rb_dev;
-  var sv_closer=rb_canal*getSalPct('closer'),sv_developer=rb_canal*getSalPct('developer'),sv_farmer=rb_canal*getSalPct('farmer');
-  var com_martins=rb_canal*getSalPct('martins'),com_rca=rb_canal*getSalPct('rca');
+  // Salários comerciais: % aplicado sobre a RB de cada canal específico
+  // Se temos fat_v_canal (view mensal agregada), usamos o fat de cada canal
+  // Se não temos (view já filtrada por canal), usamos rb_dev diretamente
+  var fvc = a.fat_v_canal || {};
+  var rb_closer   = fvc['CLOSER']    != null ? fvc['CLOSER']    : (canalCtx==='CLOSER'    ? rb_dev : 0);
+  var rb_developer= fvc['DEVELOPER'] != null ? fvc['DEVELOPER'] : (canalCtx==='DEVELOPER' ? rb_dev : 0);
+  var rb_farmer   = fvc['FARMER']    != null ? fvc['FARMER']    : (canalCtx==='FARMER'    ? rb_dev : 0);
+  var rb_martins  = fvc['MARTINS']   != null ? fvc['MARTINS']   : (canalCtx==='MARTINS'   ? rb_dev : 0);
+  var rb_rca      = fvc['RCA']       != null ? fvc['RCA']       : (canalCtx==='RCA'       ? rb_dev : 0);
+  // Fallback: se nenhum canal identificado (dados sem campo canal), usa rb_dev * shareRB
+  var hasCanalData = Object.keys(fvc).length > 0 || canalCtx != null;
+  if(!hasCanalData){
+    rb_closer=rb_developer=rb_farmer=rb_martins=rb_rca=rb_dev*shareRB;
+  }
+  var sv_closer=rb_closer*getSalPct('closer'),sv_developer=rb_developer*getSalPct('developer'),sv_farmer=rb_farmer*getSalPct('farmer');
+  var com_martins=rb_martins*getSalPct('martins'),com_rca=rb_rca*getSalPct('rca');
   if(a.anomesList.length===1) console.log('[dreCalc] am='+a.anomesList[0]+' closer='+getSalPct('closer')+' developer='+getSalPct('developer')+' farmer='+getSalPct('farmer')+' rb_canal='+Math.round(rb_canal)+' sv_closer='+Math.round(sv_closer)+' sv_developer='+Math.round(sv_developer)+' sv_farmer='+Math.round(sv_farmer)+' DRE_CONFIG.closer='+JSON.stringify(DRE_CONFIG.closer));
   var sv=sv_closer+sv_developer+sv_farmer,com=com_martins+com_rca;
   var mb=rl-cmv-fob-grade,mc=mb-sv-com;
