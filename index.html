@@ -2396,22 +2396,30 @@ function backfillDreConfig(){
       if(n.length===6) normalized[n] = parseFloat((+DRE_CONFIG[k][am]).toFixed(6));
     });
 
-    // Filtra outliers: se um valor salvo for > 3× a mediana dos demais, descarta-o
-    // (evita que um valor digitado errado no Config contamine o backfill)
+    // Filtra outliers usando o default como âncora:
+    // Se um valor salvo for > 5× o default OU < 1/5 do default (e o default > 0), descarta.
+    // Isso pega casos como 0.065 quando o default é 0.008 (0.065 / 0.008 = 8.1×)
     var normKeys = Object.keys(normalized);
-    if(normKeys.length >= 2){
-      var vals = normKeys.map(function(am){ return normalized[am]; }).sort(function(a,b){return a-b;});
-      var mid = Math.floor(vals.length/2);
-      var median = vals.length%2===0 ? (vals[mid-1]+vals[mid])/2 : vals[mid];
-      if(median > 0){
-        normKeys.forEach(function(am){
-          if(normalized[am] > median * 3 || normalized[am] < median / 3){
-            console.warn('[backfill] outlier detectado: key='+k+' am='+am+' val='+normalized[am]+' median='+median+' — descartado');
-            delete normalized[am];
-          }
-        });
+    var defVal = DRE_CONFIG_DEFAULTS[k] || 0;
+    normKeys.forEach(function(am){
+      var v = normalized[am];
+      var isOutlier = false;
+      if(defVal > 0){
+        isOutlier = (v > defVal * 5) || (v > 0 && v < defVal / 5);
+      } else {
+        // Sem default: usa mediana dos outros valores como âncora
+        var others = normKeys.filter(function(x){return x!==am;}).map(function(x){return normalized[x];});
+        if(others.length > 0){
+          var sorted = others.slice().sort(function(a,b){return a-b;});
+          var med2 = sorted[Math.floor(sorted.length/2)];
+          if(med2 > 0) isOutlier = (v > med2 * 5) || (v > 0 && v < med2 / 5);
+        }
       }
-    }
+      if(isOutlier){
+        console.warn('[backfill] outlier: key='+k+' am='+am+' val='+v+' default='+defVal+' — descartado e corrigido');
+        delete normalized[am];
+      }
+    });
 
     // Calcula o valor de referência para preencher meses sem config:
     // Usa a MODA (valor mais frequente) entre os existentes.
@@ -2443,11 +2451,13 @@ function backfillDreConfig(){
       normalized[am] = parseFloat(refVal.toFixed(6));
     });
 
-    // Grava de volta (formato YYYYMM) — apenas meses que não tinham entrada própria
+    // Grava de volta (formato YYYYMM)
+    // normalized[am] pode ser undefined se era outlier e foi deletado — usa refVal nesses casos
     allMonths.forEach(function(am){
-      DRE_CONFIG[k][am] = normalized[am];
+      var finalVal = normalized[am] != null ? normalized[am] : refVal;
+      DRE_CONFIG[k][am] = finalVal;
       if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
-      if(DRE_CFG_PARAMS[am][k] == null) DRE_CFG_PARAMS[am][k] = normalized[am];
+      DRE_CFG_PARAMS[am][k] = finalVal; // sempre sobrescreve (inclusive outliers corrigidos)
     });
   });
   console.log('[DRE] backfill OK: meses='+allMonths.length+' closer='+JSON.stringify(DRE_CONFIG.closer));
