@@ -1260,6 +1260,8 @@ function patchLastMonthEstQty(){
     var lyYm=(parseInt(ym.split('-')[0])-1)+'-'+ym.split('-')[1], ly=avacy[lyYm];
     cell.varLyQty=(ly&&ly.fatQty>0)?(cell.fatQty/ly.fatQty-1)*100:null;
     cell.varLyVal=(ly&&ly.fatVal>0)?(cell.fatVal/ly.fatVal-1)*100:null;
+    cell.estVarLyQty=(ly&&ly.estQty>0)?(cell.estQty/ly.estQty-1)*100:null;
+    cell.estVarLyVal=(ly&&ly.estVal>0)?(cell.estVal/ly.estVal-1)*100:null;
     avacy[ym]=cell;
   });
   state.matrices['AVACY'] = avacy;
@@ -1331,6 +1333,8 @@ function importOtbPayload(p){
       var lyYm = (parseInt(ym.split('-')[0])-1)+'-'+ym.split('-')[1], ly = avacy[lyYm];
       cell.varLyQty = (ly&&ly.fatQty>0) ? (cell.fatQty/ly.fatQty-1)*100 : null;
       cell.varLyVal = (ly&&ly.fatVal>0) ? (cell.fatVal/ly.fatVal-1)*100 : null;
+      cell.estVarLyQty = (ly&&ly.estQty>0) ? (cell.estQty/ly.estQty-1)*100 : null;
+      cell.estVarLyVal = (ly&&ly.estVal>0) ? (cell.estVal/ly.estVal-1)*100 : null;
     });
     state.matrices['AVACY'] = avacy;
     // DEBUG: rastreia estoque dezembro AVACY
@@ -1881,6 +1885,8 @@ function buildAvacyMatrix(vendaAgg){
     var cell=avacy[ym],lyYm=(parseInt(ym.split('-')[0])-1)+'-'+ym.split('-')[1],ly=avacy[lyYm];
     cell.varLyQty=(ly&&ly.fatQty>0)?(cell.fatQty/ly.fatQty-1)*100:null;
     cell.varLyVal=(ly&&ly.fatVal>0)?(cell.fatVal/ly.fatVal-1)*100:null;
+    cell.estVarLyQty=(ly&&ly.estQty>0)?(cell.estQty/ly.estQty-1)*100:null;
+    cell.estVarLyVal=(ly&&ly.estVal>0)?(cell.estVal/ly.estVal-1)*100:null;
   });
   state.matrices['AVACY']=avacy;
 }
