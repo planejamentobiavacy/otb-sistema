@@ -2755,18 +2755,20 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   // Para cada mês usa o parâmetro salvo; se não tiver, usa o default global
   // Para múltiplos meses (ex: total ano) pondera pelo número de meses
   function getPct(key, am){
-    if(!DRE_CONFIG[key]) return DRE_CONFIG_DEFAULTS[key]||0;
+    // Verifica se existe ao menos 1 chave salva no objeto (não considera {} como configurado)
+    var cfg = DRE_CONFIG[key];
+    if(!cfg || typeof cfg !== 'object' || Object.keys(cfg).length === 0) return DRE_CONFIG_DEFAULTS[key]||0;
     // Normaliza: '202601' → '2026-01' e vice-versa
     var amH = am.length===6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
     var amN = amH.replace('-','');
-    var v = DRE_CONFIG[key][amH] != null ? DRE_CONFIG[key][amH] : DRE_CONFIG[key][amN];
+    var v = cfg[amH] != null ? cfg[amH] : cfg[amN];
     return v != null ? v : (DRE_CONFIG_DEFAULTS[key]||0);
   }
   function getSalPct(key){
     if(!a.anomesList.length) return DRE_CONFIG_DEFAULTS[key]||0;
-    var sum=0;
-    a.anomesList.forEach(function(am){ sum += getPct(key, am); });
-    return sum / a.anomesList.length;
+    var sum=0, count=0;
+    a.anomesList.forEach(function(am){ sum += getPct(key, am); count++; });
+    return count > 0 ? sum / count : (DRE_CONFIG_DEFAULTS[key]||0);
   }
   var fobAvg=getSalPct('fob');
   var fob=rl*fobAvg;
@@ -2775,7 +2777,7 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   var rb_canal=rb_dev*shareRB;
   var sv_closer=rb_canal*getSalPct('closer'),sv_developer=rb_canal*getSalPct('developer'),sv_farmer=rb_canal*getSalPct('farmer');
   var com_martins=rb_canal*getSalPct('martins'),com_rca=rb_canal*getSalPct('rca');
-  if(a.anomesList.length===1) console.log('[dreCalc] am='+a.anomesList[0]+' closer='+getSalPct('closer')+' developer='+getSalPct('developer')+' farmer='+getSalPct('farmer')+' DRE_CONFIG.closer='+JSON.stringify(DRE_CONFIG.closer));
+  if(a.anomesList.length===1) console.log('[dreCalc] am='+a.anomesList[0]+' closer='+getSalPct('closer')+' developer='+getSalPct('developer')+' farmer='+getSalPct('farmer')+' rb_canal='+Math.round(rb_canal)+' sv_closer='+Math.round(sv_closer)+' sv_developer='+Math.round(sv_developer)+' sv_farmer='+Math.round(sv_farmer)+' DRE_CONFIG.closer='+JSON.stringify(DRE_CONFIG.closer));
   var sv=sv_closer+sv_developer+sv_farmer,com=com_martins+com_rca;
   var mb=rl-cmv-fob-grade,mc=mb-sv-com;
   var rf_rec=a.rec_frete,cf=a.custo_frete>0?a.custo_frete:rl*0.031;
