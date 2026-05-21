@@ -2374,7 +2374,8 @@ async function loadDreFromSupabase(forceRaw){
 
 // ── Backfill DRE_CONFIG: meses sem parâmetro próprio herdam o valor mais próximo salvo ──
 
-// ── Backfill DRE_CONFIG: meses sem parâmetro próprio herdam o valor do mês configurado mais próximo ──
+// ── Backfill DRE_CONFIG: meses sem parâmetro próprio herdam a MEDIANA dos valores salvos ──
+// Usar mediana evita que um valor outlier (ex: 0.065 salvo por engano) contamine todos os meses
 function backfillDreConfig(){
   var PCT_KEYS = ['fob','closer','developer','farmer','martins','rca','branding','leads'];
   var monthSet = {};
@@ -2394,28 +2395,62 @@ function backfillDreConfig(){
       var n = am.replace('-','');
       if(n.length===6) normalized[n] = parseFloat((+DRE_CONFIG[k][am]).toFixed(6));
     });
-    // Para cada mês sem entrada, herda o mês configurado mais próximo (anterior > posterior > default)
+
+    // Filtra outliers: se um valor salvo for > 3× a mediana dos demais, descarta-o
+    // (evita que um valor digitado errado no Config contamine o backfill)
+    var normKeys = Object.keys(normalized);
+    if(normKeys.length >= 2){
+      var vals = normKeys.map(function(am){ return normalized[am]; }).sort(function(a,b){return a-b;});
+      var mid = Math.floor(vals.length/2);
+      var median = vals.length%2===0 ? (vals[mid-1]+vals[mid])/2 : vals[mid];
+      if(median > 0){
+        normKeys.forEach(function(am){
+          if(normalized[am] > median * 3 || normalized[am] < median / 3){
+            console.warn('[backfill] outlier detectado: key='+k+' am='+am+' val='+normalized[am]+' median='+median+' — descartado');
+            delete normalized[am];
+          }
+        });
+      }
+    }
+
+    // Calcula o valor de referência para preencher meses sem config:
+    // Usa a MODA (valor mais frequente) entre os existentes.
+    // Se todos únicos, usa a mediana. Isso protege contra outliers (ex: 0.065 salvo por engano).
+    var existingVals = Object.keys(normalized).map(function(am){ return normalized[am]; }).sort(function(a,b){return a-b;});
+    var refVal = (DRE_CONFIG_DEFAULTS[k]||0);
+    if(existingVals.length === 1){
+      refVal = existingVals[0];
+    } else if(existingVals.length > 1){
+      // Conta frequências
+      var freq = {};
+      existingVals.forEach(function(v){ var s=v.toFixed(6); freq[s]=(freq[s]||0)+1; });
+      var maxFreq = Math.max.apply(null, Object.keys(freq).map(function(s){return freq[s];}));
+      var modeVals = Object.keys(freq).filter(function(s){return freq[s]===maxFreq;}).map(parseFloat).sort(function(a,b){return a-b;});
+      if(modeVals.length === 1){
+        // Há uma moda clara — usa ela
+        refVal = modeVals[0];
+      } else {
+        // Empate: usa a mediana do conjunto original
+        var mid = Math.floor(existingVals.length/2);
+        refVal = existingVals.length%2===0 ? (existingVals[mid-1]+existingVals[mid])/2 : existingVals[mid];
+      }
+    }
+    console.log('[backfill] key='+k+' existing='+JSON.stringify(existingVals)+' ref='+refVal);
+
+    // Para cada mês sem entrada, usa o valor de referência
     allMonths.forEach(function(am){
       if(normalized[am] != null) return;
-      var best = null;
-      for(var i=allMonths.indexOf(am)-1; i>=0; i--){
-        if(normalized[allMonths[i]] != null){ best=normalized[allMonths[i]]; break; }
-      }
-      if(best == null){
-        for(var j=allMonths.indexOf(am)+1; j<allMonths.length; j++){
-          if(normalized[allMonths[j]] != null){ best=normalized[allMonths[j]]; break; }
-        }
-      }
-      normalized[am] = best != null ? best : parseFloat((DRE_CONFIG_DEFAULTS[k]||0).toFixed(6));
+      normalized[am] = parseFloat(refVal.toFixed(6));
     });
-    // Grava de volta (formato YYYYMM)
+
+    // Grava de volta (formato YYYYMM) — apenas meses que não tinham entrada própria
     allMonths.forEach(function(am){
       DRE_CONFIG[k][am] = normalized[am];
       if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
       if(DRE_CFG_PARAMS[am][k] == null) DRE_CFG_PARAMS[am][k] = normalized[am];
     });
   });
-  console.log('[DRE] backfill: meses='+allMonths.length+' closer='+JSON.stringify(DRE_CONFIG.closer));
+  console.log('[DRE] backfill OK: meses='+allMonths.length+' closer='+JSON.stringify(DRE_CONFIG.closer));
 }
 
 
