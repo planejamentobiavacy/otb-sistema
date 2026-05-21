@@ -1253,6 +1253,49 @@ function importOtbPayload(p){
         last.estVal = Math.max(0, Math.round((prev.estVal||0) - (last.fatVal||0)));
       }
     });
+    // Reconstrói AVACY como soma pura dos filhos (garante consistência sem reprocessar tudo)
+    var childSups = state.suppliers.filter(function(s){ return s !== 'AVACY'; });
+    var sumKeys = ['stkQty','stkVal','vendaQty','vendaVal','cartFileQty','cartFileVal','cartQty','cartVal','fatQty','fatVal','estQty','estVal','otbQty','otbVal','otbCartRealQty','otbCartRealVal'];
+    var avacy = {};
+    state.months.forEach(function(ym, i){
+      var cell = {}; sumKeys.forEach(function(k){ cell[k] = 0; });
+      childSups.forEach(function(sup){
+        var mA = state.matrices[sup]; if(!mA||!mA[ym]) return;
+        var src = mA[ym]; sumKeys.forEach(function(k){ var v=src[k]; if(typeof v==='number'&&!isNaN(v)) cell[k]+=v; });
+      });
+      var any = childSups.map(function(s){ return state.matrices[s]&&state.matrices[s][ym]; }).find(function(x){ return x; });
+      cell.isFuture = any ? any.isFuture : (ym >= state.currentMonth);
+      cell.precoVenda = cell.vendaQty>0 ? cell.vendaVal/cell.vendaQty : 0;
+      cell.precoCart  = cell.cartQty>0  ? Math.abs(cell.cartVal)/Math.abs(cell.cartQty) : 0;
+      avacy[ym] = cell;
+    });
+    // coberturaQ
+    state.months.forEach(function(ym, i){
+      var cell = avacy[ym], forward = state.months.slice(i+1,i+13), rem = cell.estQty, cov = 0;
+      if(forward.length === 0){
+        var prevCell = i>0 ? avacy[state.months[i-1]] : null;
+        cell.estQty = Math.max(0, Math.round((prevCell?prevCell.estQty:0) - (cell.fatQty||0)));
+        cell.coberturaQ = 0;
+      } else {
+        for(var fi=0;fi<forward.length;fi++){ var f=(avacy[forward[fi]]&&avacy[forward[fi]].fatQty)||0; if(f<=0) continue; if(rem>=f){cov+=1;rem-=f;}else{cov+=rem/f;rem=0;break;} }
+        cell.coberturaQ = cov;
+      }
+      // varLY
+      var lyYm = (parseInt(ym.split('-')[0])-1)+'-'+ym.split('-')[1], ly = avacy[lyYm];
+      cell.varLyQty = (ly&&ly.fatQty>0) ? (cell.fatQty/ly.fatQty-1)*100 : null;
+      cell.varLyVal = (ly&&ly.fatVal>0) ? (cell.fatVal/ly.fatVal-1)*100 : null;
+    });
+    state.matrices['AVACY'] = avacy;
+    // DEBUG: rastreia estoque dezembro AVACY
+    var dbgLast = state.months[state.months.length-1];
+    var dbgPrev = state.months[state.months.length-2];
+    console.log('[DEBUG-DEZ] lastYm='+dbgLast+' prevYm='+dbgPrev);
+    ['ALPARG','BEIRAR','VULCAB','DEMAIS','AVACY'].forEach(function(s){
+      var mat=state.matrices[s];
+      if(!mat) return console.log('[DEBUG-DEZ] '+s+': no matrix');
+      var l=mat[dbgLast], pv=mat[dbgPrev];
+      console.log('[DEBUG-DEZ] '+s+' '+dbgLast+' estQty='+(l?l.estQty:'NO CELL')+' fatQty='+(l?l.fatQty:'?')+' | '+dbgPrev+' estQty='+(pv?pv.estQty:'NO CELL'));
+    });
   }
   // Check if matrices have real data
   var curYmCheck = new Date().getFullYear()+'-'+(String(new Date().getMonth()+1).padStart(2,'0'));
