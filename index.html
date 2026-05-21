@@ -2832,8 +2832,9 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   var fobAvg=getSalPct('fob');
   var fob=rl*fobAvg;
   var gradeUnit=getFixo('custoGrade', DRE_CONFIG_DEFAULTS.custoGrade||0);  var grade=(a.qtdGradeHava||0)*gradeUnit;
-  // Salários e comissões sobre Receita Bruta s/ Dev do canal (rb_dev * shareRB)
-  var rb_canal=rb_dev*shareRB;
+  // Salários e comissões: % aplicado sobre a RB real do slice (rb_dev)
+  // shareRB só é usado para alocar custos fixos — não se aplica aqui
+  var rb_canal=rb_dev;
   var sv_closer=rb_canal*getSalPct('closer'),sv_developer=rb_canal*getSalPct('developer'),sv_farmer=rb_canal*getSalPct('farmer');
   var com_martins=rb_canal*getSalPct('martins'),com_rca=rb_canal*getSalPct('rca');
   if(a.anomesList.length===1) console.log('[dreCalc] am='+a.anomesList[0]+' closer='+getSalPct('closer')+' developer='+getSalPct('developer')+' farmer='+getSalPct('farmer')+' rb_canal='+Math.round(rb_canal)+' sv_closer='+Math.round(sv_closer)+' sv_developer='+Math.round(sv_developer)+' sv_farmer='+Math.round(sv_farmer)+' DRE_CONFIG.closer='+JSON.stringify(DRE_CONFIG.closer));
