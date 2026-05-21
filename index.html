@@ -124,9 +124,9 @@ table.otb thead th.yr-toggle:hover{color:#fff;background:rgba(255,255,255,.2)}
 table.otb thead th.future{background:#c48a00}
 table.otb thead th.year-cell.future{background:#8a6200}
 table.otb thead th.collapsed-year{background:#2c3a5f;border-left:3px solid var(--red);min-width:130px}
-table.otb thead th.corner-ribbon{background:var(--navy-dk);position:sticky;left:0;top:0;z-index:8;width:44px;min-width:44px;padding:0;border-right:1px solid var(--red-dk)}
+table.otb thead th.corner-ribbon{background:var(--navy-dk);position:sticky;left:0;top:0;z-index:8;width:22px;min-width:22px;padding:0;border-right:1px solid var(--red-dk)}
 table.otb thead th.corner{background:var(--navy-dk);color:#fff;text-align:left;padding:8px 14px;font-size:13px;letter-spacing:.5px;font-weight:700;position:sticky;left:44px;top:0;z-index:8;width:220px;min-width:220px;border-right:2px solid var(--border-strong)}
-table.otb td.ribbon-col{position:sticky;left:0;z-index:4;background:var(--red);color:#fff;text-align:center;vertical-align:middle;font-weight:800;letter-spacing:4px;writing-mode:vertical-rl;transform:rotate(180deg);width:44px;min-width:44px;font-size:13px;border-right:1px solid var(--red-dk);border-bottom:1px solid var(--red-dk)}
+table.otb td.ribbon-col{position:sticky;left:0;z-index:4;background:var(--red);color:#fff;text-align:center;vertical-align:middle;font-weight:800;letter-spacing:2px;writing-mode:vertical-rl;transform:rotate(180deg);width:22px;min-width:22px;font-size:11px;border-right:1px solid var(--red-dk);border-bottom:1px solid var(--red-dk)}
 table.otb td.label{position:sticky;left:44px;z-index:3;background:#f3f5f8;color:var(--navy);text-align:left;padding:9px 14px;font-weight:600;font-size:12px;letter-spacing:.3px;width:220px;min-width:220px;border-right:2px solid var(--border-strong)}
 table.otb td.label.sub{font-weight:400;font-size:11px;color:var(--text-dim);padding-left:26px;background:#f7f9fc}
 table.otb td.label.sim{background:#dceeff;color:#0b4a8a;border-left:3px solid var(--blue);padding-left:11px}
@@ -1176,7 +1176,7 @@ async function loadOtbFromSupabase(){
         renderTable();
       } else if(state._margByYm && Object.keys(state._margByYm).length){
         // Rebuild from cached byYm (no fetch needed)
-              applyMargByYm(state._margByYm);
+              applyMargByYm(state._margByYm, state._margBySupYm||null);
       } else {
         // Fetch venda in background for MARG block
         fetchAll(TBLS.venda, null, 'venda').then(function(rows){
@@ -1280,6 +1280,7 @@ function importOtbPayload(p){
   if(p.months)   state.months = p.months;
   if(p.currentMonth) state.currentMonth = p.currentMonth;
   if(p.margByYm) state._margByYm = p.margByYm;
+  if(p.margBySupYm) state._margBySupYm = p.margBySupYm;
   // Validate suppliers
   var currentSups = ['AVACY','ALPARG','BEIRAR','VULCAB','DEMAIS'];
   var savedSups = p.suppliers || [];
@@ -1467,6 +1468,7 @@ async function handleSaveAll(btn){
 function buildOtbPayload(){
   // Save margByYm for fast reload (avoids fetching 91k rows)
   var margByYm = state._margByYm || null;
+  var margBySupYm = state._margBySupYm || null;
   var matrices = {};
   state.suppliers.forEach(function(sup){
     if(!state.matrices[sup]) return;
@@ -1748,30 +1750,60 @@ function buildMargProdFromDre(){
   var src = (state.venda && state.venda.length) ? state.venda : null;
   if(!src){ console.log('[margProd] state.venda not ready'); return; }
   if(src.length){ var r0=src[0]; console.log('[margProd] row0 raw:', JSON.stringify({ano_mes:r0.ano_mes||r0.ANO_MES, fat:r0.faturamento||r0.FATURAMENTO, custo:r0.custo||r0.CUSTO, imp:r0.imposto||r0.IMPOSTO})); }
-  var byYm={};
+
+  // Agrega fat/custo/imp por fornecedor+mês usando gradeMap
+  // bySupYm[sup][ym] = {fat, custo, imp}
+  var bySupYm = {};
+  state.suppliers.forEach(function(s){ bySupYm[s]={}; });
+
   src.forEach(function(r){
     var ym2=String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
     if(ym2.length===6) ym2=ym2.slice(0,4)+'-'+ym2.slice(4,6); else return;
-    if(!byYm[ym2]) byYm[ym2]={fat:0,custo:0,imp:0};
-    byYm[ym2].fat   += parseFloat(r.faturamento||r.FATURAMENTO||0);
-    byYm[ym2].custo += parseFloat(r.custo||r.CUSTO||0);
-    byYm[ym2].imp   += parseFloat(r.imposto||r.IMPOSTO||0);
+    var fat   = parseFloat(r.faturamento||r.FATURAMENTO||0);
+    var custo = parseFloat(r.custo||r.CUSTO||0);
+    var imp   = parseFloat(r.imposto||r.IMPOSTO||0);
+
+    // Identifica fornecedor via cod_grade → gradeMap
+    var g = String(r.cod_grade||r.COD_GRADE||'').trim();
+    var gKey = g && /^\d+$/.test(g) ? String(parseInt(g,10)) : g;
+    var info = state.gradeMap && (state.gradeMap[gKey]||state.gradeMap[g]);
+    var sup = supplierFromFornecedor(info?info.fornecedor:'');
+
+    if(!bySupYm[sup]) bySupYm[sup]={};
+    if(!bySupYm[sup][ym2]) bySupYm[sup][ym2]={fat:0,custo:0,imp:0};
+    bySupYm[sup][ym2].fat   += fat;
+    bySupYm[sup][ym2].custo += custo;
+    bySupYm[sup][ym2].imp   += imp;
   });
+
+  // Cache global (byYm) para AVACY e compatibilidade com save
+  var byYm={};
+  Object.keys(bySupYm).forEach(function(sup){
+    Object.keys(bySupYm[sup]).forEach(function(ym){
+      var d=bySupYm[sup][ym];
+      if(!byYm[ym]) byYm[ym]={fat:0,custo:0,imp:0};
+      byYm[ym].fat+=d.fat; byYm[ym].custo+=d.custo; byYm[ym].imp+=d.imp;
+    });
+  });
+
   console.log('[margProd] state.months sample:', state.months ? state.months.slice(0,3).join(',') : 'none');
-  state._margByYm = byYm; // cache for save
-  applyMargByYm(byYm);
+  state._margByYm = byYm;
+  state._margBySupYm = bySupYm;
+  applyMargByYm(byYm, bySupYm);
 }
 
-// Aplica dados de margem (byYm) às matrizes — separado para poder ser chamado com cache
-function applyMargByYm(byYm){
+// Aplica dados de margem às matrizes — bySupYm é opcional (por fornecedor), byYm é fallback global
+function applyMargByYm(byYm, bySupYm){
   try{
     if(!state || !state.matrices || !state.months) return;
     state.suppliers.forEach(function(sup){
       var mat=state.matrices[sup]; if(!mat) return;
+      // Usa dados do fornecedor específico se disponível, senão usa total (AVACY/DEMAIS)
+      var supData = (bySupYm && bySupYm[sup]) ? bySupYm[sup] : null;
       state.months.forEach(function(ym){
         if(!mat[ym]) return;
         if(mat[ym].margProd!=null) return; // já preenchido
-        var d=byYm[ym];
+        var d = (supData && supData[ym]) ? supData[ym] : (sup==='AVACY' ? byYm[ym] : null);
         if(d&&d.fat>0){
           var rl=d.fat-d.imp;
           mat[ym].margProdVal=rl-d.custo;
