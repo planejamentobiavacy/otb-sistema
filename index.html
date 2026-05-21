@@ -1734,7 +1734,6 @@ function processAll(){
   }
   state.suppliers.filter(function(s){return s!=='AVACY';}).forEach(function(sup){recomputeFuture(sup);});
   buildAvacyMatrix(vendaAgg);
-  patchLastMonthEstQty();
   renderTabs(); renderTable();
   // Populate margProd once after build (not on every recalc)
   if(!state._margProdBuilt && state.venda && state.venda.length) buildMargProdFromDre();
@@ -1830,6 +1829,20 @@ function recomputeFuture(sup){
 function buildAvacyMatrix(vendaAgg){
   var months=state.months,childSups=state.suppliers.filter(function(s){return s!=='AVACY';});
   var sumKeys=['stkQty','stkVal','vendaQty','vendaVal','cartFileQty','cartFileVal','cartQty','cartVal','fatQty','fatVal','estQty','estVal','otbQty','otbVal','otbCartRealQty','otbCartRealVal'];
+
+  // ── Patch: garante que o último mês dos filhos não seja 0 antes de somar ──
+  if(months.length >= 2){
+    var lastYm2=months[months.length-1], prevYm2=months[months.length-2];
+    childSups.forEach(function(sup){
+      var mat=state.matrices[sup]; if(!mat) return;
+      var last=mat[lastYm2], prev=mat[prevYm2];
+      if(last && prev && (last.estQty===0||last.estQty==null||last.estQty===undefined)){
+        last.estQty=Math.max(0,Math.round((prev.estQty||0)-(last.fatQty||0)));
+        last.estVal=Math.max(0,Math.round((prev.estVal||0)-(last.fatVal||0)));
+        console.log('[buildAvacyMatrix] patch '+sup+' '+lastYm2+' estQty='+last.estQty);
+      }
+    });
+  }
 
   // ── AVACY = soma pura dos fornecedores filhos ──
   // Não redistribuímos vendas sem grade — o stkScale já cobre o total real
