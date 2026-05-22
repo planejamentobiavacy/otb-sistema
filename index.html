@@ -2988,7 +2988,7 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   }
   var sv_closer=rb_closer*getSalPct('closer'),sv_developer=rb_developer*getSalPct('developer'),sv_farmer=rb_farmer*getSalPct('farmer');
   var com_martins=rb_martins*getSalPct('martins'),com_rca=rb_rca*getSalPct('rca');
-  if(a.anomesList.length===1) console.log('[dreCalc] am='+a.anomesList[0]+' canalCtxUC='+canalCtxUC+' hasCanalData='+hasCanalData+' fvc='+JSON.stringify(fvc)+' rb_farm='+Math.round(rb_farm)+' rb_dev2='+Math.round(rb_dev2)+' mkt_total='+Math.round(mkt_total)+' mkt_brand_total='+Math.round(mkt_brand_total)+' mkt_leads_total='+Math.round(mkt_leads_total)+' mkt_branding='+Math.round(mkt_branding)+' mkt_leads='+Math.round(mkt_leads));
+  console.log('[dreCalc] am='+a.anomesList[0]+' canalCtx='+canalCtx+' canalCtxUC='+canalCtxUC+' hasCanalData='+hasCanalData+' fvc_keys='+Object.keys(fvc)+' rb_farm='+Math.round(rb_farm)+' rb_dev2='+Math.round(rb_dev2)+' mkt_brand_total='+Math.round(mkt_brand_total)+' mkt_leads_total='+Math.round(mkt_leads_total)+' mkt_branding='+Math.round(mkt_branding)+' mkt_leads='+Math.round(mkt_leads));
   var sv=sv_closer+sv_developer+sv_farmer,com=com_martins+com_rca;
   var mb=rl-cmv-fob-grade,mc=mb-sv-com;
   var rf_rec=a.rec_frete,cf=a.custo_frete>0?a.custo_frete:rl*0.031;
