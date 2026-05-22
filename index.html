@@ -4085,8 +4085,6 @@ function openBudgetDetail(tipo, area, ano){
                  (r.E2_HIST != null && r.E2_HIST !== 'null') ? String(r.E2_HIST).trim() : '';
     var k      = nomfor+'|'+hist;
     var classif= getBudgetClassif(nomfor, hist);
-    if(nomfor.toUpperCase().indexOf('HEI') >= 0 && !am) console.log('[debug HEI RAW FIELDS] keys='+Object.keys(r).join(',')+' sample='+JSON.stringify(r));
-    if(nomfor.toUpperCase().indexOf('HEI') >= 0) console.log('[debug HEI] nomfor='+JSON.stringify(nomfor)+' am='+am+' val='+val+' classif.tipo='+classif.tipo);
     if(classif.tipo !== tipo) return;
     if(area && classif.area !== area) return;
     if(classif.desconsiderar === 'sim') return;
