@@ -4078,6 +4078,11 @@ function openBudgetDetail(tipo, area, ano){
     if(!_classifIndex[nf]) _classifIndex[nf] = BUDGET_CFG.classif[ck];
   });
 
+  // Debug: show first HEI record
+  var _heiSample = BUDGET_DESP_RAW.find(function(r){ return String(r.e2_nomfor||r.E2_NOMFOR||'').toUpperCase().indexOf('HEI')>=0; });
+  if(_heiSample) console.log('[HEI SAMPLE] keys='+Object.keys(_heiSample).join(',')+' am='+budgetDespAm(_heiSample)+' val='+(_heiSample.valor||_heiSample.VALOR)+' classif='+JSON.stringify(getBudgetClassif(String(_heiSample.e2_nomfor||''),String(_heiSample.e2_hist||''))));
+  else console.log('[HEI SAMPLE] NOT FOUND IN BUDGET_DESP_RAW, total rows='+BUDGET_DESP_RAW.length);
+
   var map = {};
   BUDGET_DESP_RAW.forEach(function(r){
     var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
