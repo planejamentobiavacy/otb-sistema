@@ -2988,7 +2988,7 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   }
   var sv_closer=rb_closer*getSalPct('closer'),sv_developer=rb_developer*getSalPct('developer'),sv_farmer=rb_farmer*getSalPct('farmer');
   var com_martins=rb_martins*getSalPct('martins'),com_rca=rb_rca*getSalPct('rca');
-  if(a.anomesList.length===1) console.log('[dreCalc] am='+a.anomesList[0]+' closer='+getSalPct('closer')+' developer='+getSalPct('developer')+' farmer='+getSalPct('farmer')+' sv_closer='+Math.round(sv_closer)+' sv_developer='+Math.round(sv_developer)+' sv_farmer='+Math.round(sv_farmer)+' DRE_CONFIG.closer='+JSON.stringify(DRE_CONFIG.closer));
+  if(a.anomesList.length===1) console.log('[dreCalc] am='+a.anomesList[0]+' canalCtxUC='+canalCtxUC+' hasCanalData='+hasCanalData+' fvc='+JSON.stringify(fvc)+' rb_farm='+Math.round(rb_farm)+' rb_dev2='+Math.round(rb_dev2)+' mkt_total='+Math.round(mkt_total)+' mkt_brand_total='+Math.round(mkt_brand_total)+' mkt_leads_total='+Math.round(mkt_leads_total)+' mkt_branding='+Math.round(mkt_branding)+' mkt_leads='+Math.round(mkt_leads));
   var sv=sv_closer+sv_developer+sv_farmer,com=com_martins+com_rca;
   var mb=rl-cmv-fob-grade,mc=mb-sv-com;
   var rf_rec=a.rec_frete,cf=a.custo_frete>0?a.custo_frete:rl*0.031;
@@ -3014,35 +3014,47 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   var mkt_leads_total  = mkt_total * getSalPct('leads');
   var mkt_brand_total  = mkt_total * getSalPct('branding');
 
+  // Para o rateio de branding (Farmer vs Developer), precisamos do fat global dos dois canais
+  // no período — não apenas do slice atual (que já está filtrado por canal)
+  // Usamos DRE_RAW filtrado pelos mesmos ano_mes do slice
+  function getRbCanalGlobal(canal){
+    return (DRE_RAW||[]).filter(function(r){
+      var c  = String(r.canal||r.CANAL||'').toUpperCase();
+      var am = String(r.ano||r.ANO||'') + String(r.mes||r.MES||'').padStart(2,'0');
+      return c === canal && a.anomesList.indexOf(am) >= 0;
+    }).reduce(function(s,r){ return s + (parseFloat(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO)||0); }, 0);
+  }
+
+  // Usa fvc do slice se disponível (view mensal agregada), senão busca no DRE_RAW global
   var fvc = a.fat_v_canal || {};
-  var rb_farm = fvc['FARMER']    || 0;
-  var rb_dev2 = fvc['DEVELOPER'] || 0;
+  var rb_farm = fvc['FARMER']    > 0 ? fvc['FARMER']    : getRbCanalGlobal('FARMER');
+  var rb_dev2 = fvc['DEVELOPER'] > 0 ? fvc['DEVELOPER'] : getRbCanalGlobal('DEVELOPER');
   var rb_farm_dev = rb_farm + rb_dev2;
 
   var mkt_leads, mkt_branding;
 
-  if(hasCanalData){
-    // View mensal ou por canal — usa fat real dos canais
-    if(canalCtxUC === 'CLOSER'){
-      mkt_leads    = mkt_leads_total;  // 100% leads → Closer
-      mkt_branding = 0;
-    } else if(canalCtxUC === 'FARMER'){
-      mkt_leads    = 0;
-      mkt_branding = rb_farm_dev > 0 ? mkt_brand_total * (rb_farm / rb_farm_dev) : mkt_brand_total * 0.5;
-    } else if(canalCtxUC === 'DEVELOPER'){
-      mkt_leads    = 0;
-      mkt_branding = rb_farm_dev > 0 ? mkt_brand_total * (rb_dev2 / rb_farm_dev) : mkt_brand_total * 0.5;
-    } else if(canalCtxUC){
-      // Outros canais (HAVA, KA, MARTINS etc) — sem marketing alocado
-      mkt_leads    = 0;
-      mkt_branding = 0;
-    } else {
-      // Total mensal — soma de todos os canais
-      mkt_leads    = mkt_leads_total;
-      mkt_branding = mkt_brand_total;
-    }
+  if(canalCtxUC === 'CLOSER'){
+    // Closer recebe 100% de Leads Novos, zero de Branding
+    mkt_leads    = mkt_leads_total;
+    mkt_branding = 0;
+  } else if(canalCtxUC === 'FARMER'){
+    // Farmer recebe sua fatia proporcional de Branding
+    mkt_leads    = 0;
+    mkt_branding = rb_farm_dev > 0 ? mkt_brand_total * (rb_farm / rb_farm_dev) : mkt_brand_total * 0.5;
+  } else if(canalCtxUC === 'DEVELOPER'){
+    // Developer recebe sua fatia proporcional de Branding
+    mkt_leads    = 0;
+    mkt_branding = rb_farm_dev > 0 ? mkt_brand_total * (rb_dev2 / rb_farm_dev) : mkt_brand_total * 0.5;
+  } else if(canalCtxUC){
+    // Outros canais (HAVA, KA, MARTINS etc) — sem marketing alocado
+    mkt_leads    = 0;
+    mkt_branding = 0;
+  } else if(hasCanalData){
+    // Total mensal — soma de todos os canais (full allocation)
+    mkt_leads    = mkt_leads_total;
+    mkt_branding = mkt_brand_total;
   } else {
-    // Sem dados de canal — fallback: distribui por shareRB
+    // Sem dados de canal — fallback shareRB
     mkt_leads    = mkt_leads_total  * shareRB;
     mkt_branding = mkt_brand_total * shareRB;
   }
