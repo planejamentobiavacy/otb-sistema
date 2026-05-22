@@ -2394,7 +2394,15 @@ async function loadDreFromSupabase(forceRaw){
     }
     if(saved && saved.fixos)  Object.assign(FIXOS_DEF, saved.fixos);
     if(saved && saved.cfgParams){
-      DRE_CFG_PARAMS = Object.assign(DRE_CFG_PARAMS, saved.cfgParams);
+      // Deep merge + sanitize desp_mkt NaN
+      Object.keys(saved.cfgParams).forEach(function(am){
+        if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
+        Object.assign(DRE_CFG_PARAMS[am], saved.cfgParams[am]);
+        if(DRE_CFG_PARAMS[am].desp_mkt != null){
+          var v = parseFloat(DRE_CFG_PARAMS[am].desp_mkt);
+          if(isNaN(v) || v < 0) delete DRE_CFG_PARAMS[am].desp_mkt;
+        }
+      });
       console.log('[DRE] dre_current cfgParams loaded, 202604='+JSON.stringify(DRE_CFG_PARAMS['202604']));
     }
 
@@ -2411,7 +2419,13 @@ async function loadDreFromSupabase(forceRaw){
         if(savedCfgOnly.cfgParams){
           Object.keys(savedCfgOnly.cfgParams).forEach(function(am){
             if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
-            Object.assign(DRE_CFG_PARAMS[am], savedCfgOnly.cfgParams[am]);
+            var src = savedCfgOnly.cfgParams[am] || {};
+            Object.assign(DRE_CFG_PARAMS[am], src);
+            // Sanitiza desp_mkt — se NaN ou negativo, remove para usar fallback
+            if(DRE_CFG_PARAMS[am].desp_mkt != null){
+              var v = parseFloat(DRE_CFG_PARAMS[am].desp_mkt);
+              if(isNaN(v) || v < 0) delete DRE_CFG_PARAMS[am].desp_mkt;
+            }
           });
         }
         console.log('[dre_cfg_params AFTER MERGE] DRE_CFG_PARAMS.202604='+JSON.stringify(DRE_CFG_PARAMS['202604']));
@@ -3030,9 +3044,9 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
       var amH = amS.length===6 ? amS.slice(0,4)+'-'+amS.slice(4,6) : amS;
       var amN = amH.replace('-','');
       var p = DRE_CFG_PARAMS[amH] || DRE_CFG_PARAMS[amN];
-      var raw = (p && p.desp_mkt!=null) ? p.desp_mkt : fallback;
-      var val = parseFloat(raw);
-      if(isNaN(val)){ console.error('[mktBase] NaN am='+amS+' p='+JSON.stringify(p)+' FIXOS_DEF.marketing='+FIXOS_DEF.marketing); val=fallback; }
+      var raw = (p && p.desp_mkt!=null) ? p.desp_mkt : null;
+      var val = (raw !== null && raw !== undefined) ? parseFloat(raw) : NaN;
+      if(isNaN(val) || val < 0) val = fallback;
       total += val;
     });
     var result = total / a.anomesList.length;
@@ -3555,8 +3569,9 @@ function applyDreCfg(){
 
   if(am){
     // Salva fixos por mês
-    DRE_CFG_PARAMS[am].desp_mkt   = gv('desp_mkt');
-    console.log('[applyDreCfg] am='+am+' desp_mkt='+gv('desp_mkt')+' → DRE_CFG_PARAMS[am]='+JSON.stringify(DRE_CFG_PARAMS[am]));
+    var _mktVal = parseFloat(document.getElementById('dcf_desp_mkt')?document.getElementById('dcf_desp_mkt').value:0)||0;
+    DRE_CFG_PARAMS[am].desp_mkt   = _mktVal;
+    console.log('[applyDreCfg] am='+am+' desp_mkt='+_mktVal+' (raw input='+( document.getElementById('dcf_desp_mkt')?document.getElementById('dcf_desp_mkt').value:'N/A')+')');
     DRE_CFG_PARAMS[am].sal_adm    = gv('sal_adm');
     DRE_CFG_PARAMS[am].desp_gerais= gv('desp_gerais');
     DRE_CFG_PARAMS[am].cd_mensal  = gv('cd_mensal');
