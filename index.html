@@ -3542,7 +3542,8 @@ function budgetDespByTipoArea(ym, tipo, area){
     var classif= BUDGET_CFG.classif[nomfor+'|'+hist]||{};
     return ramAm===am
       && (!tipo || classif.tipo===tipo)
-      && (!area || classif.area===area);
+      && (!area || classif.area===area)
+      && classif.desconsiderar !== 'sim';
   }).reduce(function(s,r){ return s+(parseFloat(r.valor||r.VALOR||r.e2_valor||r.E2_VALOR)||0);},0);
 }
 
@@ -3707,6 +3708,7 @@ function openBudgetDetail(tipo, area, ano){
     var classif= BUDGET_CFG.classif[k]||{};
     if(classif.tipo !== tipo) return;
     if(area && classif.area !== area) return;
+    if(classif.desconsiderar === 'sim') return;
     var am = budgetDespAm(r);
     if(!am || (ano && !am.startsWith(ano))) return;
     var val = parseFloat(r.valor||r.VALOR||r.e2_valor||r.E2_VALOR)||0;
@@ -3941,6 +3943,7 @@ function renderBudgetCfgTable(search){
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">TIPO</th>';
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">ÁREA</th>';
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">OBSERVAÇÕES</th>';
+    h += '<th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;letter-spacing:1px;min-width:110px">DESCONSIDERAR</th>';
     h += '</tr></thead><tbody>';
     showPending.forEach(function(k, i){
       h += budgetCfgRow(k, i, combos[k], BUDGET_CFG.classif[k]||{}, tipoOpts, areaOpts, selStyle, inpStyle, fmtVal, 'p');
@@ -3959,6 +3962,7 @@ function renderBudgetCfgTable(search){
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">TIPO</th>';
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">ÁREA</th>';
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">OBSERVAÇÕES</th>';
+    h += '<th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;letter-spacing:1px;min-width:110px">DESCONSIDERAR</th>';
     h += '</tr></thead><tbody>';
     showClassified.forEach(function(k, i){
       h += budgetCfgRow(k, i, combos[k], BUDGET_CFG.classif[k]||{}, tipoOpts, areaOpts, selStyle, inpStyle, fmtVal, 'c');
@@ -4007,6 +4011,13 @@ function budgetCfgRow(k, i, c, saved, tipoOpts, areaOpts, selStyle, inpStyle, fm
   h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;min-width:160px">';
   h += '<input id="bcfg_obs_'+rid+'" data-key="'+kEsc+'" type="text" placeholder="Observação..." value="'+escHtml(saved.obs||'')+'" style="'+inpStyle+'">';
   h += '</td>';
+  h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;text-align:center">';
+  var descVal = saved.desconsiderar||'nao';
+  h += '<select id="bcfg_desc_'+rid+'" data-key="'+kEsc+'" style="'+selStyle+';min-width:90px;'+( descVal==='sim'?'background:#fff0f0;color:#c0181a;font-weight:700;border-color:#c0181a':'')+'">';
+  h += '<option value="nao"'+(descVal==='nao'?' selected':'')+'>Não</option>';
+  h += '<option value="sim"'+(descVal==='sim'?' selected':'')+' style="color:#c0181a;font-weight:700">Sim</option>';
+  h += '</select>';
+  h += '</td>';
   h += '</tr>';
   return h;
 }
@@ -4026,10 +4037,12 @@ async function saveBudgetCfg(btn){
     var areaEl = document.getElementById('bcfg_area_'+rid);
     var obsEl  = document.getElementById('bcfg_obs_'+rid);
     var prev = BUDGET_CFG.classif[k]||{};
+    var descEl = document.getElementById('bcfg_desc_'+rid);
     BUDGET_CFG.classif[k] = {
       tipo: tipoEl.value,
       area: areaEl ? areaEl.value : (prev.area||''),
-      obs:  obsEl  ? obsEl.value  : (prev.obs||'')
+      obs:  obsEl  ? obsEl.value  : (prev.obs||''),
+      desconsiderar: descEl ? descEl.value : (prev.desconsiderar||'nao')
     };
   });
 
@@ -4099,7 +4112,7 @@ async function saveBudgetCfg(btn){
 
 <!-- ══════════════════ BUDGET CONFIG ══════════════ -->
 <div class="dre-cfg-overlay" id="budgetCfgOverlay" onclick="if(event.target===this)closeBudgetCfg()">
-  <div class="dre-cfg-box" style="width:min(1100px,96vw)">
+  <div class="dre-cfg-box" style="width:min(1300px,98vw)">
     <div class="dre-cfg-hd">
       <div><h2>⚙️ Configurações Budget — Despesas</h2><small>Classifique despesas da base otb_despesa por tipo e área</small></div>
       <button class="dre-cfg-close" onclick="closeBudgetCfg()">×</button>
