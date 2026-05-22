@@ -3896,7 +3896,8 @@ function renderBudgetCfgTable(search){
     var saved = BUDGET_CFG.classif[k]||{};
     var hasTipo = saved.tipo && saved.tipo !== '';
     var hasArea = saved.area && saved.area !== '';
-    if(hasTipo && hasArea) classified.push(k);
+    var isDesc  = saved.desconsiderar === 'sim';
+    if(isDesc || (hasTipo && hasArea)) classified.push(k);
     else pending.push(k);
   });
 
