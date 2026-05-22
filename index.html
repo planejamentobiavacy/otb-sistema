@@ -3852,6 +3852,7 @@ function budgetDespAm(r){
        || r.ano_mes||r.ANO_MES
        || r.dt_venc||r.DT_VENC
        || r.e2_vencto||r.E2_VENCTO
+       || r.ano_mes_emissao||r.ANO_MES_EMISSAO
        || r.e2_emissao||r.E2_EMISSAO
        || r.e2_datpag||r.E2_DATPAG
        || r.e2_baixa||r.E2_BAIXA
@@ -3881,8 +3882,10 @@ function getBudgetClassif(nomfor, hist){
       if(!_budgetClassifIndex[nfUp]) _budgetClassifIndex[nfUp] = BUDGET_CFG.classif[ck];
     });
   }
-  var k = (nomfor+'|'+hist).trim();
+  var h = (hist && hist !== 'null') ? hist.trim() : '';
+  var k = h ? (nomfor.trim()+'|'+h) : nomfor.trim();
   return BUDGET_CFG.classif[k]
+      || BUDGET_CFG.classif[nomfor.trim()+'|'+h]
       || BUDGET_CFG.classif[nomfor.trim()]
       || _budgetClassifIndex[nomfor.trim().toUpperCase()]
       || {};
@@ -4078,7 +4081,8 @@ function openBudgetDetail(tipo, area, ano){
   var map = {};
   BUDGET_DESP_RAW.forEach(function(r){
     var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
-    var hist   = String(r.e2_hist||r.E2_HIST||'').trim();
+    var hist   = (r.e2_hist != null && r.e2_hist !== 'null') ? String(r.e2_hist).trim() : 
+                 (r.E2_HIST != null && r.E2_HIST !== 'null') ? String(r.E2_HIST).trim() : '';
     var k      = nomfor+'|'+hist;
     var classif= getBudgetClassif(nomfor, hist);
     if(nomfor.toUpperCase().indexOf('HEI') >= 0 && !am) console.log('[debug HEI RAW FIELDS] keys='+Object.keys(r).join(',')+' sample='+JSON.stringify(r));
