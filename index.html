@@ -3607,7 +3607,7 @@ function renderBudget(anoFilter){
   h += '<th style="text-align:left;padding:8px 12px;background:#1a2547;color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;position:sticky;left:0;top:0;z-index:5;min-width:220px;border-right:2px solid rgba(255,255,255,.2)">INDICADOR</th>';
   months.forEach(function(ym){
     var future = isFuture(ym);
-    h += '<th style="text-align:right;padding:8px 10px;background:'+(future?'#1e3a6e':'#1a2547')+';color:'+(future?'#a8c4f0':'#fff')+';font-size:11px;font-weight:700;min-width:110px;position:sticky;top:0;z-index:3">'+mLabel(ym)+(future?' ✦':'')+'</th>';
+    h += '<th style="text-align:center;padding:8px 10px;background:'+(future?'#1e3a6e':'#1a2547')+';color:'+(future?'#a8c4f0':'#fff')+';font-size:11px;font-weight:700;min-width:110px;position:sticky;top:0;z-index:3">'+mLabel(ym)+(future?' ✦':'')+'</th>';
   });
   h += '</tr></thead><tbody>';
 
@@ -3634,7 +3634,7 @@ function renderBudget(anoFilter){
       var future = isFuture(ym);
       var display = val===null ? '<span style="color:#ccc">—</span>' : isPct ? _bPct(val) : _bFmt(val);
       var color = (typeof val==='number'&&val<0) ? '#c0181a' : (future?'#1a56c4':'#0f1a3a');
-      h += '<td style="text-align:right;padding:6px 10px;background:'+(future?'#f0f5ff':bg)+';font-weight:'+fw+';color:'+color+';border-bottom:1px solid #eef1f8">'+display+'</td>';
+      h += '<td style="text-align:center;padding:6px 10px;background:'+(future?'#f0f5ff':bg)+';font-weight:'+fw+';color:'+color+';border-bottom:1px solid #eef1f8">'+display+'</td>';
     });
     h += '</tr>';
   }
@@ -3678,11 +3678,15 @@ function renderBudget(anoFilter){
       });
       var areas = BUDGET_AREAS.filter(function(a){ return usedAreas[a]; });
 
-      // Total por tipo
-      dataRow(tipo, function(ym){ return budgetDespByTipoArea(ym,tipo,null)||null; }, {bold:true});
-      areas.forEach(function(area){
-        dataRow('↳ '+area, function(ym){ return budgetDespByTipoArea(ym,tipo,area)||null; }, {sub:true});
-      });
+      // Total por tipo — com botão Detalhes
+      (function(tipoCapture){
+        dataRow(tipoCapture, function(ym){ return budgetDespByTipoArea(ym,tipoCapture,null)||null; }, {bold:true, detailBtn:{tipo:tipoCapture,area:null}});
+        areas.forEach(function(area){
+          (function(areaCapture){
+            dataRow('↳ '+areaCapture, function(ym){ return budgetDespByTipoArea(ym,tipoCapture,areaCapture)||null; }, {sub:true, detailBtn:{tipo:tipoCapture,area:areaCapture}});
+          })(area);
+        });
+      })(tipo);
     });
   }
 
