@@ -3521,6 +3521,16 @@ async function loadBudget(forceRaw){
   try{ saved = await supaLoad(TBLS.save_dre,'budget_cfg'); }catch(e){}
   if(saved && saved.classif) BUDGET_CFG.classif = saved.classif;
 
+  // Carrega chave separada budget_classif — tem prioridade (sobrevive a regeneração de snapshot)
+  try{
+    var savedClassif = await supaLoad(TBLS.save_dre,'budget_classif');
+    if(savedClassif && savedClassif.classif){
+      // Merge: preserva entradas existentes, aplica por cima as salvas na chave dedicada
+      Object.assign(BUDGET_CFG.classif, savedClassif.classif);
+      console.log('[Budget] budget_classif carregado, savedAt:', savedClassif.savedAt, 'entradas:', Object.keys(savedClassif.classif).length);
+    }
+  } catch(e){ console.warn('[Budget] budget_classif não encontrado (primeira vez):', e.message); }
+
   if(!forceRaw && saved && saved.snapshot && saved.snapshot.length){
     // Use compact snapshot — loads instantly
     BUDGET_DESP_RAW = saved.snapshot;
@@ -3925,6 +3935,8 @@ async function handleSaveBudget(btn){
       rawRows: BUDGET_DESP_RAW.length
     };
     var kb = Math.round(JSON.stringify(payload).length/1024);
+    // Salva classif em chave separada ANTES do payload (snapshot pode falhar)
+    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, savedAt: new Date().toISOString()});
     await supaSave(TBLS.save_dre,'budget_cfg', payload);
     toast('✔ Budget salvo — snapshot de '+(snapshot?snapshot.length.toLocaleString('pt-BR'):0)+' linhas ('+kb+'KB), era '+BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' linhas brutas');
     // Badge
@@ -4161,6 +4173,9 @@ async function saveBudgetCfg(btn){
   });
 
   try{
+    // Salva em chave dedicada (sobrevive a regeneração de snapshot)
+    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, savedAt: new Date().toISOString()});
+    // Atualiza também budget_cfg para manter consistência
     await supaSave(TBLS.save_dre,'budget_cfg', BUDGET_CFG);
     toast('✔ Classificações salvas');
     closeBudgetCfg();
