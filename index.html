@@ -4066,7 +4066,7 @@ function openBudgetDetail(tipo, area, ano){
     var hist   = String(r.e2_hist||r.E2_HIST||'').trim();
     var k      = nomfor+'|'+hist;
     var classif= getBudgetClassif(nomfor, hist);
-    if(nomfor.toUpperCase().indexOf('HEI') >= 0) console.log('[debug HEI] nomfor='+nomfor+' classif='+JSON.stringify(classif)+' tipo='+tipo+' area='+area);
+    if(nomfor.toUpperCase().indexOf('HEI') >= 0) console.log('[debug HEI] nomfor='+JSON.stringify(nomfor)+' am='+am+' val='+val+' classif.tipo='+classif.tipo+' classif.area='+classif.area+' passes='+(classif.tipo===tipo && (!area||classif.area===area)));
     if(classif.tipo !== tipo) return;
     if(area && classif.area !== area) return;
     if(classif.desconsiderar === 'sim') return;
@@ -4075,6 +4075,7 @@ function openBudgetDetail(tipo, area, ano){
     var val = parseFloat(r.valor||r.VALOR||r.e2_valor||r.E2_VALOR)||0;
     // Agrupa por fornecedor normalizado (nomfor) — hist diferentes ficam na mesma linha
     var nomforKey = nomfor.toUpperCase().replace(/\s+/g,' '); // normaliza capitalização e espaços
+    if(nomfor.toUpperCase().indexOf('HEI') >= 0) console.log('[debug HEI MAP] nomforKey='+JSON.stringify(nomforKey)+' am='+am+' val='+val);
     if(!map[nomforKey]) map[nomforKey] = {total:0, byMonth:{}, histByMonth:{}, allHists:{}, obs: classif.obs||'', nomforDisplay: nomfor};
     map[nomforKey].total += val;
     map[nomforKey].byMonth[am] = (map[nomforKey].byMonth[am]||0) + val;
