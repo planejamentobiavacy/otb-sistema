@@ -3800,11 +3800,16 @@ function renderBudgetCfgTable(search){
     else pending.push(k);
   });
 
-  // Pendentes: sempre mostrados (sem filtro de busca)
-  // Classificados: só aparecem se há texto de busca
-  var showClassified = searchUC.length > 0
-    ? classified.filter(function(k){ return combos[k].nomfor.toUpperCase().indexOf(searchUC)>=0 || (BUDGET_CFG.classif[k].obs||'').toUpperCase().indexOf(searchUC)>=0; })
-    : [];
+  // Quando há busca: filtra AMBAS as listas (pendentes e classificados)
+  // Quando sem busca: mostra só pendentes, classificados ficam ocultos
+  var showPending, showClassified;
+  if(searchUC.length > 0){
+    showPending    = pending.filter(function(k){ return combos[k].nomfor.toUpperCase().indexOf(searchUC)>=0 || (BUDGET_CFG.classif[k]&&(BUDGET_CFG.classif[k].obs||'').toUpperCase().indexOf(searchUC)>=0); });
+    showClassified = classified.filter(function(k){ return combos[k].nomfor.toUpperCase().indexOf(searchUC)>=0 || (BUDGET_CFG.classif[k]&&(BUDGET_CFG.classif[k].obs||'').toUpperCase().indexOf(searchUC)>=0); });
+  } else {
+    showPending    = pending;
+    showClassified = [];
+  }
 
   var pendingCount = pending.length;
   var totalCount   = allKeys.length;
@@ -3824,9 +3829,12 @@ function renderBudgetCfgTable(search){
 
   h += '<div style="overflow-y:auto;max-height:52vh">';
 
-  // ── Pendentes ──
-  if(pending.length){
-    h += '<div style="font-size:10px;font-weight:700;letter-spacing:1px;color:#e05a2b;padding:6px 10px 4px;background:#fff8f5;border-left:3px solid #e05a2b;margin-bottom:2px">⚠ SEM CLASSIFICAÇÃO ('+pendingCount+')</div>';
+  // ── Pendentes (ou filtrados pela busca) ──
+  if(showPending.length){
+    var pendLabel = searchUC.length > 0
+      ? '🔍 SEM CLASSIFICAÇÃO — resultado da busca ('+showPending.length+')'
+      : '⚠ SEM CLASSIFICAÇÃO ('+showPending.length+')';
+    h += '<div style="font-size:10px;font-weight:700;letter-spacing:1px;color:#e05a2b;padding:6px 10px 4px;background:#fff8f5;border-left:3px solid #e05a2b;margin-bottom:2px">'+pendLabel+'</div>';
     h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">';
     h += '<thead><tr style="background:#1a2547;color:#fff">';
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">FORNECEDOR</th>';
@@ -3836,7 +3844,7 @@ function renderBudgetCfgTable(search){
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">ÁREA</th>';
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">OBSERVAÇÕES</th>';
     h += '</tr></thead><tbody>';
-    pending.forEach(function(k, i){
+    showPending.forEach(function(k, i){
       h += budgetCfgRow(k, i, combos[k], BUDGET_CFG.classif[k]||{}, tipoOpts, areaOpts, selStyle, inpStyle, fmtVal, 'p');
     });
     h += '</tbody></table>';
@@ -3858,10 +3866,11 @@ function renderBudgetCfgTable(search){
       h += budgetCfgRow(k, i, combos[k], BUDGET_CFG.classif[k]||{}, tipoOpts, areaOpts, selStyle, inpStyle, fmtVal, 'c');
     });
     h += '</tbody></table>';
-  } else if(searchUC.length > 0 && !showClassified.length){
-    h += '<div style="padding:12px 10px;color:#7a8ab0;font-size:12px;font-style:italic">Nenhum fornecedor classificado encontrado para "'+escHtml(search)+'".</div>';
   }
 
+  if(!showPending.length && !showClassified.length && searchUC.length > 0){
+    h += '<div style="padding:16px 10px;color:#7a8ab0;font-size:12px;font-style:italic;text-align:center">Nenhum fornecedor encontrado para "'+escHtml(search)+'".</div>';
+  }
   if(!pending.length && !searchUC.length){
     h += '<div style="padding:20px;text-align:center;color:#1a7c3e;font-weight:700;font-size:13px">✔ Todos os fornecedores estão classificados!</div>';
   }
@@ -3977,7 +3986,7 @@ async function saveBudgetCfg(btn){
 
 <!-- ══════════════════ BUDGET CONFIG ══════════════ -->
 <div class="dre-cfg-overlay" id="budgetCfgOverlay" onclick="if(event.target===this)closeBudgetCfg()">
-  <div class="dre-cfg-box" style="width:min(760px,96vw)">
+  <div class="dre-cfg-box" style="width:min(1100px,96vw)">
     <div class="dre-cfg-hd">
       <div><h2>⚙️ Configurações Budget — Despesas</h2><small>Classifique despesas da base otb_despesa por tipo e área</small></div>
       <button class="dre-cfg-close" onclick="closeBudgetCfg()">×</button>
