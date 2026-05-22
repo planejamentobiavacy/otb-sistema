@@ -2393,7 +2393,10 @@ async function loadDreFromSupabase(forceRaw){
       DRE_CONFIG = Object.assign(DRE_CONFIG, savedCfg);
     }
     if(saved && saved.fixos)  Object.assign(FIXOS_DEF, saved.fixos);
-    if(saved && saved.cfgParams) DRE_CFG_PARAMS = Object.assign(DRE_CFG_PARAMS, saved.cfgParams);
+    if(saved && saved.cfgParams){
+      DRE_CFG_PARAMS = Object.assign(DRE_CFG_PARAMS, saved.cfgParams);
+      console.log('[DRE] dre_current cfgParams loaded, 202604='+JSON.stringify(DRE_CFG_PARAMS['202604']));
+    }
 
     // Carrega chave separada dre_cfg_params — tem prioridade sobre dre_current
     // Garante que os parâmetros sobrevivem mesmo se o snapshot for regenerado ou nova versão publicada
@@ -2409,7 +2412,7 @@ async function loadDreFromSupabase(forceRaw){
             Object.assign(DRE_CFG_PARAMS[am], savedCfgOnly.cfgParams[am]);
           });
         }
-        console.log('[DRE] dre_cfg_params carregado, savedAt:', savedCfgOnly.savedAt, 'desp_mkt_202604=', DRE_CFG_PARAMS['202604']&&DRE_CFG_PARAMS['202604'].desp_mkt);
+        console.log('[DRE] dre_cfg_params LOADED savedAt='+savedCfgOnly.savedAt+' cfgParams_keys='+Object.keys(savedCfgOnly.cfgParams||{}).join(',')+' 202604='+JSON.stringify((savedCfgOnly.cfgParams||{})['202604']));
       }
     } catch(e){ console.warn('[DRE] dre_cfg_params não encontrado (primeira vez):', e.message); }
 
@@ -3494,12 +3497,14 @@ async function saveAndApplyDreCfg(btn){
   try{
     // Salva cfgParams em chave SEPARADA e independente do snapshot
     // Assim sobrevive a qualquer regeneração de snapshot ou nova versão do HTML
+    console.log('[saveAndApply] saving dre_cfg_params, am='+(_dreCfgSelectedAm||'?')+' desp_mkt='+JSON.stringify(DRE_CFG_PARAMS[_dreCfgSelectedAm]));
     await supaSave(TBLS.save_dre, 'dre_cfg_params', {
       config:    DRE_CONFIG,
       fixos:     FIXOS_DEF,
       cfgParams: DRE_CFG_PARAMS,
       savedAt:   new Date().toISOString()
     });
+    console.log('[saveAndApply] dre_cfg_params saved OK');
 
     // Também atualiza o payload principal (com snapshot se disponível)
     var snapshot = DRE_RAW.length ? dreAggregateFull(DRE_RAW) : null;
@@ -3550,6 +3555,7 @@ function applyDreCfg(){
   if(am){
     // Salva fixos por mês
     DRE_CFG_PARAMS[am].desp_mkt   = gv('desp_mkt');
+    console.log('[applyDreCfg] am='+am+' desp_mkt='+gv('desp_mkt')+' → DRE_CFG_PARAMS[am]='+JSON.stringify(DRE_CFG_PARAMS[am]));
     DRE_CFG_PARAMS[am].sal_adm    = gv('sal_adm');
     DRE_CFG_PARAMS[am].desp_gerais= gv('desp_gerais');
     DRE_CFG_PARAMS[am].cd_mensal  = gv('cd_mensal');
