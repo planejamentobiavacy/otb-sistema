@@ -910,11 +910,20 @@ async function afterLogin(){
         Object.keys(cfgEarly.cfgParams).forEach(function(am){
           if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
           Object.assign(DRE_CFG_PARAMS[am], cfgEarly.cfgParams[am]);
-          // Sanitiza NaN
+          // Sanitiza NaN e outliers de percentuais
           ['desp_mkt','sal_adm','desp_gerais','cd_mensal','custoGrade'].forEach(function(k){
             if(DRE_CFG_PARAMS[am][k] != null){
               var _v = parseFloat(DRE_CFG_PARAMS[am][k]);
               if(isNaN(_v)||_v<0) delete DRE_CFG_PARAMS[am][k];
+            }
+          });
+          // Sanitiza percentuais: se valor > 1 (ex: 6.5 em vez de 0.065), converte
+          ['fob','closer','developer','farmer','martins','rca','branding','leads'].forEach(function(k){
+            if(DRE_CFG_PARAMS[am][k] != null){
+              var _pv = parseFloat(DRE_CFG_PARAMS[am][k]);
+              if(isNaN(_pv)||_pv<0) delete DRE_CFG_PARAMS[am][k];
+              // Se o valor foi digitado como % (ex: 6.5) em vez de decimal (0.065), corrige
+              else if(_pv > 1) DRE_CFG_PARAMS[am][k] = parseFloat((_pv/100).toFixed(6));
             }
           });
         });
