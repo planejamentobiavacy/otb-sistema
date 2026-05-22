@@ -2443,19 +2443,14 @@ async function loadDreFromSupabase(forceRaw){
           }
         });
       });
-      console.log('[DRE] dre_current cfgParams merged (no-overwrite), 202604='+JSON.stringify(DRE_CFG_PARAMS['202604']));
-    }
+        }
 
     // Carrega chave separada dre_cfg_params — tem prioridade sobre dre_current
     // Garante que os parâmetros sobrevivem mesmo se o snapshot for regenerado ou nova versão publicada
     try{
       var savedCfgOnly = await supaLoad(TBLS.save_dre, 'dre_cfg_params');
-      console.log('[dre_cfg_params] supaLoad result:', savedCfgOnly ? 'FOUND savedAt='+savedCfgOnly.savedAt : 'NULL/NOT FOUND', 'table='+TBLS.save_dre);
-      if(savedCfgOnly){
-        console.log('[dre_cfg_params RAW] savedAt='+savedCfgOnly.savedAt);
-        console.log('[dre_cfg_params RAW] fixos='+JSON.stringify(savedCfgOnly.fixos));
-        console.log('[dre_cfg_params RAW] cfgParams.202604='+JSON.stringify((savedCfgOnly.cfgParams||{})['202604']));
-        if(savedCfgOnly.config)    DRE_CONFIG = Object.assign(DRE_CONFIG, savedCfgOnly.config);
+          if(savedCfgOnly){
+                          if(savedCfgOnly.config)    DRE_CONFIG = Object.assign(DRE_CONFIG, savedCfgOnly.config);
         if(savedCfgOnly.fixos)     Object.assign(FIXOS_DEF, savedCfgOnly.fixos);
         if(savedCfgOnly.cfgParams){
           Object.keys(savedCfgOnly.cfgParams).forEach(function(am){
@@ -2469,9 +2464,7 @@ async function loadDreFromSupabase(forceRaw){
             }
           });
         }
-        console.log('[dre_cfg_params AFTER MERGE] DRE_CFG_PARAMS.202604='+JSON.stringify(DRE_CFG_PARAMS['202604']));
-        console.log('[dre_cfg_params AFTER MERGE] FIXOS_DEF='+JSON.stringify(FIXOS_DEF));
-      }
+                  }
     } catch(e){ console.error('[DRE] dre_cfg_params LOAD FAILED:', e.message); }
 
     // Usa snapshot agregado se existir e não for forceRaw
@@ -3013,7 +3006,6 @@ function dreAgg(rows){
 }
 function dreCalc(a,shareRB,shareQTD,canalCtx){
   shareRB=shareRB||1;shareQTD=shareQTD||1;
-  if(a.anomesList&&a.anomesList.length===1) console.log('[dreCalc-ENTRY] am='+a.anomesList[0]+' canalCtx='+JSON.stringify(canalCtx)+' type='+typeof canalCtx);
   var isCloser = canalCtx ? String(canalCtx).toUpperCase()==='CLOSER' : null; // null = unknown (mensal total)
   var rb_dev=a.fat_v,dev=a.dev,rb_gross=rb_dev+dev,rb=rb_dev,rl_base=rb,imp=a.icms+a.cofins+a.pis+a.fecpst,rl=rb-imp,cmv=a.custo;
   var cmv_b=cmv>0?cmv/0.79:0,mkp=cmv_b>0?(rb/cmv_b-1):0,mg_prod=rl>0?(1-cmv/rl):0;
@@ -3070,7 +3062,6 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   }
   var sv_closer=rb_closer*getSalPct('closer'),sv_developer=rb_developer*getSalPct('developer'),sv_farmer=rb_farmer*getSalPct('farmer');
   var com_martins=rb_martins*getSalPct('martins'),com_rca=rb_rca*getSalPct('rca');
-  console.log('[dreCalc] am='+a.anomesList[0]+' canalCtx='+canalCtx+' canalCtxUC='+canalCtxUC+' hasCanalData='+hasCanalData+' fvc_keys='+Object.keys(fvc)+' rb_farm='+Math.round(rb_farm)+' rb_dev2='+Math.round(rb_dev2)+' mkt_brand_total='+Math.round(mkt_brand_total)+' mkt_leads_total='+Math.round(mkt_leads_total)+' mkt_branding='+Math.round(mkt_branding)+' mkt_leads='+Math.round(mkt_leads));
   var sv=sv_closer+sv_developer+sv_farmer,com=com_martins+com_rca;
   var mb=rl-cmv-fob-grade,mc=mb-sv-com;
   var rf_rec=a.rec_frete,cf=a.custo_frete>0?a.custo_frete:rl*0.031;
@@ -3129,7 +3120,6 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
 
   var mkt_leads, mkt_branding;
 
-  console.log('[mkt-branch] am='+a.anomesList[0]+' canalCtxUC='+JSON.stringify(canalCtxUC)+' mkt_total='+Math.round(mkt_total)+' brand_total='+Math.round(mkt_brand_total)+' leads_total='+Math.round(mkt_leads_total));
   if(canalCtxUC === 'CLOSER'){
     // Closer recebe 100% de Leads Novos, zero de Branding
     mkt_leads    = mkt_leads_total;
@@ -3565,14 +3555,12 @@ async function saveAndApplyDreCfg(btn){
   try{
     // Salva cfgParams em chave SEPARADA e independente do snapshot
     // Assim sobrevive a qualquer regeneração de snapshot ou nova versão do HTML
-    console.log('[saveAndApply] saving dre_cfg_params, am='+(_dreCfgSelectedAm||'?')+' desp_mkt='+JSON.stringify(DRE_CFG_PARAMS[_dreCfgSelectedAm]));
     await supaSave(TBLS.save_dre, 'dre_cfg_params', {
       config:    DRE_CONFIG,
       fixos:     FIXOS_DEF,
       cfgParams: DRE_CFG_PARAMS,
       savedAt:   new Date().toISOString()
     });
-    console.log('[saveAndApply] dre_cfg_params saved OK');
 
     // Também atualiza o payload principal (com snapshot se disponível)
     var snapshot = DRE_RAW.length ? dreAggregateFull(DRE_RAW) : null;
@@ -3624,7 +3612,6 @@ function applyDreCfg(){
     // Salva fixos por mês
     var _mktVal = parseFloat(document.getElementById('dcf_desp_mkt')?document.getElementById('dcf_desp_mkt').value:0)||0;
     DRE_CFG_PARAMS[am].desp_mkt   = _mktVal;
-    console.log('[applyDreCfg] am='+am+' desp_mkt='+_mktVal+' (raw input='+( document.getElementById('dcf_desp_mkt')?document.getElementById('dcf_desp_mkt').value:'N/A')+')');
     DRE_CFG_PARAMS[am].sal_adm    = gv('sal_adm');
     DRE_CFG_PARAMS[am].desp_gerais= gv('desp_gerais');
     DRE_CFG_PARAMS[am].cd_mensal  = gv('cd_mensal');
@@ -3729,8 +3716,7 @@ async function loadBudget(forceRaw){
               }
             });
           }
-          console.log('[Budget] dre_cfg_params loaded, 202604='+JSON.stringify(DRE_CFG_PARAMS['202604']));
-        }
+                }
       } catch(e){ console.warn('[Budget] dre_cfg_params load error:', e.message); }
       var snapRows = null;
       if(dreSaved && dreSaved.snapshot && dreSaved.snapshot.length) snapRows = dreExpandSnapshot(dreSaved.snapshot);
@@ -4084,11 +4070,6 @@ function openBudgetDetail(tipo, area, ano){
   });
 
   // Debug: show first HEI record
-  var _heiRows = BUDGET_DESP_RAW.filter(function(r){ return String(r.e2_nomfor||r.E2_NOMFOR||'').toUpperCase().indexOf('HEI')>=0; });
-  var _heiAms = _heiRows.map(function(r){ return budgetDespAm(r); }).filter(Boolean);
-  var _heiUniqAms = _heiAms.filter(function(v,i,a){ return a.indexOf(v)===i; }).sort();
-  console.log('[HEI SAMPLE] total='+_heiRows.length+' unique_months='+_heiUniqAms.join(',')+' classif='+JSON.stringify(getBudgetClassif('HEI BRASIL','')));
-
   var map = {};
   BUDGET_DESP_RAW.forEach(function(r){
     var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
