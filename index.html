@@ -3902,8 +3902,8 @@ function renderBudgetCfgTable(search){
   // Quando sem busca: mostra só pendentes, classificados ficam ocultos
   var showPending, showClassified;
   if(searchUC.length > 0){
-    showPending    = pending.filter(function(k){ return combos[k].nomfor.toUpperCase().indexOf(searchUC)>=0 || (BUDGET_CFG.classif[k]&&(BUDGET_CFG.classif[k].obs||'').toUpperCase().indexOf(searchUC)>=0); });
-    showClassified = classified.filter(function(k){ return combos[k].nomfor.toUpperCase().indexOf(searchUC)>=0 || (BUDGET_CFG.classif[k]&&(BUDGET_CFG.classif[k].obs||'').toUpperCase().indexOf(searchUC)>=0); });
+    showPending    = pending.filter(function(k){ return combos[k].nomfor.toUpperCase().indexOf(searchUC)>=0 || (combos[k].hist||'').toUpperCase().indexOf(searchUC)>=0 || (BUDGET_CFG.classif[k]&&(BUDGET_CFG.classif[k].obs||'').toUpperCase().indexOf(searchUC)>=0); });
+    showClassified = classified.filter(function(k){ return combos[k].nomfor.toUpperCase().indexOf(searchUC)>=0 || (combos[k].hist||'').toUpperCase().indexOf(searchUC)>=0 || (BUDGET_CFG.classif[k]&&(BUDGET_CFG.classif[k].obs||'').toUpperCase().indexOf(searchUC)>=0); });
   } else {
     showPending    = pending;
     showClassified = [];
