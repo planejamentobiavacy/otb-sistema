@@ -4066,6 +4066,7 @@ function openBudgetDetail(tipo, area, ano){
     var hist   = String(r.e2_hist||r.E2_HIST||'').trim();
     var k      = nomfor+'|'+hist;
     var classif= getBudgetClassif(nomfor, hist);
+    if(nomfor.toUpperCase().indexOf('HEI') >= 0) console.log('[debug HEI] nomfor='+nomfor+' classif='+JSON.stringify(classif)+' tipo='+tipo+' area='+area);
     if(classif.tipo !== tipo) return;
     if(area && classif.area !== area) return;
     if(classif.desconsiderar === 'sim') return;
