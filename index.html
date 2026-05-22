@@ -3602,7 +3602,7 @@ function renderBudget(anoFilter){
   h += '<span style="font-size:11px;font-weight:700;color:#7a8ab0;text-transform:uppercase;letter-spacing:.8px">Ano:</span>';
   h += '<select onchange="renderBudget(this.value)" style="padding:5px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:13px;font-family:inherit;color:#0f1a3a;background:#f7f9ff;cursor:pointer">'+anoOpts+'</select>';
   h += '</div>';
-  h += '<div style="overflow-x:auto;max-height:calc(100vh - 240px)"><table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:900px">';
+  h += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:900px">';
   h += '<thead><tr>';
   h += '<th style="text-align:left;padding:8px 12px;background:#1a2547;color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;position:sticky;left:0;top:0;z-index:5;min-width:220px;border-right:2px solid rgba(255,255,255,.2)">INDICADOR</th>';
   months.forEach(function(ym){
@@ -3710,9 +3710,14 @@ function openBudgetDetail(tipo, area, ano){
     var am = budgetDespAm(r);
     if(!am || (ano && !am.startsWith(ano))) return;
     var val = parseFloat(r.valor||r.VALOR||r.e2_valor||r.E2_VALOR)||0;
-    if(!map[nomfor]) map[nomfor] = {total:0, byMonth:{}, obs: classif.obs||''};
+    if(!map[nomfor]) map[nomfor] = {total:0, byMonth:{}, histByMonth:{}, obs: classif.obs||''};
     map[nomfor].total += val;
     map[nomfor].byMonth[am] = (map[nomfor].byMonth[am]||0) + val;
+    // Acumula hist únicos por mês
+    if(hist){
+      if(!map[nomfor].histByMonth[am]) map[nomfor].histByMonth[am] = {};
+      map[nomfor].histByMonth[am][hist] = 1;
+    }
   });
 
   var fns = Object.keys(map).sort(function(a,b){ return map[b].total - map[a].total; });
@@ -3745,7 +3750,9 @@ function openBudgetDetail(tipo, area, ano){
     h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;font-weight:600;color:#0f1a3a;position:sticky;left:0;background:'+bg+';z-index:1">'+escHtml(fn)+'</td>';
     h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#7a8ab0;font-size:11px">'+escHtml(row.obs)+'</td>';
     months.forEach(function(am){
-      h += '<td style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center">'+fmtV(row.byMonth[am])+'</td>';
+      var hists = row.histByMonth[am] ? Object.keys(row.histByMonth[am]) : [];
+      var tooltip = hists.length ? ' title="'+escHtml(hists.join(' | '))+'" style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center;cursor:help;background:#fffde7"' : ' style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center"';
+      h += '<td'+tooltip+'>'+fmtV(row.byMonth[am])+(hists.length?'<span style="font-size:9px;color:#b07a00;margin-left:2px">●</span>':'')+'</td>';
     });
     h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;text-align:center;font-weight:700;color:#1a2547;background:#f0f3fa">'+fmtV(row.total)+'</td>';
     h += '</tr>';
