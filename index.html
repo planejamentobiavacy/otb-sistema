@@ -3628,7 +3628,7 @@ function renderBudget(anoFilter){
       var dAno  = escHtml(selectedAno||'');
       btnHtml = '<button data-tipo="'+dTipo+'" data-area="'+dArea+'" data-ano="'+dAno+'" onclick="openBudgetDetail(this.dataset.tipo,this.dataset.area,this.dataset.ano)" style="margin-left:8px;padding:1px 7px;font-size:10px;font-weight:600;border:1.5px solid #2352c8;border-radius:4px;background:#fff;color:#2352c8;cursor:pointer;vertical-align:middle">detalhes</button>';
     }
-    h += '<td style="padding:6px '+pl+';background:'+bg+';font-weight:'+fw+';color:#0f1a3a;border-bottom:1px solid #eef1f8;border-right:2px solid #d0d8ee;position:sticky;left:0;z-index:1">'+label+btnHtml+'</td>';
+    h += '<td style="padding:6px '+pl+';background:'+bg+';font-weight:'+fw+';color:#0f1a3a;border-bottom:1px solid #eef1f8;border-right:2px solid #d0d8ee;position:sticky;left:0;z-index:1;display:flex;align-items:center;justify-content:space-between">'+label+btnHtml+'</td>';
     months.forEach(function(ym){
       var val = fn(ym);
       var future = isFuture(ym);
@@ -3678,9 +3678,9 @@ function renderBudget(anoFilter){
       });
       var areas = BUDGET_AREAS.filter(function(a){ return usedAreas[a]; });
 
-      // Total por tipo — com botão Detalhes
+      // Total por tipo (sem botão) — botão Detalhes só nas áreas
       (function(tipoCapture){
-        dataRow(tipoCapture, function(ym){ return budgetDespByTipoArea(ym,tipoCapture,null)||null; }, {bold:true, detailBtn:{tipo:tipoCapture,area:null}});
+        dataRow(tipoCapture, function(ym){ return budgetDespByTipoArea(ym,tipoCapture,null)||null; }, {bold:true});
         areas.forEach(function(area){
           (function(areaCapture){
             dataRow('↳ '+areaCapture, function(ym){ return budgetDespByTipoArea(ym,tipoCapture,areaCapture)||null; }, {sub:true, detailBtn:{tipo:tipoCapture,area:areaCapture}});
@@ -3733,9 +3733,9 @@ function openBudgetDetail(tipo, area, ano){
   h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;min-width:140px">OBSERVAÇÕES</th>';
   months.forEach(function(am){
     var y=am.slice(0,4), mo=+am.slice(4,6);
-    h += '<th style="padding:7px 8px;text-align:right;font-size:10px;font-weight:700;min-width:90px">'+ml[mo]+'/'+y.slice(2)+'</th>';
+    h += '<th style="padding:7px 8px;text-align:center;font-size:10px;font-weight:700;min-width:90px">'+ml[mo]+'/'+y.slice(2)+'</th>';
   });
-  h += '<th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:700;background:#0f1a3a;min-width:110px">TOTAL</th>';
+  h += '<th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;background:#0f1a3a;min-width:110px">TOTAL</th>';
   h += '</tr></thead><tbody>';
 
   fns.forEach(function(fn, i){
@@ -3745,9 +3745,9 @@ function openBudgetDetail(tipo, area, ano){
     h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;font-weight:600;color:#0f1a3a;position:sticky;left:0;background:'+bg+';z-index:1">'+escHtml(fn)+'</td>';
     h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#7a8ab0;font-size:11px">'+escHtml(row.obs)+'</td>';
     months.forEach(function(am){
-      h += '<td style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:right">'+fmtV(row.byMonth[am])+'</td>';
+      h += '<td style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center">'+fmtV(row.byMonth[am])+'</td>';
     });
-    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;text-align:right;font-weight:700;color:#1a2547;background:#f0f3fa">'+fmtV(row.total)+'</td>';
+    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;text-align:center;font-weight:700;color:#1a2547;background:#f0f3fa">'+fmtV(row.total)+'</td>';
     h += '</tr>';
   });
 
@@ -3759,9 +3759,9 @@ function openBudgetDetail(tipo, area, ano){
   months.forEach(function(am){
     var sum = fns.reduce(function(s,fn){ return s+(map[fn].byMonth[am]||0); },0);
     grandTotal += sum;
-    h += '<td style="padding:7px 8px;text-align:right">'+fmtV(sum)+'</td>';
+    h += '<td style="padding:7px 8px;text-align:center">'+fmtV(sum)+'</td>';
   });
-  h += '<td style="padding:7px 10px;text-align:right;background:#0f1a3a">'+fmtV(grandTotal)+'</td>';
+  h += '<td style="padding:7px 10px;text-align:center;background:#0f1a3a">'+fmtV(grandTotal)+'</td>';
   h += '</tr>';
 
   h += '</tbody></table></div>';
