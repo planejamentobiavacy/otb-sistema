@@ -2410,6 +2410,7 @@ async function loadDreFromSupabase(forceRaw){
     // Garante que os parâmetros sobrevivem mesmo se o snapshot for regenerado ou nova versão publicada
     try{
       var savedCfgOnly = await supaLoad(TBLS.save_dre, 'dre_cfg_params');
+      console.log('[dre_cfg_params] supaLoad result:', savedCfgOnly ? 'FOUND savedAt='+savedCfgOnly.savedAt : 'NULL/NOT FOUND', 'table='+TBLS.save_dre);
       if(savedCfgOnly){
         console.log('[dre_cfg_params RAW] savedAt='+savedCfgOnly.savedAt);
         console.log('[dre_cfg_params RAW] fixos='+JSON.stringify(savedCfgOnly.fixos));
@@ -2431,7 +2432,7 @@ async function loadDreFromSupabase(forceRaw){
         console.log('[dre_cfg_params AFTER MERGE] DRE_CFG_PARAMS.202604='+JSON.stringify(DRE_CFG_PARAMS['202604']));
         console.log('[dre_cfg_params AFTER MERGE] FIXOS_DEF='+JSON.stringify(FIXOS_DEF));
       }
-    } catch(e){ console.warn('[DRE] dre_cfg_params não encontrado (primeira vez):', e.message); }
+    } catch(e){ console.error('[DRE] dre_cfg_params LOAD FAILED:', e.message); }
 
     // Usa snapshot agregado se existir e não for forceRaw
     // Tenta snapshot se disponível
