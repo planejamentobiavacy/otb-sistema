@@ -2403,16 +2403,19 @@ async function loadDreFromSupabase(forceRaw){
     try{
       var savedCfgOnly = await supaLoad(TBLS.save_dre, 'dre_cfg_params');
       if(savedCfgOnly){
+        console.log('[dre_cfg_params RAW] savedAt='+savedCfgOnly.savedAt);
+        console.log('[dre_cfg_params RAW] fixos='+JSON.stringify(savedCfgOnly.fixos));
+        console.log('[dre_cfg_params RAW] cfgParams.202604='+JSON.stringify((savedCfgOnly.cfgParams||{})['202604']));
         if(savedCfgOnly.config)    DRE_CONFIG = Object.assign(DRE_CONFIG, savedCfgOnly.config);
         if(savedCfgOnly.fixos)     Object.assign(FIXOS_DEF, savedCfgOnly.fixos);
         if(savedCfgOnly.cfgParams){
-          // Deep merge por mês: preserva campos existentes em cada mês
           Object.keys(savedCfgOnly.cfgParams).forEach(function(am){
             if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
             Object.assign(DRE_CFG_PARAMS[am], savedCfgOnly.cfgParams[am]);
           });
         }
-        console.log('[DRE] dre_cfg_params LOADED savedAt='+savedCfgOnly.savedAt+' cfgParams_keys='+Object.keys(savedCfgOnly.cfgParams||{}).join(',')+' 202604='+JSON.stringify((savedCfgOnly.cfgParams||{})['202604']));
+        console.log('[dre_cfg_params AFTER MERGE] DRE_CFG_PARAMS.202604='+JSON.stringify(DRE_CFG_PARAMS['202604']));
+        console.log('[dre_cfg_params AFTER MERGE] FIXOS_DEF='+JSON.stringify(FIXOS_DEF));
       }
     } catch(e){ console.warn('[DRE] dre_cfg_params não encontrado (primeira vez):', e.message); }
 
@@ -2858,7 +2861,7 @@ function dreRenderMensal(){
   var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn);
   var meses=Array.from(new Set(rows.map(function(r){return String(r.mes||r.MES||'').padStart(2,'0');}))).filter(function(m){return m!=='00';}).sort();
   // Passa o canal filtrado como canalCtx — necessário para rateio correto de marketing
-  var canalCtxMensal = (canal && canal !== 'TODOS' && !Array.isArray(canal)) ? String(canal).toUpperCase() : null;
+  var canalCtxMensal = (canal && canal !== 'TODOS' && canal !== 'null' && !Array.isArray(canal)) ? String(canal).toUpperCase() : null;
   var cols=meses.map(function(m){return{label:ml(m)+(ano!=='TODOS'?'/'+String(ano).slice(-2):''),d:dreCalc(dreAgg(rows.filter(function(r){return String(r.mes||r.MES||'').padStart(2,'0')===m;})),1,1,canalCtxMensal)};});
   if(cols.length>1) cols=cols.concat([{label:'<strong>Total</strong>',d:dreCalc(dreAgg(rows),1,1,canalCtxMensal),isTotal:true}]);
   var lastMes=meses[meses.length-1],anoLY=ano==='TODOS'?null:String(+ano-1);
@@ -2961,27 +2964,25 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   // Para cada mês usa o parâmetro salvo; se não tiver, usa o default global
   // Para múltiplos meses (ex: total ano) pondera pelo número de meses
   function getPct(key, am){
-    // Verifica se existe ao menos 1 chave salva no objeto (não considera {} como configurado)
     var cfg = DRE_CONFIG[key];
     if(!cfg || typeof cfg !== 'object' || Object.keys(cfg).length === 0) return DRE_CONFIG_DEFAULTS[key]||0;
-    // Normaliza: '202601' → '2026-01' e vice-versa
-    var amH = am.length===6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
+    var amS = String(am);
+    var amH = amS.length===6 ? amS.slice(0,4)+'-'+amS.slice(4,6) : amS;
     var amN = amH.replace('-','');
     var v = cfg[amH] != null ? cfg[amH] : cfg[amN];
-    return v != null ? v : (DRE_CONFIG_DEFAULTS[key]||0);
+    var result = v != null ? parseFloat(v) : (DRE_CONFIG_DEFAULTS[key]||0);
+    return isNaN(result) ? (DRE_CONFIG_DEFAULTS[key]||0) : result;
   }
   function getSalPct(key){
     if(!a.anomesList.length) return DRE_CONFIG_DEFAULTS[key]||0;
     var sum=0, count=0;
     a.anomesList.forEach(function(am){
       var v = getPct(key, am);
-      if(isNaN(v)){
-        console.error('[getSalPct] NaN! key='+key+' am='+am+' DRE_CONFIG[key]='+JSON.stringify(DRE_CONFIG[key])+' defaults='+DRE_CONFIG_DEFAULTS[key]);
-        v = DRE_CONFIG_DEFAULTS[key]||0;
-      }
-      sum += v; count++;
+      sum += (isNaN(v) ? (DRE_CONFIG_DEFAULTS[key]||0) : v);
+      count++;
     });
-    return count > 0 ? sum / count : (DRE_CONFIG_DEFAULTS[key]||0);
+    var result = count > 0 ? sum / count : (DRE_CONFIG_DEFAULTS[key]||0);
+    return isNaN(result) ? (DRE_CONFIG_DEFAULTS[key]||0) : result;
   }
   var fobAvg=getSalPct('fob');
   var fob=rl*fobAvg;
@@ -2991,7 +2992,7 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   // Se não temos (view já filtrada por canal), usamos rb_dev diretamente
   var fvc = a.fat_v_canal || {};
   var hasCanalData = Object.keys(fvc).length > 0;
-  var canalCtxUC = canalCtx ? String(canalCtx).toUpperCase() : null;
+  var canalCtxUC = (canalCtx && canalCtx !== 'null' && canalCtx !== 'undefined') ? String(canalCtx).toUpperCase() : null;
   var rb_closer, rb_developer, rb_farmer, rb_martins, rb_rca;
   if(hasCanalData){
     // View mensal/agregada: usa fat real de cada canal
@@ -3920,11 +3921,13 @@ function openBudgetDetail(tipo, area, ano){
     var am = budgetDespAm(r);
     if(!am || (ano && !am.startsWith(ano))) return;
     var val = parseFloat(r.valor||r.VALOR||r.e2_valor||r.E2_VALOR)||0;
-    if(!map[nomfor]) map[nomfor] = {total:0, byMonth:{}, histByMonth:{}, obs: classif.obs||''};
+    // Agrupa por fornecedor (nomfor) — hist diferentes ficam na mesma linha
+    if(!map[nomfor]) map[nomfor] = {total:0, byMonth:{}, histByMonth:{}, allHists:{}, obs: classif.obs||''};
     map[nomfor].total += val;
     map[nomfor].byMonth[am] = (map[nomfor].byMonth[am]||0) + val;
-    // Acumula hist únicos por mês
+    // Acumula TODOS os hist únicos do fornecedor (global e por mês)
     if(hist){
+      map[nomfor].allHists[hist] = 1;
       if(!map[nomfor].histByMonth[am]) map[nomfor].histByMonth[am] = {};
       map[nomfor].histByMonth[am][hist] = 1;
     }
@@ -3958,7 +3961,10 @@ function openBudgetDetail(tipo, area, ano){
     var bg = i%2===0?'#fff':'#f7f9ff';
     h += '<tr style="background:'+bg+'">';
     h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;font-weight:600;color:#0f1a3a;position:sticky;left:0;background:'+bg+';z-index:1">'+escHtml(fn)+'</td>';
-    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#7a8ab0;font-size:11px">'+escHtml(row.obs)+'</td>';
+    // Mostra obs do classif + todos os hist únicos do fornecedor na mesma célula
+    var allHistsStr = Object.keys(row.allHists||{}).join(' · ');
+    var obsDisplay = [row.obs, allHistsStr].filter(Boolean).join(' | ');
+    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#7a8ab0;font-size:11px;max-width:300px" title="'+escHtml(obsDisplay)+'">'+escHtml(obsDisplay)+'</td>';
     months.forEach(function(am){
       var hists = row.histByMonth[am] ? Object.keys(row.histByMonth[am]) : [];
       var tooltip = hists.length ? ' title="'+escHtml(hists.join(' | '))+'" style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center;cursor:help;background:#fffde7"' : ' style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center"';
