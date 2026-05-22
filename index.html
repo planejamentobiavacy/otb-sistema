@@ -171,7 +171,8 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
 
 /* ── DRE ────────────────────────────────────────── */
 .dre-header-bar{background:#fff;border-bottom:2px solid #dde3f0;flex-shrink:0;display:flex;align-items:center;padding:0 20px}
-.dre-tab-btn{font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;font-family:inherit}
+.dre-tab-btn{font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;font-family:inherit;transition:all .15s;border-radius:6px 6px 0 0}
+.dre-tab-btn.active{color:#fff!important;background:#1a2a6c!important;border-bottom-color:#1a2a6c!important;font-weight:700!important}
 .dre-panels{flex:1;overflow:auto;padding:0 0 20px 0;background:#f4f6fb}
 .dre-fbar-wrap{padding:12px 20px 0}
 .dre-kpi-wrap{padding:0 20px 12px}
@@ -2814,7 +2815,8 @@ function dreSwitchTab(tab){
   document.querySelectorAll('[id^="drePanel-"]').forEach(function(p){p.style.display=p.id==='drePanel-'+tab?'block':'none';});
   document.querySelectorAll('.dre-tab-btn').forEach(function(b){
     var t=b.getAttribute('onclick')||''; var isA=t.includes("'"+tab+"'");
-    b.style.color=isA?'#1a2a6c':'#7a8ab0'; b.style.borderBottomColor=isA?'#1a2a6c':'transparent'; b.style.fontWeight=isA?'700':'600';
+    b.classList.toggle('active', isA);
+    b.style.color=''; b.style.borderBottomColor=''; b.style.fontWeight='';
   });
   dreRender();
 }
@@ -3749,6 +3751,32 @@ async function loadBudget(forceRaw){
     } catch(e){ console.warn('[Budget] DRE load error:', e.message); }
   }
   BUDGET_LOADED = true;
+  // Propaga classificações existentes para novos lançamentos do mesmo fornecedor
+  budgetPropagateClassif();
+}
+
+// Propaga classif de um fornecedor para todos os seus lançamentos sem classificação
+function budgetPropagateClassif(){
+  // Monta mapa: nomfor → classif (pega a primeira classificação válida)
+  var fornClassif = {};
+  Object.keys(BUDGET_CFG.classif).forEach(function(k){
+    var c = BUDGET_CFG.classif[k];
+    if(!c.tipo || !c.area) return;
+    var nomfor = k.split('|')[0];
+    if(!fornClassif[nomfor]) fornClassif[nomfor] = c;
+  });
+  // Para cada lançamento sem classificação, herda do fornecedor se disponível
+  var propagated = 0;
+  BUDGET_DESP_RAW.forEach(function(r){
+    var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
+    var hist   = String(r.e2_hist||r.E2_HIST||'').trim();
+    var k      = nomfor+'|'+hist;
+    if(!BUDGET_CFG.classif[k] && fornClassif[nomfor]){
+      BUDGET_CFG.classif[k] = Object.assign({}, fornClassif[nomfor]);
+      propagated++;
+    }
+  });
+  if(propagated > 0) console.log('[Budget] propagateClassif: '+propagated+' novos lançamentos classificados automaticamente');
 }
 
 function budgetGetMonths(){
@@ -4017,19 +4045,20 @@ function openBudgetDetail(tipo, area, ano){
     var am = budgetDespAm(r);
     if(!am || (ano && !am.startsWith(ano))) return;
     var val = parseFloat(r.valor||r.VALOR||r.e2_valor||r.E2_VALOR)||0;
-    // Agrupa por fornecedor (nomfor) — hist diferentes ficam na mesma linha
-    if(!map[nomfor]) map[nomfor] = {total:0, byMonth:{}, histByMonth:{}, allHists:{}, obs: classif.obs||''};
-    map[nomfor].total += val;
-    map[nomfor].byMonth[am] = (map[nomfor].byMonth[am]||0) + val;
+    // Agrupa por fornecedor normalizado (nomfor) — hist diferentes ficam na mesma linha
+    var nomforKey = nomfor.toUpperCase().replace(/\s+/g,' '); // normaliza capitalização e espaços
+    if(!map[nomforKey]) map[nomforKey] = {total:0, byMonth:{}, histByMonth:{}, allHists:{}, obs: classif.obs||'', nomforDisplay: nomfor};
+    map[nomforKey].total += val;
+    map[nomforKey].byMonth[am] = (map[nomforKey].byMonth[am]||0) + val;
     // Acumula TODOS os hist únicos do fornecedor (global e por mês)
     if(hist){
-      map[nomfor].allHists[hist] = 1;
-      if(!map[nomfor].histByMonth[am]) map[nomfor].histByMonth[am] = {};
-      map[nomfor].histByMonth[am][hist] = 1;
+      map[nomforKey].allHists[hist] = 1;
+      if(!map[nomforKey].histByMonth[am]) map[nomforKey].histByMonth[am] = {};
+      map[nomforKey].histByMonth[am][hist] = 1;
     }
   });
 
-  var fns = Object.keys(map).sort(function(a,b){ return map[b].total - map[a].total; });
+  var fns = Object.keys(map).sort(function(a,b){ return map[b].total - map[a].total; }); // keys are normalized
 
   // Months present
   var monthSet = {};
@@ -4056,7 +4085,7 @@ function openBudgetDetail(tipo, area, ano){
     var row = map[fn];
     var bg = i%2===0?'#fff':'#f7f9ff';
     h += '<tr style="background:'+bg+'">';
-    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;font-weight:600;color:#0f1a3a;position:sticky;left:0;background:'+bg+';z-index:1">'+escHtml(fn)+'</td>';
+    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;font-weight:600;color:#0f1a3a;position:sticky;left:0;background:'+bg+';z-index:1">'+escHtml(row.nomforDisplay||fn)+'</td>';
     // Mostra obs do classif + todos os hist únicos do fornecedor na mesma célula
     var allHistsStr = Object.keys(row.allHists||{}).join(' · ');
     var obsDisplay = [row.obs, allHistsStr].filter(Boolean).join(' | ');
@@ -4351,12 +4380,33 @@ async function saveBudgetCfg(btn){
     var obsEl  = document.getElementById('bcfg_obs_'+rid);
     var prev = BUDGET_CFG.classif[k]||{};
     var descEl = document.getElementById('bcfg_desc_'+rid);
-    BUDGET_CFG.classif[k] = {
+    var newClassif = {
       tipo: tipoEl.value,
       area: areaEl ? areaEl.value : (prev.area||''),
       obs:  obsEl  ? obsEl.value  : (prev.obs||''),
       desconsiderar: descEl ? descEl.value : (prev.desconsiderar||'nao')
     };
+    BUDGET_CFG.classif[k] = newClassif;
+
+    // Propaga para todos os lançamentos do mesmo fornecedor que ainda não têm classificação
+    // Extrai nomfor da chave (formato: "NOMFOR|HIST")
+    if(newClassif.tipo && newClassif.area){
+      var nomfor = k.split('|')[0];
+      BUDGET_DESP_RAW.forEach(function(r){
+        var rNomfor = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
+        var rHist   = String(r.e2_hist||r.E2_HIST||'').trim();
+        var rKey    = rNomfor+'|'+rHist;
+        if(rNomfor === nomfor && rKey !== k && !BUDGET_CFG.classif[rKey]){
+          // Mesmo fornecedor, hist diferente, sem classificação → herda tipo/área/obs/desconsiderar
+          BUDGET_CFG.classif[rKey] = {
+            tipo: newClassif.tipo,
+            area: newClassif.area,
+            obs:  newClassif.obs,
+            desconsiderar: newClassif.desconsiderar
+          };
+        }
+      });
+    }
   });
 
   try{
