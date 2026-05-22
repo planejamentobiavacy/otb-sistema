@@ -3329,6 +3329,9 @@ function closeDreCfg(){
 }
 
 function dreAmChange(am){
+  // Salva os valores do mês atual ANTES de trocar o mês
+  applyDreCfg();
+  // Agora troca o mês e recarrega o painel
   _dreCfgSelectedAm = am;
   var body = document.getElementById('dreCfgBody');
   if(body) body._selectedAm = am;
@@ -3774,56 +3777,153 @@ function openBudgetCfg(){
     return;
   }
 
-  // Sort by total value descending (maior despesa primeiro)
-  var keys = Object.keys(combos).sort(function(a,b){ return combos[b].total - combos[a].total; });
+  // Sort by total value descending
+  var allKeys = Object.keys(combos).sort(function(a,b){ return combos[b].total - combos[a].total; });
 
   var tipoOpts = '<option value="">— Tipo —</option>'+BUDGET_TIPOS.map(function(t){ return '<option value="'+t+'">'+t+'</option>'; }).join('');
   var areaOpts = '<option value="">— Área —</option>'+BUDGET_AREAS.map(function(a){ return '<option value="'+a+'">'+a+'</option>'; }).join('');
   var selStyle = 'padding:4px 7px;border:1.5px solid #d0d8ee;border-radius:5px;font-size:11px;font-family:inherit;color:#0f1a3a;background:#f7f9ff;cursor:pointer;min-width:130px';
+  var inpStyle = 'padding:4px 7px;border:1.5px solid #d0d8ee;border-radius:5px;font-size:11px;font-family:inherit;color:#0f1a3a;background:#f7f9ff;width:100%;box-sizing:border-box';
   var fmtVal = function(v){ return v>=0?'R$ '+Math.round(v).toLocaleString('pt-BR'):'-R$ '+Math.round(Math.abs(v)).toLocaleString('pt-BR'); };
 
-  var h = '<div style="font-size:11px;color:#7a8ab0;margin-bottom:10px">'+keys.length+' fornecedores encontrados, ordenados por valor total. Classifique cada um:</div>';
-  h += '<div style="overflow-y:auto;max-height:55vh">';
-  h += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
-  h += '<thead><tr style="background:#1a2547;color:#fff">';
-  h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">FORNECEDOR</th>';
-  h += '<th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:700;letter-spacing:1px">TOTAL R$</th>';
-  h += '<th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;letter-spacing:1px">HISTÓRICO</th>';
-  h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">TIPO</th>';
-  h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">ÁREA</th>';
-  h += '</tr></thead><tbody>';
+  // Guarda referência global para re-render do filtro
+  body._allKeys = allKeys;
+  body._combos  = combos;
+  body._tipoOpts = tipoOpts;
+  body._areaOpts = areaOpts;
+  body._selStyle = selStyle;
+  body._inpStyle = inpStyle;
+  body._fmtVal   = fmtVal;
 
-  keys.forEach(function(k, i){
-    var c = combos[k];
+  renderBudgetCfgTable('');
+  document.getElementById('budgetCfgOverlay').style.display='flex';
+}
+
+function renderBudgetCfgTable(search){
+  var body = document.getElementById('budgetCfgBody');
+  if(!body||!body._allKeys) return;
+  var allKeys   = body._allKeys;
+  var combos    = body._combos;
+  var tipoOpts  = body._tipoOpts;
+  var areaOpts  = body._areaOpts;
+  var selStyle  = body._selStyle;
+  var inpStyle  = body._inpStyle;
+  var fmtVal    = body._fmtVal;
+
+  var searchUC = (search||'').trim().toUpperCase();
+
+  // Separa: sem tipo/área (pendentes) e com tipo/área (classificados)
+  var pending = [], classified = [];
+  allKeys.forEach(function(k){
     var saved = BUDGET_CFG.classif[k]||{};
-    var bg = i%2===0?'#fff':'#f7f9ff';
-    h += '<tr style="background:'+bg+'">';
-    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#0f1a3a;font-weight:600;max-width:200px">'+c.nomfor+'</td>';
-    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#1a2547;font-weight:700;text-align:right;white-space:nowrap">'+fmtVal(c.total)+'</td>';
-    // Histórico: button that shows tooltip on hover
-    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;text-align:center">';
-    if(c.hist){
-      h += '<span title="'+c.hist.replace(/"/g,'&quot;')+'" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:#e8f0fe;border-radius:50%;color:#2352c8;font-size:11px;cursor:help;font-weight:700" tabindex="0">ℹ</span>';
-    } else {
-      h += '<span style="color:#ccc;font-size:11px">—</span>';
-    }
-    h += '</td>';
-    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8">';
-    h += '<select id="bcfg_tipo_'+i+'" data-key="'+k.replace(/"/g,'&quot;')+'" style="'+selStyle+'">';
-    h += tipoOpts.replace('value="'+(saved.tipo||'')+'"','value="'+(saved.tipo||'')+'" selected');
-    h += '</select></td>';
-    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8">';
-    h += '<select id="bcfg_area_'+i+'" data-key="'+k.replace(/"/g,'&quot;')+'" style="'+selStyle+'">';
-    h += areaOpts.replace('value="'+(saved.area||'')+'"','value="'+(saved.area||'')+'" selected');
-    h += '</select></td>';
-    h += '</tr>';
+    var hasTipo = saved.tipo && saved.tipo !== '';
+    var hasArea = saved.area && saved.area !== '';
+    if(hasTipo && hasArea) classified.push(k);
+    else pending.push(k);
   });
 
-  h += '</tbody></table></div>';
+  // Pendentes: sempre mostrados (sem filtro de busca)
+  // Classificados: só aparecem se há texto de busca
+  var showClassified = searchUC.length > 0
+    ? classified.filter(function(k){ return combos[k].nomfor.toUpperCase().indexOf(searchUC)>=0 || (BUDGET_CFG.classif[k].obs||'').toUpperCase().indexOf(searchUC)>=0; })
+    : [];
+
+  var pendingCount = pending.length;
+  var totalCount   = allKeys.length;
+  var classCount   = classified.length;
+
+  var h = '';
+  // Barra de busca + resumo
+  h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">';
+  h += '<div style="flex:1;min-width:200px">';
+  h += '<input id="bcfg_search" type="text" placeholder="🔍 Pesquisar fornecedor classificado..." value="'+escHtml(search||'')+'" oninput="renderBudgetCfgTable(this.value)" style="'+inpStyle+';font-size:12px;padding:6px 10px">';
+  h += '</div>';
+  h += '<div style="font-size:11px;color:#7a8ab0;white-space:nowrap">';
+  h += '<span style="color:#e05a2b;font-weight:700">'+pendingCount+'</span> pendentes · ';
+  h += '<span style="color:#1a7c3e;font-weight:700">'+classCount+'</span> classificados · ';
+  h += totalCount+' total';
+  h += '</div></div>';
+
+  h += '<div style="overflow-y:auto;max-height:52vh">';
+
+  // ── Pendentes ──
+  if(pending.length){
+    h += '<div style="font-size:10px;font-weight:700;letter-spacing:1px;color:#e05a2b;padding:6px 10px 4px;background:#fff8f5;border-left:3px solid #e05a2b;margin-bottom:2px">⚠ SEM CLASSIFICAÇÃO ('+pendingCount+')</div>';
+    h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">';
+    h += '<thead><tr style="background:#1a2547;color:#fff">';
+    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">FORNECEDOR</th>';
+    h += '<th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:700;letter-spacing:1px">TOTAL R$</th>';
+    h += '<th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;letter-spacing:1px">HIST.</th>';
+    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">TIPO</th>';
+    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">ÁREA</th>';
+    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">OBSERVAÇÕES</th>';
+    h += '</tr></thead><tbody>';
+    pending.forEach(function(k, i){
+      h += budgetCfgRow(k, i, combos[k], BUDGET_CFG.classif[k]||{}, tipoOpts, areaOpts, selStyle, inpStyle, fmtVal, 'p');
+    });
+    h += '</tbody></table>';
+  }
+
+  // ── Classificados (só quando há busca) ──
+  if(showClassified.length){
+    h += '<div style="font-size:10px;font-weight:700;letter-spacing:1px;color:#1a7c3e;padding:6px 10px 4px;background:#f0fff6;border-left:3px solid #1a7c3e;margin-bottom:2px">✔ CLASSIFICADOS — resultado da busca ('+showClassified.length+')</div>';
+    h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">';
+    h += '<thead><tr style="background:#1a2547;color:#fff">';
+    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">FORNECEDOR</th>';
+    h += '<th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:700;letter-spacing:1px">TOTAL R$</th>';
+    h += '<th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;letter-spacing:1px">HIST.</th>';
+    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">TIPO</th>';
+    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">ÁREA</th>';
+    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">OBSERVAÇÕES</th>';
+    h += '</tr></thead><tbody>';
+    showClassified.forEach(function(k, i){
+      h += budgetCfgRow(k, i, combos[k], BUDGET_CFG.classif[k]||{}, tipoOpts, areaOpts, selStyle, inpStyle, fmtVal, 'c');
+    });
+    h += '</tbody></table>';
+  } else if(searchUC.length > 0 && !showClassified.length){
+    h += '<div style="padding:12px 10px;color:#7a8ab0;font-size:12px;font-style:italic">Nenhum fornecedor classificado encontrado para "'+escHtml(search)+'".</div>';
+  }
+
+  if(!pending.length && !searchUC.length){
+    h += '<div style="padding:20px;text-align:center;color:#1a7c3e;font-weight:700;font-size:13px">✔ Todos os fornecedores estão classificados!</div>';
+  }
+
+  h += '</div>';
   body.innerHTML = h;
-  body._keys = keys;
-  body._count = keys.length;
-  document.getElementById('budgetCfgOverlay').style.display='flex';
+  // Restaura foco no campo de busca
+  var si = document.getElementById('bcfg_search');
+  if(si && search){ si.focus(); si.setSelectionRange(si.value.length, si.value.length); }
+}
+
+function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function budgetCfgRow(k, i, c, saved, tipoOpts, areaOpts, selStyle, inpStyle, fmtVal, prefix){
+  var bg = i%2===0?'#fff':'#f7f9ff';
+  var rid = prefix+'_'+i;
+  var kEsc = k.replace(/"/g,'&quot;');
+  var h = '<tr style="background:'+bg+'">';
+  h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#0f1a3a;font-weight:600;max-width:180px">'+escHtml(c.nomfor)+'</td>';
+  h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#1a2547;font-weight:700;text-align:right;white-space:nowrap">'+fmtVal(c.total)+'</td>';
+  h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;text-align:center">';
+  if(c.hist){
+    h += '<span title="'+escHtml(c.hist)+'" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:#e8f0fe;border-radius:50%;color:#2352c8;font-size:11px;cursor:help;font-weight:700">ℹ</span>';
+  } else {
+    h += '<span style="color:#ccc;font-size:11px">—</span>';
+  }
+  h += '</td>';
+  h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8">';
+  h += '<select id="bcfg_tipo_'+rid+'" data-key="'+kEsc+'" style="'+selStyle+'">';
+  h += tipoOpts.replace('value="'+(saved.tipo||'')+'"','value="'+(saved.tipo||'')+'" selected');
+  h += '</select></td>';
+  h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8">';
+  h += '<select id="bcfg_area_'+rid+'" data-key="'+kEsc+'" style="'+selStyle+'">';
+  h += areaOpts.replace('value="'+(saved.area||'')+'"','value="'+(saved.area||'')+'" selected');
+  h += '</select></td>';
+  h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;min-width:160px">';
+  h += '<input id="bcfg_obs_'+rid+'" data-key="'+kEsc+'" type="text" placeholder="Observação..." value="'+escHtml(saved.obs||'')+'" style="'+inpStyle+'">';
+  h += '</td>';
+  h += '</tr>';
+  return h;
 }
 
 function closeBudgetCfg(){
@@ -3832,18 +3932,21 @@ function closeBudgetCfg(){
 
 async function saveBudgetCfg(btn){
   var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
-  var body = document.getElementById('budgetCfgBody');
-  var keys = body._keys||[];
-  var count = body._count||0;
 
-  // Read all selects
-  for(var i=0;i<count;i++){
-    var tipoEl = document.getElementById('bcfg_tipo_'+i);
-    var areaEl = document.getElementById('bcfg_area_'+i);
-    if(!tipoEl) continue;
+  // Lê todos os selects e inputs de obs visíveis (pendentes e classificados em busca)
+  document.querySelectorAll('#budgetCfgBody select[id^="bcfg_tipo_"]').forEach(function(tipoEl){
     var k = tipoEl.getAttribute('data-key');
-    BUDGET_CFG.classif[k] = {tipo: tipoEl.value, area: areaEl?areaEl.value:''};
-  }
+    if(!k) return;
+    var rid = tipoEl.id.replace('bcfg_tipo_','');
+    var areaEl = document.getElementById('bcfg_area_'+rid);
+    var obsEl  = document.getElementById('bcfg_obs_'+rid);
+    var prev = BUDGET_CFG.classif[k]||{};
+    BUDGET_CFG.classif[k] = {
+      tipo: tipoEl.value,
+      area: areaEl ? areaEl.value : (prev.area||''),
+      obs:  obsEl  ? obsEl.value  : (prev.obs||'')
+    };
+  });
 
   try{
     await supaSave(TBLS.save_dre,'budget_cfg', BUDGET_CFG);
