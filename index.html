@@ -3851,8 +3851,11 @@ function budgetDespAm(r){
   var v = r.ano_mes_venc||r.ANO_MES_VENC
        || r.ano_mes||r.ANO_MES
        || r.dt_venc||r.DT_VENC
-       || r.data||r.DATA
        || r.e2_vencto||r.E2_VENCTO
+       || r.e2_emissao||r.E2_EMISSAO
+       || r.e2_datpag||r.E2_DATPAG
+       || r.e2_baixa||r.E2_BAIXA
+       || r.data||r.DATA
        || r.vencto||r.VENCTO
        || r.competencia||r.COMPETENCIA
        || '';
@@ -4078,7 +4081,7 @@ function openBudgetDetail(tipo, area, ano){
     var hist   = String(r.e2_hist||r.E2_HIST||'').trim();
     var k      = nomfor+'|'+hist;
     var classif= getBudgetClassif(nomfor, hist);
-    if(nomfor.toUpperCase().indexOf('HEI') >= 0 && am===undefined) console.log('[debug HEI RAW FIELDS] keys='+Object.keys(r).join(',')+' values='+JSON.stringify(r));
+    if(nomfor.toUpperCase().indexOf('HEI') >= 0 && !am) console.log('[debug HEI RAW FIELDS] keys='+Object.keys(r).join(',')+' sample='+JSON.stringify(r));
     if(nomfor.toUpperCase().indexOf('HEI') >= 0) console.log('[debug HEI] nomfor='+JSON.stringify(nomfor)+' am='+am+' val='+val+' classif.tipo='+classif.tipo);
     if(classif.tipo !== tipo) return;
     if(area && classif.area !== area) return;
@@ -4172,11 +4175,13 @@ function budgetAggregate(raw){
   var map = {};
   raw.forEach(function(r){
     var am    = budgetDespAm(r);
+    if(!am) return; // ignora registros sem data válida
     var nomfor= String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
     var hist  = String(r.e2_hist||r.E2_HIST||'').trim();
     var key   = am+'|'+nomfor+'|'+hist;
+    var val   = parseFloat(r.valor||r.VALOR||r.e2_valor||r.E2_VALOR||r.e2_valto||r.E2_VALTO||r.vlr||r.VLR)||0;
     if(!map[key]) map[key]={ano_mes_venc:am, e2_nomfor:nomfor, e2_hist:hist, valor:0};
-    map[key].valor += parseFloat(r.valor||r.VALOR||r.e2_valor||r.E2_VALOR)||0;
+    map[key].valor += val;
   });
   return Object.values(map);
 }
