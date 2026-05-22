@@ -502,6 +502,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       </div>
     </div>
     <div class="cfg-footer">
+      <button class="btn" onclick="openPermissions()" style="background:#1a2547;color:#fff;font-size:12px;margin-right:8px">🔐 Permissões</button>
       <button class="btn save" onclick="handleSaveAll(this)" style="margin-right:auto">💾 Salvar Tudo</button>
       <button class="btn" onclick="closeConfig()">Fechar</button>
     </div>
@@ -889,6 +890,13 @@ async function doNewPassword(){
 // Após login bem-sucedido: carrega dados do Supabase e vai para Home
 async function afterLogin(){
   showScreen('screenHome');
+  // Captura e-mail do usuário logado
+  CURRENT_USER_EMAIL = (_session && _session.user && _session.user.email) ? _session.user.email.toLowerCase().trim() : '';
+  // Carrega permissões salvas
+  try{
+    var permSaved = await supaLoad(TBLS.save_dre, 'user_permissions');
+    if(permSaved) USER_PERMISSIONS = permSaved;
+  } catch(e){ console.warn('[permissions] erro ao carregar:', e.message); }
   // Carrega OTB em background
   loadOtbFromSupabase();
 }
@@ -980,6 +988,78 @@ function openConfig(){
       + '</div>';
   }).join('');
   document.getElementById('cfgOverlay').style.display = 'flex';
+}
+
+// ── Painel de Permissões de Budget ──────────────────────
+function openPermissions(){
+  var emails = Object.keys(USER_PERMISSIONS).sort();
+  var areaOpts = BUDGET_AREAS.map(function(a){ return '<option value="'+a+'">'+a+'</option>'; }).join('');
+
+  var h = '<div style="padding:20px;max-width:700px;margin:0 auto">';
+  h += '<h3 style="margin:0 0 6px;color:#1a2547;font-size:15px">🔐 Permissões de Budget por Usuário</h3>';
+  h += '<p style="font-size:11px;color:#7a8ab0;margin:0 0 16px">Deixe em branco para acesso total. Selecione as áreas que o usuário pode ver em Despesas.</p>';
+
+  // Existing users
+  h += '<div id="permRows">';
+  if(emails.length){
+    emails.forEach(function(email){
+      var areas = (USER_PERMISSIONS[email]&&USER_PERMISSIONS[email].budgetAreas)||[];
+      h += permRow(email, areas);
+    });
+  }
+  h += '</div>';
+  h += '<div style="margin-top:12px;display:flex;gap:8px;align-items:center">';
+  h += '<input id="permNewEmail" type="email" placeholder="novo@email.com" style="flex:1;padding:7px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:12px;font-family:inherit">';
+  h += '<button onclick="addPermRow()" style="padding:7px 14px;background:#1a2547;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600">+ Adicionar</button>';
+  h += '</div>';
+  h += '<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">';
+  h += '<button onclick="savePermissions(this)" style="padding:8px 20px;background:#1a7c3e;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:700">💾 Salvar Permissões</button>';
+  h += '</div>';
+  h += '</div>';
+
+  document.getElementById('permOverlay').innerHTML = h;
+  document.getElementById('permOverlay').style.display = 'flex';
+}
+
+function permRow(email, selectedAreas){
+  var areaChecks = BUDGET_AREAS.map(function(a){
+    var checked = selectedAreas.indexOf(a)>=0 ? ' checked' : '';
+    return '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="'+a+'"'+checked+' style="cursor:pointer"> '+a+'</label>';
+  }).join('');
+  return '<div class="perm-row" data-email="'+email+'" style="background:#f7f9ff;border:1px solid #d0d8ee;border-radius:6px;padding:10px 12px;margin-bottom:8px">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+    +'<span style="font-size:12px;font-weight:700;color:#1a2547;flex:1">'+email+'</span>'
+    +'<button onclick="this.closest('.perm-row').remove()" style="background:#fff0f0;border:1px solid #e0a0a0;color:#c0181a;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">✕ Remover</button>'
+    +'</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:8px">'+areaChecks+'</div>'
+    +'</div>';
+}
+
+function addPermRow(){
+  var email = document.getElementById('permNewEmail').value.trim().toLowerCase();
+  if(!email) return;
+  if(document.querySelector('.perm-row[data-email="'+email+'"]')){ toast('E-mail já existe','err'); return; }
+  var div = document.createElement('div');
+  div.innerHTML = permRow(email, []);
+  document.getElementById('permRows').appendChild(div.firstChild);
+  document.getElementById('permNewEmail').value = '';
+}
+
+async function savePermissions(btn){
+  var orig = btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
+  var newPerms = {};
+  document.querySelectorAll('.perm-row').forEach(function(row){
+    var email = row.getAttribute('data-email');
+    var areas = Array.from(row.querySelectorAll('input[type=checkbox]:checked')).map(function(cb){ return cb.value; });
+    newPerms[email] = { budgetAreas: areas };
+  });
+  try{
+    await supaSave(TBLS.save_dre, 'user_permissions', newPerms);
+    USER_PERMISSIONS = newPerms;
+    toast('✔ Permissões salvas');
+    document.getElementById('permOverlay').style.display = 'none';
+  } catch(e){ toast('Erro: '+e.message,'err'); }
+  btn.disabled=false; btn.textContent=orig;
 }
 
 function closeConfig(){ document.getElementById('cfgOverlay').style.display = 'none'; }
@@ -3399,6 +3479,9 @@ var BUDGET_CFG = {
   classif: {},
   // saved tipoMap and areaMap for display
 };
+var USER_PERMISSIONS = {}; // { "email": { budgetAreas: ["E-comm/Mkt","Operações"] } } — null/empty = acesso total
+var CURRENT_USER_EMAIL = '';
+
 var BUDGET_TIPOS = ['Aluguel','Benefícios','CD','CMV','Comissão','Conselho','Convênio','Educação','Equipamentos','Eventos','FGTS','Frete','Impostos','INSS','Invest Mkt','Jurídico','Materiais de Consumo','Rescisão','Salários','Seguros','Sistemas','Água/Luz/Internet'];
 var BUDGET_AREAS = ['Administrativo','Avacy','Comercial','Compras','E-comm/Mkt','Financeiro','Fiscal','Operações','RH','TI'];
 
@@ -3551,6 +3634,15 @@ var _bPct = function(v){ if(v===null||v===undefined) return '—';
 
 var BUDGET_ANO_FILTER = '';
 
+
+// ── Permissões de Budget por usuário ──────────────────
+function getBudgetAreasPermitidas(){
+  if(!CURRENT_USER_EMAIL) return null; // sem login = acesso total
+  var p = USER_PERMISSIONS[CURRENT_USER_EMAIL];
+  if(!p || !p.budgetAreas || !p.budgetAreas.length) return null; // sem restrição = acesso total
+  return p.budgetAreas; // array de áreas permitidas
+}
+
 function renderBudget(anoFilter){
   if(anoFilter !== undefined) BUDGET_ANO_FILTER = anoFilter;
 
@@ -3663,6 +3755,9 @@ function renderBudget(anoFilter){
     if(c.area && c.desconsiderar !== 'sim') usedAreas[c.area] = true;
   });
   var areasUsadas = BUDGET_AREAS.filter(function(a){ return usedAreas[a]; });
+  // Filtra por permissão do usuário logado
+  var _areasPermitidas = getBudgetAreasPermitidas();
+  if(_areasPermitidas) areasUsadas = areasUsadas.filter(function(a){ return _areasPermitidas.indexOf(a) >= 0; });
 
   if(areasUsadas.length){
     secRow('Despesas', '💸');
@@ -4069,6 +4164,10 @@ async function saveBudgetCfg(btn){
   </div>
 </div>
 
+
+<!-- ══════════════ PERMISSÕES OVERLAY ══════════════ -->
+<div id="permOverlay" onclick="if(event.target===this)this.style.display='none'" style="display:none;position:fixed;inset:0;background:rgba(10,20,60,.55);z-index:1200;align-items:center;justify-content:center;backdrop-filter:blur(2px)">
+</div>
 <!-- ══════════════════ DRE CONFIG ═════════════════════ -->
 <div class="dre-cfg-overlay" id="dreCfgOverlay" onclick="if(event.target===this)closeDreCfg()">
   <div class="dre-cfg-box">
