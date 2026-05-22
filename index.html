@@ -2958,7 +2958,14 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   function getSalPct(key){
     if(!a.anomesList.length) return DRE_CONFIG_DEFAULTS[key]||0;
     var sum=0, count=0;
-    a.anomesList.forEach(function(am){ sum += getPct(key, am); count++; });
+    a.anomesList.forEach(function(am){
+      var v = getPct(key, am);
+      if(isNaN(v)){
+        console.error('[getSalPct] NaN! key='+key+' am='+am+' DRE_CONFIG[key]='+JSON.stringify(DRE_CONFIG[key])+' defaults='+DRE_CONFIG_DEFAULTS[key]);
+        v = DRE_CONFIG_DEFAULTS[key]||0;
+      }
+      sum += v; count++;
+    });
     return count > 0 ? sum / count : (DRE_CONFIG_DEFAULTS[key]||0);
   }
   var fobAvg=getSalPct('fob');
@@ -3002,9 +3009,12 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
     if(!a.anomesList.length) return FIXOS_DEF.marketing||0;
     var total=0;
     a.anomesList.forEach(function(am){
-      var amH = am.length===6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
-      var p = DRE_CFG_PARAMS[amH] || DRE_CFG_PARAMS[am];
-      total += (p && p.desp_mkt!=null) ? p.desp_mkt : (FIXOS_DEF.marketing||0);
+      var amS = String(am);
+      var amH = amS.length===6 ? amS.slice(0,4)+'-'+amS.slice(4,6) : amS;
+      var amN = amH.replace('-','');
+      var p = DRE_CFG_PARAMS[amH] || DRE_CFG_PARAMS[amN];
+      var val = (p && p.desp_mkt!=null) ? parseFloat(p.desp_mkt) : (parseFloat(FIXOS_DEF.marketing)||0);
+      total += isNaN(val) ? (parseFloat(FIXOS_DEF.marketing)||0) : val;
     });
     return total / a.anomesList.length;
   })();
