@@ -3751,6 +3751,7 @@ async function loadBudget(forceRaw){
     } catch(e){ console.warn('[Budget] DRE load error:', e.message); }
   }
   BUDGET_LOADED = true;
+  invalidateBudgetClassifIndex(); // reconstrói índice com dados novos
   // Propaga classificações existentes para novos lançamentos do mesmo fornecedor
   budgetPropagateClassif();
 }
@@ -3855,16 +3856,31 @@ function budgetDespAm(r){
   if(ano < 2015 || ano > 2030) return '';
   return am;
 }
+// Índice normalizado de classif — reconstruído automaticamente quando necessário
+var _budgetClassifIndex = null;
+function getBudgetClassif(nomfor, hist){
+  if(!_budgetClassifIndex){
+    _budgetClassifIndex = {};
+    Object.keys(BUDGET_CFG.classif).forEach(function(ck){
+      var nfUp = ck.split('|')[0].trim().toUpperCase();
+      if(!_budgetClassifIndex[nfUp]) _budgetClassifIndex[nfUp] = BUDGET_CFG.classif[ck];
+    });
+  }
+  var k = (nomfor+'|'+hist).trim();
+  return BUDGET_CFG.classif[k]
+      || BUDGET_CFG.classif[nomfor.trim()]
+      || _budgetClassifIndex[nomfor.trim().toUpperCase()]
+      || {};
+}
+function invalidateBudgetClassifIndex(){ _budgetClassifIndex = null; }
+
 function budgetDespByTipoArea(ym, tipo, area){
   var am = ym.replace('-','');
   return BUDGET_DESP_RAW.filter(function(r){
     var ramAm = budgetDespAm(r);
     var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'');
     var hist   = String(r.e2_hist||r.E2_HIST||'');
-    // Busca classif: primeiro pelo formato antigo nomfor|hist, depois pelo novo nomfor
-    var classif= BUDGET_CFG.classif[nomfor+'|'+hist]
-             || BUDGET_CFG.classif[nomfor.trim()]
-             || {};
+    var classif= getBudgetClassif(nomfor, hist);
     return ramAm===am
       && (!tipo || classif.tipo===tipo)
       && (!area || classif.area===area)
@@ -4036,12 +4052,20 @@ function renderBudget(anoFilter){
 function openBudgetDetail(tipo, area, ano){
   var ml=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   // Aggregate: fornecedor → { total, byMonth }
+  // Constrói índice reverso: nomfor normalizado → classif (suporta chave antiga e nova)
+  var _classifIndex = {};
+  Object.keys(BUDGET_CFG.classif).forEach(function(ck){
+    var parts = ck.split('|');
+    var nf = parts[0].trim().toUpperCase();
+    if(!_classifIndex[nf]) _classifIndex[nf] = BUDGET_CFG.classif[ck];
+  });
+
   var map = {};
   BUDGET_DESP_RAW.forEach(function(r){
     var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
     var hist   = String(r.e2_hist||r.E2_HIST||'').trim();
     var k      = nomfor+'|'+hist;
-    var classif= BUDGET_CFG.classif[k] || BUDGET_CFG.classif[nomfor] || {};
+    var classif= getBudgetClassif(nomfor, hist);
     if(classif.tipo !== tipo) return;
     if(area && classif.area !== area) return;
     if(classif.desconsiderar === 'sim') return;
@@ -4422,6 +4446,7 @@ async function saveBudgetCfg(btn){
     await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, savedAt: new Date().toISOString()});
     // Atualiza também budget_cfg para manter consistência
     await supaSave(TBLS.save_dre,'budget_cfg', BUDGET_CFG);
+    invalidateBudgetClassifIndex();
     toast('✔ Classificações salvas');
     closeBudgetCfg();
     renderBudget();
