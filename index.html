@@ -3658,7 +3658,7 @@ var BUDGET_CFG = {
 var USER_PERMISSIONS = {}; // { "email": { budgetAreas: ["E-comm/Mkt","Operações"] } } — null/empty = acesso total
 var CURRENT_USER_EMAIL = '';
 
-var BUDGET_TIPOS = ['Aluguel','Benefícios','CD','CMV','Comissão','Conselho','Convênio','Educação','Equipamentos','Eventos','FGTS','Frete','Impostos','INSS','Invest Mkt','Jurídico','Materiais de Consumo','Rescisão','Salários','Seguros','Sistemas','Água/Luz/Internet'];
+var BUDGET_TIPOS = ['Aluguel','Benefícios','CD','CMV','Comissão','Conselho','Convênio','Educação','Empréstimo','Equipamentos','Eventos','FGTS','Frete','Impostos','INSS','Invest Mkt','Jurídico','Materiais de Consumo','Rescisão','Salários','Seguros','Sistemas','Viagens','Água/Luz/Internet'];
 var BUDGET_AREAS = ['Administrativo','Avacy','Comercial','Compras','E-comm/Mkt','Financeiro','Fiscal','Operações','RH','TI'];
 
 async function openBudget(){
@@ -3771,7 +3771,7 @@ function budgetPropagateClassif(){
     var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
     var hist   = String(r.e2_hist||r.E2_HIST||'').trim();
     var k      = nomfor+'|'+hist;
-    if(!BUDGET_CFG.classif[k] && fornClassif[nomfor]){
+    if((!BUDGET_CFG.classif[k] && !BUDGET_CFG.classif[nomfor]) && fornClassif[nomfor]){
       BUDGET_CFG.classif[k] = Object.assign({}, fornClassif[nomfor]);
       propagated++;
     }
@@ -3861,7 +3861,10 @@ function budgetDespByTipoArea(ym, tipo, area){
     var ramAm = budgetDespAm(r);
     var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'');
     var hist   = String(r.e2_hist||r.E2_HIST||'');
-    var classif= BUDGET_CFG.classif[nomfor+'|'+hist]||{};
+    // Busca classif: primeiro pelo formato antigo nomfor|hist, depois pelo novo nomfor
+    var classif= BUDGET_CFG.classif[nomfor+'|'+hist]
+             || BUDGET_CFG.classif[nomfor.trim()]
+             || {};
     return ramAm===am
       && (!tipo || classif.tipo===tipo)
       && (!area || classif.area===area)
@@ -4038,7 +4041,7 @@ function openBudgetDetail(tipo, area, ano){
     var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
     var hist   = String(r.e2_hist||r.E2_HIST||'').trim();
     var k      = nomfor+'|'+hist;
-    var classif= BUDGET_CFG.classif[k]||{};
+    var classif= BUDGET_CFG.classif[k] || BUDGET_CFG.classif[nomfor] || {};
     if(classif.tipo !== tipo) return;
     if(area && classif.area !== area) return;
     if(classif.desconsiderar === 'sim') return;
