@@ -3650,6 +3650,36 @@ async function loadBudget(forceRaw){
     try{
       var dreSaved = await supaLoad(TBLS.save_dre,'dre_current');
       if(dreSaved && dreSaved.config) DRE_CONFIG = Object.assign(DRE_CONFIG, dreSaved.config);
+      if(dreSaved && dreSaved.fixos) Object.assign(FIXOS_DEF, dreSaved.fixos);
+      if(dreSaved && dreSaved.cfgParams){
+        Object.keys(dreSaved.cfgParams).forEach(function(am){
+          if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
+          Object.assign(DRE_CFG_PARAMS[am], dreSaved.cfgParams[am]);
+          if(DRE_CFG_PARAMS[am].desp_mkt != null){
+            var _v = parseFloat(DRE_CFG_PARAMS[am].desp_mkt);
+            if(isNaN(_v)||_v<0) delete DRE_CFG_PARAMS[am].desp_mkt;
+          }
+        });
+      }
+      // Carrega dre_cfg_params (tem prioridade — é a fonte da verdade para parâmetros)
+      try{
+        var cfgOnly = await supaLoad(TBLS.save_dre, 'dre_cfg_params');
+        if(cfgOnly){
+          if(cfgOnly.config) DRE_CONFIG = Object.assign(DRE_CONFIG, cfgOnly.config);
+          if(cfgOnly.fixos) Object.assign(FIXOS_DEF, cfgOnly.fixos);
+          if(cfgOnly.cfgParams){
+            Object.keys(cfgOnly.cfgParams).forEach(function(am){
+              if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
+              Object.assign(DRE_CFG_PARAMS[am], cfgOnly.cfgParams[am]);
+              if(DRE_CFG_PARAMS[am].desp_mkt != null){
+                var _v2 = parseFloat(DRE_CFG_PARAMS[am].desp_mkt);
+                if(isNaN(_v2)||_v2<0) delete DRE_CFG_PARAMS[am].desp_mkt;
+              }
+            });
+          }
+          console.log('[Budget] dre_cfg_params loaded, 202604='+JSON.stringify(DRE_CFG_PARAMS['202604']));
+        }
+      } catch(e){ console.warn('[Budget] dre_cfg_params load error:', e.message); }
       var snapRows = null;
       if(dreSaved && dreSaved.snapshot && dreSaved.snapshot.length) snapRows = dreExpandSnapshot(dreSaved.snapshot);
       else if(dreSaved && dreSaved.chunks > 1){
