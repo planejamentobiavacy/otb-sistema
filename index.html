@@ -3848,11 +3848,16 @@ function budgetDreMetric(ym, key){
 
 function budgetDespAm(r){
   // Tenta todos os campos possíveis de data
+  // pk_ano_mes_venc_e2_forn format: "202510740" = YYYYMM + forn_code
+  var _pk = String(r.pk_ano_mes_venc_e2_forn||r.PK_ANO_MES_VENC_E2_FORN||'');
+  var _pkAm = _pk.length >= 6 ? _pk.slice(0,6) : '';
   var v = r.ano_mes_venc||r.ANO_MES_VENC
        || r.ano_mes||r.ANO_MES
+       || (_pkAm.length===6 ? _pkAm : null)
        || r.dt_venc||r.DT_VENC
        || r.e2_vencto||r.E2_VENCTO
        || r.ano_mes_emissao||r.ANO_MES_EMISSAO
+       || r.ano_mes_baixa||r.ANO_MES_BAIXA
        || r.e2_emissao||r.E2_EMISSAO
        || r.e2_datpag||r.E2_DATPAG
        || r.e2_baixa||r.E2_BAIXA
@@ -4079,9 +4084,10 @@ function openBudgetDetail(tipo, area, ano){
   });
 
   // Debug: show first HEI record
-  var _heiSample = BUDGET_DESP_RAW.find(function(r){ return String(r.e2_nomfor||r.E2_NOMFOR||'').toUpperCase().indexOf('HEI')>=0; });
-  if(_heiSample) console.log('[HEI SAMPLE] keys='+Object.keys(_heiSample).join(',')+' am='+budgetDespAm(_heiSample)+' val='+(_heiSample.valor||_heiSample.VALOR)+' classif='+JSON.stringify(getBudgetClassif(String(_heiSample.e2_nomfor||''),String(_heiSample.e2_hist||''))));
-  else console.log('[HEI SAMPLE] NOT FOUND IN BUDGET_DESP_RAW, total rows='+BUDGET_DESP_RAW.length);
+  var _heiRows = BUDGET_DESP_RAW.filter(function(r){ return String(r.e2_nomfor||r.E2_NOMFOR||'').toUpperCase().indexOf('HEI')>=0; });
+  var _heiAms = _heiRows.map(function(r){ return budgetDespAm(r); }).filter(Boolean);
+  var _heiUniqAms = _heiAms.filter(function(v,i,a){ return a.indexOf(v)===i; }).sort();
+  console.log('[HEI SAMPLE] total='+_heiRows.length+' unique_months='+_heiUniqAms.join(',')+' classif='+JSON.stringify(getBudgetClassif('HEI BRASIL','')));
 
   var map = {};
   BUDGET_DESP_RAW.forEach(function(r){
