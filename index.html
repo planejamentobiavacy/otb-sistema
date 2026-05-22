@@ -2400,10 +2400,16 @@ async function loadDreFromSupabase(forceRaw){
     try{
       var savedCfgOnly = await supaLoad(TBLS.save_dre, 'dre_cfg_params');
       if(savedCfgOnly){
-        if(savedCfgOnly.config)    DRE_CONFIG     = Object.assign(DRE_CONFIG, savedCfgOnly.config);
+        if(savedCfgOnly.config)    DRE_CONFIG = Object.assign(DRE_CONFIG, savedCfgOnly.config);
         if(savedCfgOnly.fixos)     Object.assign(FIXOS_DEF, savedCfgOnly.fixos);
-        if(savedCfgOnly.cfgParams) DRE_CFG_PARAMS = Object.assign(DRE_CFG_PARAMS, savedCfgOnly.cfgParams);
-        console.log('[DRE] dre_cfg_params carregado, savedAt:', savedCfgOnly.savedAt);
+        if(savedCfgOnly.cfgParams){
+          // Deep merge por mês: preserva campos existentes em cada mês
+          Object.keys(savedCfgOnly.cfgParams).forEach(function(am){
+            if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
+            Object.assign(DRE_CFG_PARAMS[am], savedCfgOnly.cfgParams[am]);
+          });
+        }
+        console.log('[DRE] dre_cfg_params carregado, savedAt:', savedCfgOnly.savedAt, 'desp_mkt_202604=', DRE_CFG_PARAMS['202604']&&DRE_CFG_PARAMS['202604'].desp_mkt);
       }
     } catch(e){ console.warn('[DRE] dre_cfg_params não encontrado (primeira vez):', e.message); }
 
@@ -2645,6 +2651,12 @@ async function handleSaveDre(btn){
       snapshotRows: snapshot ? snapshot.length : 0,
       rawRows: DRE_RAW.length
     };
+
+    // Sempre salva params em chave separada (independente do snapshot)
+    await supaSave(TBLS.save_dre, 'dre_cfg_params', {
+      config: DRE_CONFIG, fixos: FIXOS_DEF, cfgParams: DRE_CFG_PARAMS,
+      savedAt: new Date().toISOString()
+    });
 
     if(!snapshot || !snapshot.length){
       await supaSave(TBLS.save_dre,'dre_current', Object.assign({},meta,{snapshot:[]}));
@@ -3005,18 +3017,23 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   // Marketing: valor fixo do mês (FIXOS_DEF.marketing) * shareRB
   // branding e leads são shares do total (ex: 60% branding, 40% performance)
   var mktBase=(function(){
-    // Soma desp_mkt de cada mês (já proporcional ao shareRB)
-    if(!a.anomesList.length) return FIXOS_DEF.marketing||0;
+    // Soma desp_mkt de cada mês
+    var fallback = parseFloat(FIXOS_DEF.marketing)||0;
+    if(!a.anomesList.length) return fallback;
     var total=0;
     a.anomesList.forEach(function(am){
       var amS = String(am);
       var amH = amS.length===6 ? amS.slice(0,4)+'-'+amS.slice(4,6) : amS;
       var amN = amH.replace('-','');
       var p = DRE_CFG_PARAMS[amH] || DRE_CFG_PARAMS[amN];
-      var val = (p && p.desp_mkt!=null) ? parseFloat(p.desp_mkt) : (parseFloat(FIXOS_DEF.marketing)||0);
-      total += isNaN(val) ? (parseFloat(FIXOS_DEF.marketing)||0) : val;
+      var raw = (p && p.desp_mkt!=null) ? p.desp_mkt : fallback;
+      var val = parseFloat(raw);
+      if(isNaN(val)){ console.error('[mktBase] NaN am='+amS+' p='+JSON.stringify(p)+' FIXOS_DEF.marketing='+FIXOS_DEF.marketing); val=fallback; }
+      total += val;
     });
-    return total / a.anomesList.length;
+    var result = total / a.anomesList.length;
+    if(isNaN(result)){ console.error('[mktBase] result NaN total='+total+' count='+a.anomesList.length+' FIXOS_DEF='+JSON.stringify(FIXOS_DEF)); return fallback; }
+    return result;
   })();
   var mkt_total=mktBase; // valor absoluto do mês (sem shareRB — será alocado por canal abaixo)
 
