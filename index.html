@@ -3603,7 +3603,7 @@ function renderBudget(anoFilter){
   h += '<span style="font-size:11px;font-weight:700;color:#7a8ab0;text-transform:uppercase;letter-spacing:.8px">Ano:</span>';
   h += '<select onchange="renderBudget(this.value)" style="padding:5px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:13px;font-family:inherit;color:#0f1a3a;background:#f7f9ff;cursor:pointer">'+anoOpts+'</select>';
   h += '</div>';
-  h += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:900px">';
+  h += '<div style="overflow:auto;max-height:calc(100vh - 180px)"><table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:900px">';
   h += '<thead><tr>';
   h += '<th style="text-align:left;padding:8px 12px;background:#1a2547;color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;position:sticky;left:0;top:0;z-index:5;min-width:220px;border-right:2px solid rgba(255,255,255,.2)">INDICADOR</th>';
   months.forEach(function(ym){
