@@ -3005,11 +3005,48 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
     });
     return total / a.anomesList.length;
   })();
-  var mkt_total=mktBase*shareRB;
-  // Leads Novos: 100% alocado ao canal Closer
-  // isCloser=null (total/outros): usa share normal; isCloser=true: mkt_total*1; isCloser=false: 0
-  var mkt_branding = mkt_total * getSalPct('branding');
-  var mkt_leads = isCloser===true ? mkt_total : (isCloser===false ? 0 : mkt_total * getSalPct('leads'));
+  var mkt_total=mktBase; // valor absoluto do mês (sem shareRB — será alocado por canal abaixo)
+
+  // Regras de rateio:
+  // Leads Novos  → 100% Closer
+  // Branding     → Farmer + Developer proporcional ao % rec bruta de cada um no total (Farmer+Developer)
+
+  var mkt_leads_total  = mkt_total * getSalPct('leads');
+  var mkt_brand_total  = mkt_total * getSalPct('branding');
+
+  var fvc = a.fat_v_canal || {};
+  var rb_farm = fvc['FARMER']    || 0;
+  var rb_dev2 = fvc['DEVELOPER'] || 0;
+  var rb_farm_dev = rb_farm + rb_dev2;
+
+  var mkt_leads, mkt_branding;
+
+  if(hasCanalData){
+    // View mensal ou por canal — usa fat real dos canais
+    if(canalCtxUC === 'CLOSER'){
+      mkt_leads    = mkt_leads_total;  // 100% leads → Closer
+      mkt_branding = 0;
+    } else if(canalCtxUC === 'FARMER'){
+      mkt_leads    = 0;
+      mkt_branding = rb_farm_dev > 0 ? mkt_brand_total * (rb_farm / rb_farm_dev) : mkt_brand_total * 0.5;
+    } else if(canalCtxUC === 'DEVELOPER'){
+      mkt_leads    = 0;
+      mkt_branding = rb_farm_dev > 0 ? mkt_brand_total * (rb_dev2 / rb_farm_dev) : mkt_brand_total * 0.5;
+    } else if(canalCtxUC){
+      // Outros canais (HAVA, KA, MARTINS etc) — sem marketing alocado
+      mkt_leads    = 0;
+      mkt_branding = 0;
+    } else {
+      // Total mensal — soma de todos os canais
+      mkt_leads    = mkt_leads_total;
+      mkt_branding = mkt_brand_total;
+    }
+  } else {
+    // Sem dados de canal — fallback: distribui por shareRB
+    mkt_leads    = mkt_leads_total  * shareRB;
+    mkt_branding = mkt_brand_total * shareRB;
+  }
+
   var mkt = mkt_branding + mkt_leads;
   // Lê fixos por mês se disponível, senão usa default global
   function getFixo(key, def){
