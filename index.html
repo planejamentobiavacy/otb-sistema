@@ -1029,7 +1029,7 @@ function permRow(email, selectedAreas){
   return '<div class="perm-row" data-email="'+email+'" style="background:#f7f9ff;border:1px solid #d0d8ee;border-radius:6px;padding:10px 12px;margin-bottom:8px">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
     +'<span style="font-size:12px;font-weight:700;color:#1a2547;flex:1">'+email+'</span>'
-    +'<button onclick="this.closest('.perm-row').remove()" style="background:#fff0f0;border:1px solid #e0a0a0;color:#c0181a;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">✕ Remover</button>'
+    +'<button onclick="this.parentElement.parentElement.remove()" style="background:#fff0f0;border:1px solid #e0a0a0;color:#c0181a;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">✕ Remover</button>'
     +'</div>'
     +'<div style="display:flex;flex-wrap:wrap;gap:8px">'+areaChecks+'</div>'
     +'</div>';
