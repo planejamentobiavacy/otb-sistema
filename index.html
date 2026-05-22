@@ -2395,6 +2395,18 @@ async function loadDreFromSupabase(forceRaw){
     if(saved && saved.fixos)  Object.assign(FIXOS_DEF, saved.fixos);
     if(saved && saved.cfgParams) DRE_CFG_PARAMS = Object.assign(DRE_CFG_PARAMS, saved.cfgParams);
 
+    // Carrega chave separada dre_cfg_params — tem prioridade sobre dre_current
+    // Garante que os parâmetros sobrevivem mesmo se o snapshot for regenerado ou nova versão publicada
+    try{
+      var savedCfgOnly = await supaLoad(TBLS.save_dre, 'dre_cfg_params');
+      if(savedCfgOnly){
+        if(savedCfgOnly.config)    DRE_CONFIG     = Object.assign(DRE_CONFIG, savedCfgOnly.config);
+        if(savedCfgOnly.fixos)     Object.assign(FIXOS_DEF, savedCfgOnly.fixos);
+        if(savedCfgOnly.cfgParams) DRE_CFG_PARAMS = Object.assign(DRE_CFG_PARAMS, savedCfgOnly.cfgParams);
+        console.log('[DRE] dre_cfg_params carregado, savedAt:', savedCfgOnly.savedAt);
+      }
+    } catch(e){ console.warn('[DRE] dre_cfg_params não encontrado (primeira vez):', e.message); }
+
     // Usa snapshot agregado se existir e não for forceRaw
     // Tenta snapshot se disponível
     var snapRows = null;
@@ -3401,6 +3413,16 @@ async function saveAndApplyDreCfg(btn){
   var orig = btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
   applyDreCfg(); // lê os campos, grava em DRE_CFG_PARAMS, re-renderiza DRE
   try{
+    // Salva cfgParams em chave SEPARADA e independente do snapshot
+    // Assim sobrevive a qualquer regeneração de snapshot ou nova versão do HTML
+    await supaSave(TBLS.save_dre, 'dre_cfg_params', {
+      config:    DRE_CONFIG,
+      fixos:     FIXOS_DEF,
+      cfgParams: DRE_CFG_PARAMS,
+      savedAt:   new Date().toISOString()
+    });
+
+    // Também atualiza o payload principal (com snapshot se disponível)
     var snapshot = DRE_RAW.length ? dreAggregateFull(DRE_RAW) : null;
     var payload = {
       config: DRE_CONFIG,
