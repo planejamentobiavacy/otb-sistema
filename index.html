@@ -3501,8 +3501,12 @@ function openDreCfg(){
     +'<div class="dre-cfg-sec">'
     +'<div class="dre-cfg-sec-hd">📢 Marketing</div>'
     +'<div class="dre-cfg-grid">'
-    +fieldBrl('Despesa Marketing Total (R$)', 'desp_mkt', despMkt||FIXOS_DEF.marketing||0,
-      despMkt ? '💸 Base otb_despesa: '+fmt(despMkt) : '⚠️ Sem dado na base — usando fixo')
+    +fieldBrl('Despesa Marketing Total (R$)', 'desp_mkt',
+      // Prioridade: 1) valor salvo manualmente no Config, 2) base otb_despesa, 3) fixo global
+      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].desp_mkt!=null ? DRE_CFG_PARAMS[am].desp_mkt : (despMkt||FIXOS_DEF.marketing||0)),
+      DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].desp_mkt!=null
+        ? '✅ Valor configurado manualmente: R$ '+Math.round(DRE_CFG_PARAMS[am].desp_mkt).toLocaleString('pt-BR')+(despMkt?' · Base: R$ '+Math.round(despMkt).toLocaleString('pt-BR'):'')
+        : (despMkt ? '💸 Base otb_despesa: '+fmt(despMkt) : '⚠️ Sem dado na base — usando fixo'))
     +fieldPct('Share Branding (% do Total Mkt)', 'branding', getP('branding'),
       'Aplica-se aos canais Farmer e Developer')
     +fieldPct('Share Performance (% do Total Mkt)', 'leads', getP('leads'),
