@@ -2,6 +2,9 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231a2a6c'/><text x='16' y='22' font-family='Arial' font-size='13' font-weight='bold' fill='white' text-anchor='middle'>OTB</text></svg>">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sistema OTB — AVACY</title>
@@ -3087,8 +3090,14 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   // Leads Novos  → 100% Closer
   // Branding     → Farmer + Developer proporcional ao % rec bruta de cada um no total (Farmer+Developer)
 
-  var mkt_leads_total  = mkt_total * getSalPct('leads');
-  var mkt_brand_total  = mkt_total * getSalPct('branding');
+  var _pLeads   = getSalPct('leads');
+  var _pBrand   = getSalPct('branding');
+  if(isNaN(_pLeads))   _pLeads   = DRE_CONFIG_DEFAULTS['leads']   || 0.015;
+  if(isNaN(_pBrand))   _pBrand   = DRE_CONFIG_DEFAULTS['branding'] || 0.025;
+  var mkt_leads_total  = mkt_total * _pLeads;
+  var mkt_brand_total  = mkt_total * _pBrand;
+  if(isNaN(mkt_leads_total))  mkt_leads_total  = 0;
+  if(isNaN(mkt_brand_total))  mkt_brand_total  = 0;
 
   // Para o rateio de branding (Farmer vs Developer), precisamos do fat global dos dois canais
   // no período — não apenas do slice atual (que já está filtrado por canal)
