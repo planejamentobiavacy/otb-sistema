@@ -3399,8 +3399,8 @@ var BUDGET_CFG = {
   classif: {},
   // saved tipoMap and areaMap for display
 };
-var BUDGET_TIPOS = ['Aluguel','Benefícios','CD','CMV','Comissão','Conselho','Convênio','Educação','Equipamentos','Eventos','FGTS','Frete','Impostos','INSS','Jurídico','Materiais de Consumo','Rescisão','Salários','Seguros','Sistemas','Água/Luz/Internet'];
-var BUDGET_AREAS = ['Administrativo','Avacy','Comercial','Compras','E-comm/Mkt','Financeiro','Fiscal','Operações','RH'];
+var BUDGET_TIPOS = ['Aluguel','Benefícios','CD','CMV','Comissão','Conselho','Convênio','Educação','Equipamentos','Eventos','FGTS','Frete','Impostos','INSS','Invest Mkt','Jurídico','Materiais de Consumo','Rescisão','Salários','Seguros','Sistemas','Água/Luz/Internet'];
+var BUDGET_AREAS = ['Administrativo','Avacy','Comercial','Compras','E-comm/Mkt','Financeiro','Fiscal','Operações','RH','TI'];
 
 async function openBudget(){
   showScreen('screenBudget');
@@ -3655,36 +3655,35 @@ function renderBudget(anoFilter){
   dataRow('FOB (R$)', function(ym){ return budgetDreMetric(ym,'fob')||null; }, {sub:true});
   dataRow('Montagem Grade (R$)', function(ym){ return budgetDreMetric(ym,'grade')||null; }, {sub:true});
 
-  // ── DESPESAS CLASSIFICADAS ──
-  // Get unique tipo/area combos that have data
-  var usedTipos = {};
+  // ── DESPESAS CLASSIFICADAS — agrupado por Área > Tipo ──
+  var usedAreas = {};
   BUDGET_DESP_RAW.forEach(function(r){
     var k = (r.e2_nomfor||r.E2_NOMFOR||'')+'|'+(r.e2_hist||r.E2_HIST||'');
     var c = BUDGET_CFG.classif[k]||{};
-    if(c.tipo) usedTipos[c.tipo] = true;
+    if(c.area && c.desconsiderar !== 'sim') usedAreas[c.area] = true;
   });
-  var tiposUsados = BUDGET_TIPOS.filter(function(t){ return usedTipos[t]; });
+  var areasUsadas = BUDGET_AREAS.filter(function(a){ return usedAreas[a]; });
 
-  if(tiposUsados.length){
+  if(areasUsadas.length){
     secRow('Despesas', '💸');
-    tiposUsados.forEach(function(tipo){
-      var usedAreas = {};
+    areasUsadas.forEach(function(area){
+      var usedTiposForArea = {};
       BUDGET_DESP_RAW.forEach(function(r){
         var k = (r.e2_nomfor||r.E2_NOMFOR||'')+'|'+(r.e2_hist||r.E2_HIST||'');
         var c = BUDGET_CFG.classif[k]||{};
-        if(c.tipo===tipo && c.area) usedAreas[c.area] = true;
+        if(c.area===area && c.tipo && c.desconsiderar !== 'sim') usedTiposForArea[c.tipo] = true;
       });
-      var areas = BUDGET_AREAS.filter(function(a){ return usedAreas[a]; });
+      var tipos = BUDGET_TIPOS.filter(function(t){ return usedTiposForArea[t]; });
 
-      // Total por tipo (sem botão) — botão Detalhes só nas áreas
-      (function(tipoCapture){
-        dataRow(tipoCapture, function(ym){ return budgetDespByTipoArea(ym,tipoCapture,null)||null; }, {bold:true});
-        areas.forEach(function(area){
-          (function(areaCapture){
-            dataRow('↳ '+areaCapture, function(ym){ return budgetDespByTipoArea(ym,tipoCapture,areaCapture)||null; }, {sub:true, detailBtn:{tipo:tipoCapture,area:areaCapture}});
-          })(area);
+      // Total por área (bold, sem botão)
+      (function(areaCapture){
+        dataRow(areaCapture, function(ym){ return budgetDespByTipoArea(ym,null,areaCapture)||null; }, {bold:true});
+        tipos.forEach(function(tipo){
+          (function(tipoCapture){
+            dataRow('↳ '+tipoCapture, function(ym){ return budgetDespByTipoArea(ym,tipoCapture,areaCapture)||null; }, {sub:true, detailBtn:{tipo:tipoCapture,area:areaCapture}});
+          })(tipo);
         });
-      })(tipo);
+      })(area);
     });
   }
 
