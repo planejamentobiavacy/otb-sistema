@@ -3127,6 +3127,7 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
 
   var mkt_leads, mkt_branding;
 
+  console.log('[mkt-branch] am='+a.anomesList[0]+' canalCtxUC='+JSON.stringify(canalCtxUC)+' mkt_total='+Math.round(mkt_total)+' brand_total='+Math.round(mkt_brand_total)+' leads_total='+Math.round(mkt_leads_total));
   if(canalCtxUC === 'CLOSER'){
     // Closer recebe 100% de Leads Novos, zero de Branding
     mkt_leads    = mkt_leads_total;
