@@ -897,6 +897,30 @@ async function afterLogin(){
     var permSaved = await supaLoad(TBLS.save_dre, 'user_permissions');
     if(permSaved) USER_PERMISSIONS = permSaved;
   } catch(e){ console.warn('[permissions] erro ao carregar:', e.message); }
+  // Carrega dre_cfg_params logo no login — garante que parâmetros estão disponíveis em qualquer tela
+  try{
+    var cfgEarly = await supaLoad(TBLS.save_dre, 'dre_cfg_params');
+    if(cfgEarly){
+      if(cfgEarly.config) DRE_CONFIG = Object.assign(DRE_CONFIG, cfgEarly.config);
+      if(cfgEarly.fixos) Object.assign(FIXOS_DEF, cfgEarly.fixos);
+      if(cfgEarly.cfgParams){
+        Object.keys(cfgEarly.cfgParams).forEach(function(am){
+          if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
+          Object.assign(DRE_CFG_PARAMS[am], cfgEarly.cfgParams[am]);
+          // Sanitiza NaN
+          ['desp_mkt','sal_adm','desp_gerais','cd_mensal','custoGrade'].forEach(function(k){
+            if(DRE_CFG_PARAMS[am][k] != null){
+              var _v = parseFloat(DRE_CFG_PARAMS[am][k]);
+              if(isNaN(_v)||_v<0) delete DRE_CFG_PARAMS[am][k];
+            }
+          });
+        });
+      }
+      console.log('[afterLogin] dre_cfg_params loaded, 202604='+JSON.stringify(DRE_CFG_PARAMS['202604']));
+    } else {
+      console.log('[afterLogin] dre_cfg_params not found yet');
+    }
+  } catch(e){ console.warn('[afterLogin] dre_cfg_params error:', e.message); }
   // Carrega OTB em background
   loadOtbFromSupabase();
 }
@@ -2394,16 +2418,19 @@ async function loadDreFromSupabase(forceRaw){
     }
     if(saved && saved.fixos)  Object.assign(FIXOS_DEF, saved.fixos);
     if(saved && saved.cfgParams){
-      // Deep merge + sanitize desp_mkt NaN
+      // dre_current é base — não sobrescreve campos já carregados pelo dre_cfg_params (afterLogin)
       Object.keys(saved.cfgParams).forEach(function(am){
         if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
-        Object.assign(DRE_CFG_PARAMS[am], saved.cfgParams[am]);
-        if(DRE_CFG_PARAMS[am].desp_mkt != null){
-          var v = parseFloat(DRE_CFG_PARAMS[am].desp_mkt);
-          if(isNaN(v) || v < 0) delete DRE_CFG_PARAMS[am].desp_mkt;
-        }
+        var src = saved.cfgParams[am] || {};
+        Object.keys(src).forEach(function(k){
+          // Só aplica se ainda não tem valor válido em memória
+          if(DRE_CFG_PARAMS[am][k] == null){
+            var _v = parseFloat(src[k]);
+            if(!isNaN(_v) && _v >= 0) DRE_CFG_PARAMS[am][k] = _v;
+          }
+        });
       });
-      console.log('[DRE] dre_current cfgParams loaded, 202604='+JSON.stringify(DRE_CFG_PARAMS['202604']));
+      console.log('[DRE] dre_current cfgParams merged (no-overwrite), 202604='+JSON.stringify(DRE_CFG_PARAMS['202604']));
     }
 
     // Carrega chave separada dre_cfg_params — tem prioridade sobre dre_current
