@@ -3616,12 +3616,19 @@ function renderBudget(anoFilter){
   }
   function dataRow(label, fn, opts){
     opts = opts||{};
-    var bold = opts.bold, sub = opts.sub, isPct = opts.pct;
+    var bold = opts.bold, sub = opts.sub, isPct = opts.pct, detailBtn = opts.detailBtn;
     var bg = bold ? '#eef2fc' : sub ? '#fafbff' : '#fff';
     var fw = bold ? '700' : '400';
     var pl = sub ? '28px' : '12px';
     h += '<tr>';
-    h += '<td style="padding:6px '+pl+';background:'+bg+';font-weight:'+fw+';color:#0f1a3a;border-bottom:1px solid #eef1f8;border-right:2px solid #d0d8ee;position:sticky;left:0;z-index:1">'+label+'</td>';
+    var btnHtml = '';
+    if(detailBtn){
+      var dTipo = escHtml(detailBtn.tipo||'');
+      var dArea = escHtml(detailBtn.area||'');
+      var dAno  = escHtml(selectedAno||'');
+      btnHtml = '<button data-tipo="'+dTipo+'" data-area="'+dArea+'" data-ano="'+dAno+'" onclick="openBudgetDetail(this.dataset.tipo,this.dataset.area,this.dataset.ano)" style="margin-left:8px;padding:1px 7px;font-size:10px;font-weight:600;border:1.5px solid #2352c8;border-radius:4px;background:#fff;color:#2352c8;cursor:pointer;vertical-align:middle">detalhes</button>';
+    }
+    h += '<td style="padding:6px '+pl+';background:'+bg+';font-weight:'+fw+';color:#0f1a3a;border-bottom:1px solid #eef1f8;border-right:2px solid #d0d8ee;position:sticky;left:0;z-index:1">'+label+btnHtml+'</td>';
     months.forEach(function(ym){
       var val = fn(ym);
       var future = isFuture(ym);
@@ -3682,6 +3689,86 @@ function renderBudget(anoFilter){
   h += '</tbody></table></div></div>';
   document.getElementById('budgetBody').innerHTML = h;
   var _be=document.getElementById('budgetEmpty'); if(_be) _be.style.display='none';
+}
+
+// ── Budget Detail Modal ─────────────────────────────────
+function openBudgetDetail(tipo, area, ano){
+  var ml=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  // Aggregate: fornecedor → { total, byMonth }
+  var map = {};
+  BUDGET_DESP_RAW.forEach(function(r){
+    var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
+    var hist   = String(r.e2_hist||r.E2_HIST||'').trim();
+    var k      = nomfor+'|'+hist;
+    var classif= BUDGET_CFG.classif[k]||{};
+    if(classif.tipo !== tipo) return;
+    if(area && classif.area !== area) return;
+    var am = budgetDespAm(r);
+    if(!am || (ano && !am.startsWith(ano))) return;
+    var val = parseFloat(r.valor||r.VALOR||r.e2_valor||r.E2_VALOR)||0;
+    if(!map[nomfor]) map[nomfor] = {total:0, byMonth:{}, obs: classif.obs||''};
+    map[nomfor].total += val;
+    map[nomfor].byMonth[am] = (map[nomfor].byMonth[am]||0) + val;
+  });
+
+  var fns = Object.keys(map).sort(function(a,b){ return map[b].total - map[a].total; });
+
+  // Months present
+  var monthSet = {};
+  fns.forEach(function(fn){ Object.keys(map[fn].byMonth).forEach(function(am){ monthSet[am]=1; }); });
+  var months = Object.keys(monthSet).sort();
+
+  var title = tipo + (area ? ' — '+area : '') + (ano ? ' ('+ano+')' : '');
+  var fmtV = function(v){ if(!v) return '<span style="color:#ccc">—</span>'; return v<0?'<span style="color:#c0181a">-R$'+Math.round(Math.abs(v)).toLocaleString('pt-BR')+'</span>':'R$'+Math.round(v).toLocaleString('pt-BR'); };
+
+  var h = '<div style="font-size:11px;color:#7a8ab0;margin-bottom:10px">'+fns.length+' fornecedores · '+months.length+' meses · ordenado por maior valor total</div>';
+  h += '<div style="overflow:auto;max-height:60vh">';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px">';
+  h += '<thead><tr style="background:#1a2547;color:#fff;position:sticky;top:0">';
+  h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;position:sticky;left:0;background:#1a2547;z-index:2">FORNECEDOR</th>';
+  h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;min-width:140px">OBSERVAÇÕES</th>';
+  months.forEach(function(am){
+    var y=am.slice(0,4), mo=+am.slice(4,6);
+    h += '<th style="padding:7px 8px;text-align:right;font-size:10px;font-weight:700;min-width:90px">'+ml[mo]+'/'+y.slice(2)+'</th>';
+  });
+  h += '<th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:700;background:#0f1a3a;min-width:110px">TOTAL</th>';
+  h += '</tr></thead><tbody>';
+
+  fns.forEach(function(fn, i){
+    var row = map[fn];
+    var bg = i%2===0?'#fff':'#f7f9ff';
+    h += '<tr style="background:'+bg+'">';
+    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;font-weight:600;color:#0f1a3a;position:sticky;left:0;background:'+bg+';z-index:1">'+escHtml(fn)+'</td>';
+    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#7a8ab0;font-size:11px">'+escHtml(row.obs)+'</td>';
+    months.forEach(function(am){
+      h += '<td style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:right">'+fmtV(row.byMonth[am])+'</td>';
+    });
+    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;text-align:right;font-weight:700;color:#1a2547;background:#f0f3fa">'+fmtV(row.total)+'</td>';
+    h += '</tr>';
+  });
+
+  // Total row
+  h += '<tr style="background:#1a2547;color:#fff;font-weight:700">';
+  h += '<td style="padding:7px 10px;position:sticky;left:0;background:#1a2547;z-index:1">TOTAL</td>';
+  h += '<td></td>';
+  var grandTotal = 0;
+  months.forEach(function(am){
+    var sum = fns.reduce(function(s,fn){ return s+(map[fn].byMonth[am]||0); },0);
+    grandTotal += sum;
+    h += '<td style="padding:7px 8px;text-align:right">'+fmtV(sum)+'</td>';
+  });
+  h += '<td style="padding:7px 10px;text-align:right;background:#0f1a3a">'+fmtV(grandTotal)+'</td>';
+  h += '</tr>';
+
+  h += '</tbody></table></div>';
+
+  document.getElementById('budgetDetailTitle').textContent = title;
+  document.getElementById('budgetDetailBody').innerHTML = h;
+  document.getElementById('budgetDetailOverlay').style.display = 'flex';
+}
+
+function closeBudgetDetail(){
+  document.getElementById('budgetDetailOverlay').style.display = 'none';
 }
 
 // ── Budget Config ──────────────────────────────────────
@@ -3945,6 +4032,21 @@ async function saveBudgetCfg(btn){
 }
 
 </script>
+
+
+<!-- ══════════════ BUDGET DETAIL MODAL ══════════════ -->
+<div class="dre-cfg-overlay" id="budgetDetailOverlay" onclick="if(event.target===this)closeBudgetDetail()" style="display:none">
+  <div class="dre-cfg-box" style="width:min(1200px,96vw)">
+    <div class="dre-cfg-hd">
+      <div><h2>📊 Detalhes por Fornecedor</h2><small id="budgetDetailTitle"></small></div>
+      <button class="dre-cfg-close" onclick="closeBudgetDetail()">×</button>
+    </div>
+    <div style="padding:16px 20px" id="budgetDetailBody"></div>
+    <div class="dre-cfg-ft">
+      <button class="btn" onclick="closeBudgetDetail()" style="background:#f0f3fa;border-color:#d0d8ee;color:#0f1a3a">Fechar</button>
+    </div>
+  </div>
+</div>
 
 <!-- ══════════════════ DRE CONFIG ═════════════════════ -->
 <div class="dre-cfg-overlay" id="dreCfgOverlay" onclick="if(event.target===this)closeDreCfg()">
