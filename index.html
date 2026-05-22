@@ -2917,7 +2917,7 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   }
   var sv_closer=rb_closer*getSalPct('closer'),sv_developer=rb_developer*getSalPct('developer'),sv_farmer=rb_farmer*getSalPct('farmer');
   var com_martins=rb_martins*getSalPct('martins'),com_rca=rb_rca*getSalPct('rca');
-  if(a.anomesList.length===1) console.log('[dreCalc] am='+a.anomesList[0]+' closer='+getSalPct('closer')+' developer='+getSalPct('developer')+' farmer='+getSalPct('farmer')+' rb_canal='+Math.round(rb_canal)+' sv_closer='+Math.round(sv_closer)+' sv_developer='+Math.round(sv_developer)+' sv_farmer='+Math.round(sv_farmer)+' DRE_CONFIG.closer='+JSON.stringify(DRE_CONFIG.closer));
+  if(a.anomesList.length===1) console.log('[dreCalc] am='+a.anomesList[0]+' closer='+getSalPct('closer')+' developer='+getSalPct('developer')+' farmer='+getSalPct('farmer')+' sv_closer='+Math.round(sv_closer)+' sv_developer='+Math.round(sv_developer)+' sv_farmer='+Math.round(sv_farmer)+' DRE_CONFIG.closer='+JSON.stringify(DRE_CONFIG.closer));
   var sv=sv_closer+sv_developer+sv_farmer,com=com_martins+com_rca;
   var mb=rl-cmv-fob-grade,mc=mb-sv-com;
   var rf_rec=a.rec_frete,cf=a.custo_frete>0?a.custo_frete:rl*0.031;
