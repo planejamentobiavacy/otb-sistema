@@ -2939,6 +2939,7 @@ function dreAgg(rows){
 }
 function dreCalc(a,shareRB,shareQTD,canalCtx){
   shareRB=shareRB||1;shareQTD=shareQTD||1;
+  if(a.anomesList&&a.anomesList.length===1) console.log('[dreCalc-ENTRY] am='+a.anomesList[0]+' canalCtx='+JSON.stringify(canalCtx)+' type='+typeof canalCtx);
   var isCloser = canalCtx ? String(canalCtx).toUpperCase()==='CLOSER' : null; // null = unknown (mensal total)
   var rb_dev=a.fat_v,dev=a.dev,rb_gross=rb_dev+dev,rb=rb_dev,rl_base=rb,imp=a.icms+a.cofins+a.pis+a.fecpst,rl=rb-imp,cmv=a.custo;
   var cmv_b=cmv>0?cmv/0.79:0,mkp=cmv_b>0?(rb/cmv_b-1):0,mg_prod=rl>0?(1-cmv/rl):0;
