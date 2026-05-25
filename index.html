@@ -3640,7 +3640,8 @@ var BUDGET_LOADED = false;
 var BUDGET_CFG = {
   // classif[e2_nomfor+'|'+e2_hist] = {tipo, area}
   classif: {},
-  // saved tipoMap and areaMap for display
+  // tiposIgnorados: set de tipos excluídos do Budget
+  tiposIgnorados: {}
 };
 var USER_PERMISSIONS = {}; // { "email": { budgetAreas: ["E-comm/Mkt","Operações"] } } — null/empty = acesso total
 var CURRENT_USER_EMAIL = '';
@@ -3666,6 +3667,7 @@ async function loadBudget(forceRaw){
   try{
     var savedClassif = await supaLoad(TBLS.save_dre,'budget_classif');
     if(savedClassif && savedClassif.classif){
+      if(savedClassif.tiposIgnorados) BUDGET_CFG.tiposIgnorados = savedClassif.tiposIgnorados;
       // Merge: preserva entradas existentes, aplica por cima as salvas na chave dedicada
       Object.assign(BUDGET_CFG.classif, savedClassif.classif);
       console.log('[Budget] budget_classif carregado, savedAt:', savedClassif.savedAt, 'entradas:', Object.keys(savedClassif.classif).length);
@@ -3893,7 +3895,8 @@ function budgetDespByTipoArea(ym, tipo, area){
     return ramAm===am
       && (!tipo || classif.tipo===tipo)
       && (!area || classif.area===area)
-      && classif.desconsiderar !== 'sim';
+      && classif.desconsiderar !== 'sim'
+      && !BUDGET_CFG.tiposIgnorados[classif.tipo];
   }).reduce(function(s,r){ return s+(parseFloat(r.valor||r.VALOR||r.e2_valor||r.E2_VALOR)||0);},0);
 }
 
@@ -4036,7 +4039,7 @@ function renderBudget(anoFilter){
       BUDGET_DESP_RAW.forEach(function(r){
         var k = (r.e2_nomfor||r.E2_NOMFOR||'')+'|'+(r.e2_hist||r.E2_HIST||'');
         var c = BUDGET_CFG.classif[k]||{};
-        if(c.area===area && c.tipo && c.desconsiderar !== 'sim') usedTiposForArea[c.tipo] = true;
+        if(c.area===area && c.tipo && c.desconsiderar !== 'sim' && !BUDGET_CFG.tiposIgnorados[c.tipo]) usedTiposForArea[c.tipo] = true;
       });
       var tipos = BUDGET_TIPOS.filter(function(t){ return usedTiposForArea[t]; });
 
@@ -4310,6 +4313,19 @@ function renderBudgetCfgTable(search){
   var classCount   = classified.length;
 
   var h = '';
+  // ── Tipos Ignorados ──
+  h += '<div style="background:#fff8f5;border:1.5px solid #e05a2b;border-radius:8px;padding:12px 16px;margin-bottom:14px">';
+  h += '<div style="font-size:11px;font-weight:700;color:#e05a2b;letter-spacing:1px;margin-bottom:8px">⛔ TIPOS IGNORADOS NO BUDGET</div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+  BUDGET_TIPOS.forEach(function(tipo){
+    var ignored = !!BUDGET_CFG.tiposIgnorados[tipo];
+    h += '<label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:12px;padding:4px 10px;border-radius:20px;border:1.5px solid '+(ignored?'#e05a2b':'#d0d8ee')+';background:'+(ignored?'#fff0ec':'#fff')+';color:'+(ignored?'#e05a2b':'#555')+';font-weight:'+(ignored?'700':'400')+'">';
+    h += '<input type="checkbox" data-tipo-ignorar="'+escHtml(tipo)+'" '+(ignored?'checked':'')+' style="cursor:pointer"> '+escHtml(tipo);
+    h += '</label>';
+  });
+  h += '</div>';
+  h += '<div style="font-size:10px;color:#a07060;margin-top:6px">Tipos marcados não aparecem no Dashboard do Budget nem nos cálculos</div>';
+  h += '</div>';
   // Barra de busca + resumo
   h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">';
   h += '<div style="flex:1;min-width:200px">';
@@ -4455,9 +4471,15 @@ async function saveBudgetCfg(btn){
     BUDGET_CFG.classif[k] = newClassif;
   });
 
+  // Lê os tipos ignorados dos checkboxes
+  BUDGET_CFG.tiposIgnorados = {};
+  document.querySelectorAll('#budgetCfgBody input[data-tipo-ignorar]').forEach(function(cb){
+    if(cb.checked) BUDGET_CFG.tiposIgnorados[cb.getAttribute('data-tipo-ignorar')] = true;
+  });
+
   try{
     // Salva em chave dedicada (sobrevive a regeneração de snapshot)
-    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, savedAt: new Date().toISOString()});
+    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados, savedAt: new Date().toISOString()});
     // Atualiza também budget_cfg para manter consistência
     await supaSave(TBLS.save_dre,'budget_cfg', BUDGET_CFG);
     invalidateBudgetClassifIndex();
