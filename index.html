@@ -4015,10 +4015,6 @@ function renderBudget(anoFilter){
   secRow('CMV', '🏭');
   dataRow('Margem Produto %', function(ym){ return budgetDreMetric(ym,'mg_prod'); }, {bold:true, pct:true});
 
-  // ── CUSTOS ──
-  secRow('Custos Operacionais', '💰');
-  dataRow('FOB (R$)', function(ym){ return budgetDreMetric(ym,'fob')||null; }, {sub:true});
-  dataRow('Montagem Grade (R$)', function(ym){ return budgetDreMetric(ym,'grade')||null; }, {sub:true});
 
   // ── DESPESAS CLASSIFICADAS — agrupado por Área > Tipo ──
   var usedAreas = {};
