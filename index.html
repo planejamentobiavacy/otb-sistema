@@ -4026,9 +4026,12 @@ function renderBudget(anoFilter){
       if(future && simKey && val===null){
         // Mês futuro sem dado real: input simulável
         var simVal = BUDGET_CFG.sim[ym] && BUDGET_CFG.sim[ym][simKey] != null ? (BUDGET_CFG.sim[ym][simKey]*100).toFixed(1) : '';
-        display = '<input type="number" step="0.1" min="0" max="100" placeholder="—" value="'+simVal+'"'
-          +' onchange="budgetSetSim(''+ym+'',''+simKey+'',this.value)"'
-          +' style="width:58px;text-align:center;border:1px solid #a0b4e0;border-radius:4px;padding:2px 4px;font-size:11px;background:#eef5ff;color:#1a56c4;font-weight:700">';
+        var inp = document.createElement('input');
+        inp.type='number'; inp.step='0.1'; inp.min='0'; inp.max='100'; inp.placeholder='—'; inp.value=simVal;
+        inp.dataset.ym=ym; inp.dataset.key=simKey;
+        inp.setAttribute('onchange','budgetSetSim(this.dataset.ym,this.dataset.key,this.value)');
+        inp.style.cssText='width:58px;text-align:center;border:1px solid #a0b4e0;border-radius:4px;padding:2px 4px;font-size:11px;background:#eef5ff;color:#1a56c4;font-weight:700';
+        display = inp.outerHTML;
       } else {
         display = val===null ? '<span style="color:#ccc">—</span>' : isPct ? _bPct(val) : _bFmt(val);
       }
