@@ -3639,7 +3639,9 @@ var BUDGET_CFG = {
   // classif[e2_nomfor+'|'+e2_hist] = {tipo, area}
   classif: {},
   // tiposIgnorados: set de tipos excluídos do Budget
-  tiposIgnorados: {}
+  tiposIgnorados: {},
+  // sim: valores simulados por mês {ym: {icms_pct, piscofins_pct, mg_prod}}
+  sim: {}
 };
 var USER_PERMISSIONS = {}; // { "email": { budgetAreas: ["E-comm/Mkt","Operações"] } } — null/empty = acesso total
 var CURRENT_USER_EMAIL = '';
@@ -3666,6 +3668,7 @@ async function loadBudget(forceRaw){
     var savedClassif = await supaLoad(TBLS.save_dre,'budget_classif');
     if(savedClassif && savedClassif.classif){
       if(savedClassif.tiposIgnorados) BUDGET_CFG.tiposIgnorados = savedClassif.tiposIgnorados;
+      if(savedClassif.sim) BUDGET_CFG.sim = savedClassif.sim;
       // Merge: preserva entradas existentes, aplica por cima as salvas na chave dedicada
       Object.assign(BUDGET_CFG.classif, savedClassif.classif);
       console.log('[Budget] budget_classif carregado, savedAt:', savedClassif.savedAt, 'entradas:', Object.keys(savedClassif.classif).length);
@@ -3766,6 +3769,28 @@ function budgetPropagateClassif(){
   if(propagated > 0) console.log('[Budget] propagateClassif: '+propagated+' novos lançamentos classificados automaticamente');
 }
 
+
+function budgetSetSim(ym, key, rawVal){
+  if(!BUDGET_CFG.sim[ym]) BUDGET_CFG.sim[ym] = {};
+  var v = parseFloat(rawVal);
+  if(!isNaN(v) && v >= 0) BUDGET_CFG.sim[ym][key] = v / 100;
+  else delete BUDGET_CFG.sim[ym][key];
+  // Auto-salva após 1s de inatividade
+  if(window._budgetSimSaveTimer) clearTimeout(window._budgetSimSaveTimer);
+  window._budgetSimSaveTimer = setTimeout(async function(){
+    try{
+      await supaSave(TBLS.save_dre,'budget_classif', {
+        classif: BUDGET_CFG.classif,
+        tiposIgnorados: BUDGET_CFG.tiposIgnorados,
+        sim: BUDGET_CFG.sim,
+        savedAt: new Date().toISOString()
+      });
+      invalidateBudgetClassifIndex();
+      renderBudget();
+    } catch(e){ console.warn('[budgetSetSim] save error:', e.message); }
+  }, 1000);
+}
+
 function budgetGetMonths(){
   var set = {};
   // From DRE_RAW (ano + mes fields)
@@ -3819,17 +3844,21 @@ function budgetDreMetric(ym, key){
   var rows = DRE_RAW.filter(function(r){
     return String(r.ano||r.ANO)===ano && String(r.mes||r.MES||'').padStart(2,'0')===mes;
   });
-  if(!rows.length) return null;
-  var a = dreAgg(rows);
-  var d = dreCalc(a,1,1);
-  var map = {
-    icms_pct: a.fat_v>0 ? a.icms/a.fat_v : 0,
-    piscofins_pct: a.fat_v>0 ? (a.cofins+a.pis+a.fecpst)/a.fat_v : 0,
-    mg_prod: d.mg_prod,
-    fob: d.fob,
-    grade: d.grade||0,
-  };
-  return map[key] != null ? map[key] : null;
+  if(rows.length){
+    var a = dreAgg(rows);
+    var d = dreCalc(a,1,1);
+    var map = {
+      icms_pct: a.fat_v>0 ? a.icms/a.fat_v : 0,
+      piscofins_pct: a.fat_v>0 ? (a.cofins+a.pis+a.fecpst)/a.fat_v : 0,
+      mg_prod: d.mg_prod,
+      fob: d.fob,
+      grade: d.grade||0,
+    };
+    return map[key] != null ? map[key] : null;
+  }
+  // Mês futuro: usa valor simulado se disponível
+  var sim = BUDGET_CFG.sim[ym];
+  return (sim && sim[key] != null) ? sim[key] : null;
 }
 
 function budgetDespAm(r){
@@ -3977,7 +4006,7 @@ function renderBudget(anoFilter){
   }
   function dataRow(label, fn, opts){
     opts = opts||{};
-    var bold = opts.bold, sub = opts.sub, isPct = opts.pct, detailBtn = opts.detailBtn;
+    var bold = opts.bold, sub = opts.sub, isPct = opts.pct, detailBtn = opts.detailBtn, simKey = opts.simKey||null;
     var bg = bold ? '#eef2fc' : sub ? '#fafbff' : '#fff';
     var fw = bold ? '700' : '400';
     var pl = sub ? '28px' : '12px';
@@ -3993,9 +4022,18 @@ function renderBudget(anoFilter){
     months.forEach(function(ym){
       var val = fn(ym);
       var future = isFuture(ym);
-      var display = val===null ? '<span style="color:#ccc">—</span>' : isPct ? _bPct(val) : _bFmt(val);
+      var display;
+      if(future && simKey && val===null){
+        // Mês futuro sem dado real: input simulável
+        var simVal = BUDGET_CFG.sim[ym] && BUDGET_CFG.sim[ym][simKey] != null ? (BUDGET_CFG.sim[ym][simKey]*100).toFixed(1) : '';
+        display = '<input type="number" step="0.1" min="0" max="100" placeholder="—" value="'+simVal+'"'
+          +' onchange="budgetSetSim(''+ym+'',''+simKey+'',this.value)"'
+          +' style="width:58px;text-align:center;border:1px solid #a0b4e0;border-radius:4px;padding:2px 4px;font-size:11px;background:#eef5ff;color:#1a56c4;font-weight:700">';
+      } else {
+        display = val===null ? '<span style="color:#ccc">—</span>' : isPct ? _bPct(val) : _bFmt(val);
+      }
       var color = (typeof val==='number'&&val<0) ? '#c0181a' : (future?'#1a56c4':'#0f1a3a');
-      h += '<td style="text-align:center;padding:6px 10px;background:'+(future?'#f0f5ff':bg)+';font-weight:'+fw+';color:'+color+';border-bottom:1px solid #eef1f8">'+display+'</td>';
+      h += '<td style="text-align:center;padding:4px 8px;background:'+(future?'#f0f5ff':bg)+';font-weight:'+fw+';color:'+color+';border-bottom:1px solid #eef1f8">'+display+'</td>';
     });
     h += '</tr>';
   }
@@ -4006,12 +4044,12 @@ function renderBudget(anoFilter){
 
   // ── IMPOSTOS ──
   secRow('Impostos', '🧾');
-  dataRow('ICMS %', function(ym){ return budgetDreMetric(ym,'icms_pct'); }, {sub:true, pct:true});
-  dataRow('PIS/COFINS %', function(ym){ return budgetDreMetric(ym,'piscofins_pct'); }, {sub:true, pct:true});
+  dataRow('ICMS %', function(ym){ return budgetDreMetric(ym,'icms_pct'); }, {sub:true, pct:true, simKey:'icms_pct'});
+  dataRow('PIS/COFINS %', function(ym){ return budgetDreMetric(ym,'piscofins_pct'); }, {sub:true, pct:true, simKey:'piscofins_pct'});
 
   // ── CMV ──
   secRow('CMV', '🏭');
-  dataRow('Margem Produto %', function(ym){ return budgetDreMetric(ym,'mg_prod'); }, {bold:true, pct:true});
+  dataRow('Margem Produto %', function(ym){ return budgetDreMetric(ym,'mg_prod'); }, {bold:true, pct:true, simKey:'mg_prod'});
 
 
   // ── DESPESAS CLASSIFICADAS — agrupado por Área > Tipo ──
