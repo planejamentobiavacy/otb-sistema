@@ -2328,8 +2328,6 @@ function renderTable(){
   renderBlock('PARES','q');
   html.push('<tr class="blank-sep"><td colspan="'+(months.length+2)+'"></td></tr>');
   renderBlock('VALOR','v');
-  html.push('<tr class="blank-sep"><td colspan="'+(months.length+2)+'"></td></tr>');
-  renderBlock('MARG','q',kpiMarg);
   html.push('</tbody></table>');
   wrap.innerHTML=html.join('');
 
