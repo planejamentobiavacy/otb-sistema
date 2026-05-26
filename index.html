@@ -114,27 +114,27 @@ body{font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;background:var(--b
 .kpi-card.green{border-left:3px solid var(--green)}.kpi-card.amber{border-left:3px solid #c48a00}
 .legend{display:flex;gap:14px;font-size:11px;color:var(--text-dim);align-items:center}
 .legend .sw{display:inline-block;width:14px;height:12px;border:1px solid var(--border-strong);vertical-align:middle;margin-right:4px}
-.otb-main{flex:1;overflow:auto;background:var(--surface);position:relative}
+.otb-main{flex:1;overflow:auto;background:var(--surface)}
 .otb-neg-banner{display:none;background:var(--red);color:#fff;padding:8px 16px;font-size:12px;font-weight:600;align-items:center;gap:12px;flex-shrink:0;border-bottom:2px solid #8b0000}
-.table-wrap{padding:0;position:relative}
+.table-wrap{padding:0}
 table.otb{border-collapse:separate;border-spacing:0;font-size:12px;font-variant-numeric:tabular-nums;width:auto}
 table.otb th,table.otb td{border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:0;text-align:center;white-space:nowrap}
-table.otb thead tr:first-child th{background:var(--blue);color:#fff;font-weight:600;padding:8px 10px;font-size:11px;letter-spacing:.5px;position:sticky;top:0;z-index:3;min-width:92px}
+table.otb thead tr:first-child th{background:var(--blue);color:#fff;font-weight:600;padding:8px 10px;font-size:11px;letter-spacing:.5px;position:sticky;top:0;z-index:6;min-width:72px}
 table.otb thead tr:last-child th{background:var(--blue);color:#fff;font-weight:600;padding:8px 10px;font-size:11px;letter-spacing:.5px;position:sticky;top:29px;z-index:3;min-width:92px}
-table.otb thead th.year-cell{background:var(--navy);font-size:11px;padding:5px 10px;font-weight:500;top:0}
+table.otb thead th.year-cell{background:var(--navy);font-size:11px;padding:5px 8px;font-weight:500;top:0}
 table.otb thead th.year-cell .yr-toggle{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:10px;margin-right:5px;color:#cfd6e8;user-select:none;width:14px;height:14px;border-radius:2px;background:rgba(255,255,255,.08)}
 table.otb thead th.yr-toggle:hover{color:#fff;background:rgba(255,255,255,.2)}
 table.otb thead th.future{background:#c48a00}
 table.otb thead th.year-cell.future{background:#8a6200}
-table.otb thead th.collapsed-year{background:#2c3a5f;border-left:3px solid var(--red);min-width:130px}
-table.otb thead th.corner-ribbon{background:var(--navy-dk);position:sticky;left:0;top:0;z-index:8;width:22px;min-width:22px;padding:0;border-right:1px solid var(--red-dk)}
-table.otb thead th.corner{background:var(--navy-dk);color:#fff;text-align:left;padding:4px 6px;font-size:10px;letter-spacing:0;font-weight:700;position:sticky;left:44px;top:0;z-index:8;width:90px;min-width:90px;border-right:2px solid var(--border-strong)}
-table.otb td.ribbon-col{position:sticky;left:0;z-index:4;background:var(--red);color:#fff;text-align:center;vertical-align:middle;font-weight:800;letter-spacing:2px;writing-mode:vertical-rl;transform:rotate(180deg);font-size:11px;padding:4px 2px;width:22px;min-width:22px;border-right:1px solid var(--red-dk);border-bottom:1px solid var(--red-dk)}
-table.otb td.label{position:sticky;left:44px;z-index:3;background:#f3f5f8;color:var(--navy);text-align:left;padding:4px 6px;font-weight:600;font-size:10px;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:90px;min-width:90px;max-width:90px;border-right:2px solid var(--border-strong)}
+table.otb thead th.collapsed-year{background:#2c3a5f;border-left:3px solid var(--red);min-width:70px;max-width:70px}
+table.otb thead th.corner-ribbon{background:var(--navy-dk)!important;position:sticky!important;left:0!important;top:0!important;z-index:25!important;width:22px;min-width:22px;padding:0;border-right:1px solid var(--red-dk)}
+table.otb thead th.corner{background:var(--navy-dk)!important;color:#fff!important;text-align:left;padding:4px 6px;font-size:10px;letter-spacing:0;font-weight:700;position:sticky!important;left:44px!important;top:0!important;z-index:25!important;width:90px;min-width:90px;border-right:2px solid var(--border-strong);border-bottom:2px solid var(--border-strong);vertical-align:middle}
+table.otb td.ribbon-col{position:sticky;left:0;z-index:9;background:var(--red);color:#fff;text-align:center;vertical-align:middle;font-weight:800;letter-spacing:2px;writing-mode:vertical-rl;transform:rotate(180deg);font-size:11px;padding:4px 2px;width:22px;min-width:22px;border-right:1px solid var(--red-dk);border-bottom:1px solid var(--red-dk)}
+table.otb td.label{position:sticky;left:44px;z-index:10;background:#f3f5f8;color:var(--navy);text-align:left;padding:4px 6px;font-weight:600;font-size:10px;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:90px;min-width:90px;max-width:90px;border-right:2px solid var(--border-strong);box-shadow:2px 0 4px rgba(0,0,0,.08)}
 table.otb td.label.sub{font-weight:400;font-size:11px;color:var(--text-dim);padding-left:26px;background:#f7f9fc}
 table.otb td.label.sim{background:#dceeff;color:#0b4a8a;border-left:3px solid var(--blue);padding-left:11px}
 table.otb td.label.sim.sub{background:#e8f4ff;border-left:3px solid #5b9fe0}
-table.otb td.value{padding:9px 12px;min-width:92px;background:#fff;color:var(--text);text-align:center}
+table.otb td.value{padding:6px 8px;min-width:72px;background:#fff;color:var(--text);text-align:center}
 table.otb td.value.future{background:var(--future)}
 table.otb td.value.pct{font-size:11px;font-weight:500;color:var(--text-dim);background:#f7f9fc}
 table.otb td.value.pct.future{background:#fbf5e0}
@@ -147,7 +147,7 @@ table.otb td.value.editable:hover{background:#a8d0f5}
 table.otb td.value.editable:focus{outline:2px solid var(--blue);background:#fff}
 table.otb td.value.zero{color:#b0b6c0}
 table.otb td.value.negative{color:var(--red)}
-table.otb td.value.year-total{background:#e9edf3;font-weight:700;color:var(--navy);border-left:3px solid var(--red);min-width:130px}
+table.otb td.value.year-total{background:#e9edf3;font-weight:700;color:var(--navy);border-left:3px solid var(--red);min-width:80px}
 table.otb td.value.year-total.future{background:#f6e9b8}
 table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none;border-top:1px solid var(--border-strong);border-bottom:1px solid var(--border-strong);position:sticky;left:0}
 .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-dim);text-align:center;padding:40px}
@@ -2177,7 +2177,7 @@ function renderTabs(){
 function renderCatTabs(){
   var catTabs=document.getElementById('otbCatTabs'); if(!catTabs) return;
   var cats=getCategoriesForSupplier(state.activeSupplier);
-  if(cats.length<=2){catTabs.style.display='none';state.activeCategory='TODAS';return;}
+  if(cats.length<=2||state.activeSupplier==='ALPARG'){catTabs.style.display='none';state.activeCategory='TODAS';return;}
   catTabs.style.display='flex'; catTabs.innerHTML='';
   if(!cats.includes(state.activeCategory)) state.activeCategory='TODAS';
   var COLORS=['c0','c1','c2','c3','c4','c5'];
