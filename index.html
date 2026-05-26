@@ -192,7 +192,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
 #folhaTabsBar{display:flex;background:#fff;border-bottom:2px solid #dde3f0;flex-shrink:0}
 .fp-tab{font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:12px 22px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;font-family:inherit}
 .fp-tab.active{color:#7b2d8b;border-bottom-color:#7b2d8b;font-weight:700}
-#folhaTablesArea{flex:1;overflow-y:auto;padding:14px 16px;background:#f4f5f7}
+#folhaTablesArea{flex:1;overflow:auto;padding:0;background:#f4f5f7}
 .fp-scroll{overflow-x:auto;border-radius:4px;border:1px solid #dde3f0;background:#fff}
 .fp-tbl{border-collapse:collapse;font-size:11.5px;width:100%;white-space:nowrap;font-variant-numeric:tabular-nums}
 .fp-tbl thead th{position:sticky;top:0;z-index:4}
@@ -474,7 +474,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
         <button class="fp-tab"        id="fpTabCargo" onclick="folhaSwitchAba('cargo')">POR CARGO</button>
         <button class="fp-tab"        id="fpTabNome"  onclick="folhaSwitchAba('nome')">POR NOME</button>
       </div>
-      <div id="folhaTablesArea"><div class="fp-scroll"><div id="fpTblPrincipal"></div></div></div>
+      <div id="folhaTablesArea"><div id="fpTblPrincipal"></div></div>
     </div>
   </div>
 </div>
@@ -571,8 +571,9 @@ var COLS = {
   // dw_otb_despesa: colunas reais confirmadas no Supabase
   despesa: ['ano_mes_emissao','ano_mes_venc','ano_mes_baixa','e2_tipo','e2_fornece','e2_nomfor','e2_hist','valor_pagamento','pk_ano_mes_venc_tipo_e2_forn'],
 
-  // otb_folha: todas as colunas úteis já são diretas
-  folha: ['ano_mes','area','cargo','pessoa','valor'],
+  // dw_otb_folha: usa select=* pois os nomes das colunas podem variar
+  // folhaGetPeriodo/Area/Cargo/Nome/Total já lidam com múltiplos nomes possíveis
+  folha: null,
 };
 
 // Constrói string de select otimizado para uma tabela.
@@ -3419,22 +3420,100 @@ function _fpMeses(rows){var s={};rows.forEach(function(r){var p=String(folhaGetP
 function _fpMesLabel(am){var n=['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];return(n[parseInt(am.slice(4,6),10)-1]||am.slice(4))+'/'+am.slice(2,4);}
 function _fpAgregar(rows,getFn){var result={};rows.forEach(function(r){var dim=getFn(r)||'(outros)',am=String(folhaGetPeriodo(r)).replace(/\D/g,'').slice(0,6);if(am.length!==6) return;var val=folhaTotal(r);if(!result[dim])result[dim]={};result[dim][am]=(result[dim][am]||0)+val;});return result;}
 function _fpRenderTabela(cid,rows,getFn){
+  // Legacy fallback — não usado no novo layout
   var c=document.getElementById(cid);if(!c) return;
-  var meses=_fpMeses(rows),agg=_fpAgregar(rows,getFn),dims=Object.keys(agg).sort();
-  if(!dims.length){c.innerHTML='<div style="padding:20px;color:#999;font-size:12px;text-align:center">Sem dados</div>';return;}
-  var totMes={};meses.forEach(function(am){totMes[am]=0;dims.forEach(function(d){totMes[am]+=(agg[d][am]||0);});});
-  var h='<table class="fp-tbl"><thead><tr><th class="fp-th-dim">Dimensão</th>';
-  meses.forEach(function(am){h+='<th class="fp-th-m">'+_fpMesLabel(am)+'</th>';});
-  h+='</tr></thead><tbody>';
-  dims.forEach(function(dim){h+='<tr><td class="fp-td-dim">'+dim+'</td>';meses.forEach(function(am){var v=agg[dim][am]||0;h+='<td class="fp-td-val'+(v===0?' z':'')+'">'+( v?folhaBrl(v):'')+'</td>';});h+='</tr>';});
-  h+='<tr class="fp-tot"><td class="fp-td-dim">Total</td>';meses.forEach(function(am){h+='<td class="fp-td-val">'+folhaBrl(totMes[am])+'</td>';});
-  h+='</tr></tbody></table>';c.innerHTML=h;
+  _folhaRenderBudgetStyle(c, rows);
 }
+
+function _folhaRenderBudgetStyle(container, rows){
+  var meses = _fpMeses(rows);
+  if(!meses.length){ container.innerHTML='<div style="padding:40px;color:#999;font-size:13px;text-align:center">Sem dados</div>'; return; }
+
+  // Monta estrutura: área → cargo → { [am]: valor }
+  var estrutura = {}; // { area: { cargo: { am: val } } }
+  var totArea   = {}; // { area: { am: val } }
+  var totGeral  = {}; // { am: val }
+  rows.forEach(function(r){
+    var area  = folhaGetArea(r);
+    var cargo = FOLHA_ABA === 'nome' ? folhaGetNome(r) : FOLHA_ABA === 'cargo' ? folhaGetCargo(r) : folhaGetCargo(r);
+    var am    = String(folhaGetPeriodo(r)).replace(/\D/g,'').slice(0,6);
+    if(am.length !== 6) return;
+    var val   = folhaTotal(r);
+    if(!estrutura[area]) estrutura[area] = {};
+    if(!estrutura[area][cargo]) estrutura[area][cargo] = {};
+    estrutura[area][cargo][am] = (estrutura[area][cargo][am]||0) + val;
+    if(!totArea[area]) totArea[area] = {};
+    totArea[area][am] = (totArea[area][am]||0) + val;
+    totGeral[am] = (totGeral[am]||0) + val;
+  });
+
+  var areas = Object.keys(estrutura).sort();
+  var n = meses.length;
+  var subLabel = FOLHA_ABA === 'nome' ? 'Pessoa' : 'Cargo';
+
+  // ── CSS inline (Budget style) ──
+  var css = '<style>'
+    +'.fh-tbl{border-collapse:collapse;font-size:12px;width:100%;font-variant-numeric:tabular-nums;background:#fff}'
+    +'.fh-tbl th{background:#1a2547;color:#fff;font-weight:700;font-size:11px;padding:9px 14px;text-align:center;white-space:nowrap;position:sticky;top:0;z-index:5;border-left:1px solid rgba(255,255,255,.1)}'
+    +'.fh-tbl th.fh-ind{text-align:left;position:sticky;left:0;top:0;z-index:10;min-width:220px;border-right:2px solid rgba(255,255,255,.2)}'
+    +'.fh-sec td{background:linear-gradient(90deg,#7b2d8b 0%,#a044b8 100%)!important;color:#fff!important;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;padding:7px 14px;border-bottom:none}'
+    +'.fh-sec td.fh-fix{position:sticky;left:0;z-index:2;background:linear-gradient(90deg,#7b2d8b 0%,#a044b8 100%)!important}'
+    +'.fh-area td{background:#f7f0fa!important;color:#5a0070;font-weight:800;font-size:13px;padding:8px 14px;border-top:2px solid #7b2d8b;border-bottom:1px solid #d8b8e8}'
+    +'.fh-area td.fh-fix{position:sticky;left:0;z-index:2;background:#f7f0fa!important}'
+    +'.fh-sub td{background:#fff;color:#1a1f2e;font-size:12px;padding:5px 14px;border-bottom:1px solid #eef0f6}'
+    +'.fh-sub td.fh-fix{position:sticky;left:0;z-index:2;background:#fff;color:#555;padding-left:28px;font-weight:500}'
+    +'.fh-sub:hover td{background:#f9f0fc!important}'
+    +'.fh-tot td{background:#1a2547!important;color:#fff!important;font-weight:700;font-size:13px;padding:10px 14px;border-top:3px solid #7b2d8b}'
+    +'.fh-tot td.fh-fix{position:sticky;left:0;z-index:2;background:#1a2547!important}'
+    +'.fh-val{text-align:right;padding:5px 14px;white-space:nowrap}'
+    +'.fh-val.z{color:#ccc}'
+    +'</style>';
+
+  var h = css + '<div style="overflow-x:auto"><table class="fh-tbl"><thead><tr>'
+    + '<th class="fh-ind">INDICADOR</th>';
+  meses.forEach(function(am){ h += '<th>'+_fpMesLabel(am)+'</th>'; });
+  h += '</tr></thead><tbody>';
+
+  // Seção FOLHA DE PAGAMENTO
+  h += '<tr class="fh-sec"><td class="fh-fix" colspan="'+(n+1)+'">👥 FOLHA DE PAGAMENTO</td></tr>';
+
+  areas.forEach(function(area){
+    var cargos = Object.keys(estrutura[area]).sort();
+    // Linha da área (total)
+    h += '<tr class="fh-area"><td class="fh-fix">'+area+'</td>';
+    meses.forEach(function(am){
+      var v = totArea[area][am]||0;
+      h += '<td class="fh-val'+(v===0?' z':'')+'">'+(v?'R$ '+folhaBrl(v):'—')+'</td>';
+    });
+    h += '</tr>';
+    // Sub-linhas por cargo/nome
+    cargos.forEach(function(cargo){
+      h += '<tr class="fh-sub"><td class="fh-fix">↳ '+cargo+'</td>';
+      meses.forEach(function(am){
+        var v = estrutura[area][cargo][am]||0;
+        h += '<td class="fh-val'+(v===0?' z':'')+'">'+(v?'R$ '+folhaBrl(v):'—')+'</td>';
+      });
+      h += '</tr>';
+    });
+  });
+
+  // Total geral
+  h += '<tr class="fh-tot"><td class="fh-fix">TOTAL GERAL</td>';
+  meses.forEach(function(am){
+    var v = totGeral[am]||0;
+    h += '<td class="fh-val">'+(v?'R$ '+folhaBrl(v):'—')+'</td>';
+  });
+  h += '</tr></tbody></table></div>';
+
+  container.innerHTML = h;
+}
+
 function _folhaRenderAll(){
-  var rows=_folhaFiltrar();
-  var meta=document.getElementById('folhaHeaderMeta');if(meta) meta.innerHTML='<strong>'+rows.length.toLocaleString('pt-BR')+' registros</strong>';
-  var getFn=FOLHA_ABA==='area'?folhaGetArea:FOLHA_ABA==='cargo'?folhaGetCargo:folhaGetNome;
-  _fpRenderTabela('fpTblPrincipal',rows,getFn);
+  var rows = _folhaFiltrar();
+  var meta = document.getElementById('folhaHeaderMeta');
+  if(meta) meta.innerHTML = '<strong>'+rows.length.toLocaleString('pt-BR')+' registros</strong>';
+  var c = document.getElementById('fpTblPrincipal');
+  if(c) _folhaRenderBudgetStyle(c, rows);
 }
 
 // ═══════════════════════════════════════════════════════
@@ -4351,7 +4430,7 @@ async function handleSaveBudget(btn){
     };
     var kb = Math.round(JSON.stringify(payload).length/1024);
     // Salva classif em chave separada ANTES do payload (snapshot pode falhar)
-    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, savedAt: new Date().toISOString()});
+    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados||{}, sim: BUDGET_CFG.sim||{}, savedAt: new Date().toISOString()});
     await supaSave(TBLS.save_dre,'budget_cfg', payload);
     toast('✔ Budget salvo — snapshot de '+(snapshot?snapshot.length.toLocaleString('pt-BR'):0)+' linhas ('+kb+'KB), era '+BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' linhas brutas');
     // Badge
