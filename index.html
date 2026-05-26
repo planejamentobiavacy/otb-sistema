@@ -1122,6 +1122,28 @@ async function gcDiagnoseDespesa(btn){
   var st = document.getElementById('cfg_status_despesa');
   var token = _session.access_token;
 
+  // Teste 0: sem header Range (verifica se RLS ou header Range causa o total=0)
+  try {
+    var rNoRange = await fetch(SUPA_URL+'/rest/v1/'+TBLS.despesa+'?select=*&limit=3', {
+      headers: { 'apikey': SUPA_ANON_KEY, 'Authorization': 'Bearer '+token, 'Accept': 'application/json' }
+    });
+    var bodyNoRange = await rNoRange.text();
+    var rowsNoRange = []; try{ rowsNoRange = JSON.parse(bodyNoRange); }catch(e){}
+    console.log('[gcDiagnoseDespesa] sem Range — HTTP', rNoRange.status, '| rows:', rowsNoRange.length, '| body:', bodyNoRange.slice(0,300));
+    if(rNoRange.ok && Array.isArray(rowsNoRange) && rowsNoRange.length > 0){
+      var cNoRange = Object.keys(rowsNoRange[0]).join(', ');
+      toast('✅ Tabela tem dados (sem Range)! cols: '+cNoRange);
+      if(st) st.textContent = '✅ '+rowsNoRange.length+' linhas | '+cNoRange.slice(0,60);
+      btn.disabled=false; btn.textContent=orig; return;
+    }
+    // Se veio erro de RLS (empty array mas HTTP 200) ou erro 403
+    if(!rNoRange.ok){
+      toast('✘ HTTP '+rNoRange.status+' em '+TBLS.despesa+' — '+bodyNoRange.slice(0,100),'err');
+      if(st) st.textContent='✘ HTTP '+rNoRange.status+': possível RLS bloqueando';
+      btn.disabled=false; btn.textContent=orig; return;
+    }
+  } catch(e){ console.warn('[gcDiagnoseDespesa] teste sem Range falhou:', e.message); }
+
   // Tabelas candidatas para testar
   var candidates = [
     TBLS.despesa,
