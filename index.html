@@ -643,7 +643,7 @@ async function supaFetch(path, opts){
 async function fetchAll(table, extraFilter, tableKey, onProgress){
   var PAGE = 1000;
   // Tabelas grandes ou com problemas de RLS/timeout: fetch sequencial (evita 500 por sobrecarga paralela)
-  var SEQUENTIAL_TABLES = ['dw_otb_stk','dw_otb_venda','dw_otb_venda_dre'];
+  var SEQUENTIAL_TABLES = ['dw_otb_stk','dw_otb_venda']; // dw_otb_venda_dre removida: paralelo é mais rápido
   var forceSeq = SEQUENTIAL_TABLES.indexOf(table) > -1;
   var sel = tableKey ? buildSelect(tableKey) : 'select=*';
 
@@ -2654,35 +2654,47 @@ async function loadDreFromSupabase(forceRaw){
       if(allRows.length) snapRows = dreExpandSnapshot(allRows);
     }
 
-    // Valida snapshot: precisa ter canal preenchido
-    // Valida amostrando até 5 linhas para canal
-    var snapOk = snapRows && snapRows.length > 0 && (function(){
-      var sample = snapRows.slice(0, Math.min(5, snapRows.length));
-      return sample.some(function(r){ return r.canal; });
-    })();
+    // Valida snapshot: só precisa ter linhas — canal é enriquecido depois pelo dreEnrichWithCanais
+    var snapOk = snapRows && snapRows.length > 0;
     if(!forceRaw && snapOk){
       DRE_RAW = snapRows;
-      // Enriquece snapshot com canal se necessário
-      dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW); // constrói lookups
+      // Carrega canais/cluster em paralelo (não bloqueia renderização)
+      Promise.all([
+        fetchAll(TBLS.canais).catch(function(){ return []; }),
+        fetchAll(TBLS.cluster).catch(function(){ return []; })
+      ]).then(function(res){
+        DRE_CANAIS_RAW  = res[0];
+        DRE_CLUSTER_RAW = res[1];
+        dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
+        dreRender(); // re-renderiza com canal enriquecido
+      });
+      dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
       DRE_SNAPSHOT = true;
       dreShowProgress(100, 100);
       console.log('[DRE] snapshot OK:', DRE_RAW.length, 'linhas');
     } else {
-      // Busca dados brutos
+      // Busca dados brutos — carrega tabelas em paralelo para ser mais rápido
       DRE_SNAPSHOT = false;
-      var reason = !saved ? 'sem save' : !snapRows ? 'sem snapshot' : 'canal vazio';
+      var reason = !saved ? 'sem save' : !snapRows ? 'sem snapshot' : 'snapshot vazio';
       if(progLbl) progLbl.textContent = 'Carregando dados (' + reason + ')...';
       console.log('[DRE] bruto, motivo:', reason);
+      // venda_dre é grande — carrega primeiro; demais em paralelo
       DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre', dreShowProgress);
       console.log('[DRE] bruto:', DRE_RAW.length, 'linhas');
-      try{ DRE_FOLHA_RAW   = await fetchAll(TBLS.folha,   null, 'folha'); } catch(e){ DRE_FOLHA_RAW=[]; }
-      try{ DRE_DESP_RAW    = await fetchAll(TBLS.despesa, null, 'despesa'); } catch(e){ DRE_DESP_RAW=[]; }
-      try{ DRE_CANAIS_RAW  = await fetchAll(TBLS.canais); }  catch(e){ DRE_CANAIS_RAW=[]; }
-      try{ DRE_CLUSTER_RAW = await fetchAll(TBLS.cluster); } catch(e){ DRE_CLUSTER_RAW=[];}
-      // Constrói lookups para join canal/cluster (sem copiar rows)
+      var aux = await Promise.all([
+        fetchAll(TBLS.folha,   null, null).catch(function(){ return []; }),
+        fetchAll(TBLS.despesa, null, 'despesa').catch(function(){ return []; }),
+        fetchAll(TBLS.canais).catch(function(){ return []; }),
+        fetchAll(TBLS.cluster).catch(function(){ return []; })
+      ]);
+      DRE_FOLHA_RAW   = aux[0];
+      DRE_DESP_RAW    = aux[1];
+      DRE_CANAIS_RAW  = aux[2];
+      DRE_CLUSTER_RAW = aux[3];
+      // Constrói lookups para join canal/cluster
       dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
-      // Auto-salva snapshot correto após 3s
-      setTimeout(function(){ var b=document.getElementById('btnSaveDre'); if(b&&!b.disabled) b.click(); }, 3000);
+      // Auto-salva snapshot após 5s (dá tempo de renderizar primeiro)
+      setTimeout(function(){ var b=document.getElementById('btnSaveDre'); if(b&&!b.disabled) b.click(); }, 5000);
     }
 
     DRE_LOADED = DRE_RAW.length > 0;
@@ -3501,28 +3513,32 @@ function folhaCfgRender(lista){
     return '<option value="'+c+'">'+c+'</option>';
   }).join('');
 
+  var thS = 'padding:9px 14px;text-align:left;font-weight:700;font-size:11px;letter-spacing:.5px';
   var h = '<table style="width:100%;border-collapse:collapse;font-size:12px">'
     +'<thead><tr style="background:#1a2547;color:#fff;position:sticky;top:0;z-index:2">'
-    +'<th style="padding:9px 14px;text-align:left;font-weight:700;font-size:11px;letter-spacing:.5px;min-width:220px">NOME</th>'
-    +'<th style="padding:9px 14px;text-align:left;font-weight:700;font-size:11px;letter-spacing:.5px">CARGO (base)</th>'
-    +'<th style="padding:9px 14px;text-align:left;font-weight:700;font-size:11px;letter-spacing:.5px;min-width:160px">ÁREA</th>'
-    +'<th style="padding:9px 14px;text-align:left;font-weight:700;font-size:11px;letter-spacing:.5px;min-width:130px">CANAL</th>'
+    +'<th style="'+thS+';min-width:200px">NOME</th>'
+    +'<th style="'+thS+'">CARGO (base)</th>'
+    +'<th style="'+thS+';min-width:120px">ÁREA (original)</th>'
+    +'<th style="'+thS+';min-width:160px">ÁREA AJUST.</th>'
+    +'<th style="'+thS+';min-width:130px">CANAL</th>'
     +'</tr></thead><tbody>';
 
   lista.forEach(function(nome, i){
-    var info   = nomes[nome] || {};
-    var salvo  = FOLHA_CFG.classif[nome] || {};
-    var area   = salvo.area  || info.areaBruta || '';
-    var canal  = salvo.canal || '—';
-    var bg     = i%2===0 ? '#fff' : '#f7f9ff';
+    var info      = nomes[nome] || {};
+    var salvo     = FOLHA_CFG.classif[nome] || {};
+    var areaAjust = salvo.area || '';
+    var canal     = salvo.canal || '—';
+    var areaOrig  = info.areaBruta || '';
+    var bg        = i%2===0 ? '#fff' : '#f7f9ff';
 
     h += '<tr style="background:'+bg+'" data-nome="'+escHtml(nome)+'">'
       +'<td style="padding:7px 14px;font-weight:600;color:#1a2547;border-bottom:1px solid #eef1f4">'+escHtml(nome)+'</td>'
       +'<td style="padding:7px 14px;color:#7a8ab0;font-size:11px;border-bottom:1px solid #eef1f4">'+escHtml(info.cargo||'')+'</td>'
+      +'<td style="padding:7px 14px;color:#3b4660;font-size:11px;border-bottom:1px solid #eef1f4;border-right:2px dashed #d0d8ee">'+escHtml(areaOrig)+'</td>'
       +'<td style="padding:5px 10px;border-bottom:1px solid #eef1f4">'
         +'<select class="fcfg-area" data-nome="'+escHtml(nome)+'" style="width:100%;padding:5px 8px;border:1.5px solid #d0d8ee;border-radius:4px;font-size:12px;font-family:inherit;background:#fff">'
         +'<option value="">— manter original —</option>'
-        +FOLHA_AREAS_PADRAO.map(function(a){ return '<option value="'+a+'"'+(a===area?' selected':'')+'>'+a+'</option>'; }).join('')
+        +FOLHA_AREAS_PADRAO.map(function(a){ return '<option value="'+a+'"'+(a===areaAjust?' selected':'')+'>'+a+'</option>'; }).join('')
         +'</select>'
       +'</td>'
       +'<td style="padding:5px 10px;border-bottom:1px solid #eef1f4">'
@@ -3532,8 +3548,6 @@ function folhaCfgRender(lista){
       +'</td>'
       +'</tr>';
   });
-
-  h += '</tbody></table>';
 
   document.getElementById('folhaCfgBody').innerHTML = h;
   var cnt = document.getElementById('folhaCfgCount');
@@ -5007,7 +5021,7 @@ async function saveBudgetCfg(btn){
 
 <!-- ══════════════ FOLHA CONFIG MODAL ══════════════ -->
 <div class="dre-cfg-overlay" id="folhaCfgOverlay" onclick="if(event.target===this)closeFolhaCfg()" style="display:none">
-  <div class="dre-cfg-box" style="width:min(900px,96vw)">
+  <div class="dre-cfg-box" style="width:min(1050px,98vw)">
     <div class="dre-cfg-hd">
       <div><h2>⚙️ Configurações — Folha de Pagamento</h2><small>Edite a Área e o Canal de cada colaborador</small></div>
       <button class="dre-cfg-close" onclick="closeFolhaCfg()">×</button>
