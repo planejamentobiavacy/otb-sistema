@@ -557,6 +557,9 @@ var COLS = {
 
   venda_dre: null, // select=* — colunas uppercase, PostgREST case-sensitive. Inclui cod_vendedor para join com otb_canais
 
+  // dw_otb_despesa: colunas reais confirmadas no Supabase
+  despesa: ['ano_mes_emissao','ano_mes_venc','ano_mes_baixa','e2_tipo','e2_fornece','e2_nomfor','e2_hist','valor_pagamento','pk_ano_mes_venc_tipo_e2_forn'],
+
   // otb_folha: todas as colunas úteis já são diretas
   folha: ['ano_mes','area','cargo','pessoa','valor'],
 };
@@ -1115,36 +1118,75 @@ async function gcAtualizar(key, dateCol, btn){
 }
 
 async function gcDiagnoseDespesa(btn){
-  var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳';
-  var tbl = TBLS.despesa;
+  var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳ Testando...';
   var st = document.getElementById('cfg_status_despesa');
   var token = _session.access_token;
-  var headers = {
-    'apikey': SUPA_ANON_KEY, 'Authorization': 'Bearer '+token,
-    'Accept': 'application/json', 'Range': '0-4', 'Range-Unit': 'items', 'Prefer': 'count=exact'
-  };
-  try {
-    // Teste 1: select=* sem filtro
-    var r = await fetch(SUPA_URL+'/rest/v1/'+tbl+'?select=*', {headers});
-    var cr = r.headers.get('content-range')||'';
-    var body = await r.text();
-    var total = (cr.match(/\/(\d+)/)||[])[1]||'?';
-    if(!r.ok){
-      toast('✘ '+tbl+': HTTP '+r.status+' — '+body.slice(0,200),'err');
-      if(st) st.textContent='✘ HTTP '+r.status+': '+body.slice(0,80);
-      btn.disabled=false; btn.textContent=orig; return;
+
+  // Tabelas candidatas para testar
+  var candidates = [
+    TBLS.despesa,
+    'otb_despesa', 'dw_otb_despesa', 'se2', 'dw_despesa',
+    'otb_se2', 'despesa', 'tb_despesa', 'fin_despesa'
+  ].filter(function(v,i,a){ return a.indexOf(v)===i; }); // unique
+
+  var results = [];
+  for(var i=0; i<candidates.length; i++){
+    var tbl = candidates[i];
+    try {
+      var r = await fetch(SUPA_URL+'/rest/v1/'+tbl+'?select=*', {
+        headers: {
+          'apikey': SUPA_ANON_KEY, 'Authorization': 'Bearer '+token,
+          'Accept': 'application/json', 'Range': '0-2', 'Range-Unit': 'items', 'Prefer': 'count=exact'
+        }
+      });
+      var cr = r.headers.get('content-range')||'';
+      var body = await r.text();
+      var total = parseInt((cr.match(/\/([0-9]+)/)||[])[1]||'0',10);
+      var rows = [];
+      try{ rows = JSON.parse(body); }catch(e){}
+      var cols = (rows && rows[0]) ? Object.keys(rows[0]) : [];
+      var hasExpectedCols = cols.some(function(c){ return /nomfor|hist|valor|e2_/i.test(c); }) || cols.some(function(c){ return /valor_pagamento/i.test(c); });
+      results.push({tbl:tbl, status:r.status, ok:r.ok, total:total, cols:cols, hasExpectedCols:hasExpectedCols});
+      console.log('[gcDiagnoseDespesa]', tbl, '| HTTP', r.status, '| total:', total, '| colunas:', cols.join(', ')||'(vazia)');
+    } catch(e) {
+      results.push({tbl:tbl, status:'erro', ok:false, total:0, cols:[], hasExpectedCols:false});
     }
-    var rows = [];
-    try{ rows = JSON.parse(body); } catch(e){}
-    var cols = (rows && rows[0]) ? Object.keys(rows[0]).join(', ') : '(sem colunas)';
-    var msg = '✔ HTTP '+r.status+' | total='+total+' | colunas: '+cols;
-    toast(msg, total==='0'||total===0?'err':undefined);
-    if(st) st.textContent = 'total='+total+' | cols: '+cols.slice(0,60);
-    console.log('[gcDiagnoseDespesa]', tbl, '| total:', total, '| colunas:', cols, '| primeiras linhas:', rows.slice(0,2));
-  } catch(e){
-    toast('Erro diagnóstico: '+e.message,'err');
-    if(st) st.textContent='Erro: '+e.message;
   }
+
+  // Monta relatório
+  var found = results.filter(function(r){ return r.ok && r.total>0; });
+  var foundWithCols = found.filter(function(r){ return r.hasExpectedCols; });
+
+  var msg = '';
+  if(foundWithCols.length){
+    var best = foundWithCols[0];
+    msg = '✅ Tabela encontrada: '+best.tbl+' ('+best.total+' linhas) | Colunas: '+best.cols.join(', ');
+    toast('✅ Use a tabela: '+best.tbl+' ('+best.total+' linhas)');
+    // Sugerir troca automática
+    if(best.tbl !== TBLS.despesa){
+      if(confirm('Tabela com dados encontrada: "'+best.tbl+'" ('+best.total+' linhas)\n\nDeseja usar esta tabela agora?')){
+        TBLS.despesa = best.tbl;
+        localStorage.setItem('otb_tbl_despesa', best.tbl);
+        var inp = document.getElementById('tbl_despesa');
+        if(inp) inp.value = best.tbl;
+        toast('✔ Tabela atualizada para: '+best.tbl+'. Clique em Recarregar.');
+      }
+    }
+  } else if(found.length){
+    var f = found[0];
+    msg = '⚠️ '+f.tbl+' existe ('+f.total+' linhas) mas sem colunas esperadas. Colunas: '+f.cols.join(', ')||'(vazia)';
+    toast(msg,'err');
+  } else {
+    var notFound = results.filter(function(r){ return r.status===404||r.status==='erro'; });
+    var empty = results.filter(function(r){ return r.ok && r.total===0; });
+    msg = '❌ Nenhuma tabela com dados encontrada.\n';
+    if(empty.length) msg += 'Tabelas vazias: '+empty.map(function(r){return r.tbl;}).join(', ')+'\n';
+    msg += 'Verifique se a tabela foi criada e populada no Supabase.';
+    toast('❌ Nenhuma tabela de despesa com dados encontrada','err');
+    alert(msg);
+  }
+
+  if(st) st.textContent = msg.slice(0,80);
   btn.disabled=false; btn.textContent=orig;
 }
 
@@ -2535,7 +2577,7 @@ async function loadDreFromSupabase(forceRaw){
       DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre', dreShowProgress);
       console.log('[DRE] bruto:', DRE_RAW.length, 'linhas');
       try{ DRE_FOLHA_RAW   = await fetchAll(TBLS.folha,   null, 'folha'); } catch(e){ DRE_FOLHA_RAW=[]; }
-      try{ DRE_DESP_RAW    = await fetchAll(TBLS.despesa); } catch(e){ DRE_DESP_RAW=[]; }
+      try{ DRE_DESP_RAW    = await fetchAll(TBLS.despesa, null, 'despesa'); } catch(e){ DRE_DESP_RAW=[]; }
       try{ DRE_CANAIS_RAW  = await fetchAll(TBLS.canais); }  catch(e){ DRE_CANAIS_RAW=[]; }
       try{ DRE_CLUSTER_RAW = await fetchAll(TBLS.cluster); } catch(e){ DRE_CLUSTER_RAW=[];}
       // Constrói lookups para join canal/cluster (sem copiar rows)
@@ -3718,7 +3760,7 @@ async function loadBudget(forceRaw){
     }
   } else {
     // Full load from Supabase
-    try{ BUDGET_DESP_RAW = await fetchAll(TBLS.despesa); } catch(e){ BUDGET_DESP_RAW=[]; }
+    try{ BUDGET_DESP_RAW = await fetchAll(TBLS.despesa, null, 'despesa'); } catch(e){ BUDGET_DESP_RAW=[]; }
     if(meta) meta.textContent = BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' lançamentos 🔴 dados brutos';
   }
   // DRE data: try snapshot first, skip full raw fetch (too slow for Budget)
@@ -3898,7 +3940,7 @@ function budgetDreMetric(ym, key){
 function budgetDespAm(r){
   // Tenta todos os campos possíveis de data
   // pk_ano_mes_venc_e2_forn format: "202510740" = YYYYMM + forn_code
-  var _pk = String(r.pk_ano_mes_venc_e2_forn||r.PK_ANO_MES_VENC_E2_FORN||'');
+  var _pk = String(r.pk_ano_mes_venc_tipo_e2_forn||r.PK_ANO_MES_VENC_TIPO_E2_FORN||r.pk_ano_mes_venc_e2_forn||r.PK_ANO_MES_VENC_E2_FORN||'');
   var _pkAm = _pk.length >= 6 ? _pk.slice(0,6) : '';
   var v = r.ano_mes_venc||r.ANO_MES_VENC
        || r.ano_mes||r.ANO_MES
@@ -3958,7 +4000,7 @@ function budgetDespByTipoArea(ym, tipo, area){
       && (!area || classif.area===area)
       && classif.desconsiderar !== 'sim'
       && !BUDGET_CFG.tiposIgnorados[classif.tipo];
-  }).reduce(function(s,r){ return s+(parseFloat(r.valor||r.VALOR||r.e2_valor||r.E2_VALOR)||0);},0);
+  }).reduce(function(s,r){ return s+(parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||r.e2_valor||r.E2_VALOR)||0);},0);
 }
 
 var _bFmt = function(v){ if(v===null||v===undefined) return '—';
@@ -4154,7 +4196,7 @@ function openBudgetDetail(tipo, area, ano){
     if(classif.desconsiderar === 'sim') return;
     var am = budgetDespAm(r);
     if(!am || (ano && !am.startsWith(ano))) return;
-    var val = parseFloat(r.valor||r.VALOR||r.e2_valor||r.E2_VALOR||r.value||r.VALUE||r.vlr||r.VLR||r.e2_valto||r.E2_VALTO)||0;
+    var val = parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||r.e2_valor||r.E2_VALOR||r.value||r.VALUE||r.vlr||r.VLR||r.e2_valto||r.E2_VALTO)||0;
     // Agrupa por fornecedor normalizado (nomfor) — hist diferentes ficam na mesma linha
     var nomforKey = nomfor.toUpperCase().replace(/\s+/g,' '); // normaliza capitalização e espaços
     if(nomfor.toUpperCase().indexOf('HEI') >= 0) console.log('[debug HEI MAP] nomforKey='+JSON.stringify(nomforKey)+' am='+am+' val='+val);
@@ -4245,7 +4287,7 @@ function budgetAggregate(raw){
     var nomfor= String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
     var hist  = String(r.e2_hist||r.E2_HIST||'').trim();
     var key   = am+'|'+nomfor+'|'+hist;
-    var val   = parseFloat(r.valor||r.VALOR||r.e2_valor||r.E2_VALOR||r.e2_valto||r.E2_VALTO||r.vlr||r.VLR)||0;
+    var val   = parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||r.e2_valor||r.E2_VALOR||r.e2_valto||r.E2_VALTO||r.vlr||r.VLR)||0;
     if(!map[key]) map[key]={ano_mes_venc:am, e2_nomfor:nomfor, e2_hist:hist, valor:0};
     map[key].valor += val;
   });
@@ -4279,7 +4321,7 @@ async function handleSaveBudget(btn){
 async function budgetForceReload(btn){
   var orig=btn?btn.textContent:''; if(btn){btn.disabled=true;btn.textContent='⏳';}
   BUDGET_LOADED=false; BUDGET_DESP_RAW=[];
-  try{ BUDGET_DESP_RAW = await fetchAll(TBLS.despesa); } catch(e){ BUDGET_DESP_RAW=[]; }
+  try{ BUDGET_DESP_RAW = await fetchAll(TBLS.despesa, null, 'despesa'); } catch(e){ BUDGET_DESP_RAW=[]; }
   BUDGET_LOADED=true;
   renderBudget();
   toast('✔ Despesas recarregadas — '+BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' linhas. Salve para atualizar o snapshot.');
@@ -4296,7 +4338,7 @@ function openBudgetCfg(){
     var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
     var hist   = String(r.e2_hist||r.E2_HIST||'').trim();
     if(!nomfor && !hist) return;
-    var val = parseFloat(r.valor||r.VALOR||r.e2_valor||r.E2_VALOR||r.value||r.VALUE||r.vlr||r.VLR||r.e2_valto||r.E2_VALTO)||0;
+    var val = parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||r.e2_valor||r.E2_VALOR||r.value||r.VALUE||r.vlr||r.VLR||r.e2_valto||r.E2_VALTO)||0;
     // Chave = só nomfor (agrupa todos os hist do mesmo fornecedor)
     if(!combos[nomfor]) combos[nomfor] = {nomfor:nomfor, hists:{}, count:0, total:0};
     combos[nomfor].count++;
