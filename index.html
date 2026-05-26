@@ -1263,7 +1263,9 @@ async function gcRecarregar(key, btn){
   var orig = btn.textContent; btn.disabled = true; btn.textContent = '⏳';
   var st = document.getElementById('cfg_status_'+key);
   try{
-    state[key] = await fetchAll(TBLS[key], null, key);
+    // Para folha: força select=* pois os nomes das colunas variam por tabela
+    var tKey = (key === 'folha') ? null : key;
+    state[key] = await fetchAll(TBLS[key], null, tKey);
     toast('[OK] ' + TBLS[key] + ' recarregado: ' + state[key].length + ' linhas');
     if(st) st.textContent = state[key].length + ' linhas (' + TBLS[key] + ')';
     if(key === 'venda_dre' || key === 'frete_dre'){ DRE_RAW = state[key]; DRE_LOADED = DRE_RAW.length>0; initDre(); }
@@ -1618,7 +1620,7 @@ async function handleReloadAll(btn){
     {label:'Recarregando Vendas...', fn: async function(){ state.venda = await fetchAll(TBLS.venda, null, 'venda'); var s=document.getElementById('cfg_status_venda'); if(s) s.textContent=state.venda.length+' linhas'; }},
     {label:'Recarregando Carteira...', fn: async function(){ state.cart = await fetchAll(TBLS.carteira, null, 'carteira'); var s=document.getElementById('cfg_status_carteira'); if(s) s.textContent=state.cart.length+' linhas'; }},
     {label:'Recarregando DRE...', fn: async function(){ DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre'); DRE_LOADED = DRE_RAW.length > 0; }},
-    {label:'Recarregando Folha...', fn: async function(){ FOLHA_RAW = await fetchAll(TBLS.folha, null, 'folha'); FOLHA_LOADED = FOLHA_RAW.length > 0; }},
+    {label:'Recarregando Folha...', fn: async function(){ FOLHA_RAW = await fetchAll(TBLS.folha, null, null); FOLHA_LOADED = FOLHA_RAW.length > 0; }},
   ];
   var erros = [];
   for(var i = 0; i < steps.length; i++){
@@ -3370,7 +3372,7 @@ function folhaTotal(r){
 async function loadFolhaFromSupabase(){
   try{
     // Sempre busca da tabela — dados brutos não são salvos no cache
-    FOLHA_RAW=await fetchAll(TBLS.folha, null, 'folha');
+    FOLHA_RAW=await fetchAll(TBLS.folha, null, null);
     FOLHA_LOADED=FOLHA_RAW.length>0;
     if(FOLHA_LOADED) initFolha();
     else document.getElementById('folhaHeaderMeta').textContent='Sem dados de folha';
