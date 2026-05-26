@@ -500,13 +500,24 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
         <h3>☁️ Tabelas Supabase — DRE / Folha</h3>
         <div id="cfgDreRows"></div>
       </div>
+      <div class="cfg-section" id="cfgPermSection" style="margin-bottom:0;display:none">
+        <h3>🔐 Permissões de Budget por Usuário</h3>
+        <p style="font-size:11px;color:#7a8ab0;margin:0 0 12px">Deixe sem áreas marcadas para acesso total. Selecione as áreas que o usuário pode ver em Despesas.</p>
+        <div id="cfgPermRows"></div>
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+          <input id="permNewEmail" type="email" placeholder="novo@email.com" style="flex:1;padding:7px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:12px;font-family:inherit">
+          <button onclick="addPermRow()" style="padding:7px 14px;background:#1a2547;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600">+ Adicionar</button>
+        </div>
+        <div style="margin-top:12px">
+          <button id="btnSavePermissoes" onclick="savePermissions(this)" style="padding:8px 20px;background:#1a7c3e;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:700">💾 Salvar Permissões</button>
+        </div>
+      </div>
       <div class="cfg-section" style="margin-bottom:0">
         <h3>ℹ️ Sessão</h3>
         <div id="cfgUserInfo" style="font-size:12px;color:#444"></div>
       </div>
     </div>
     <div class="cfg-footer">
-      <button class="btn" id="btnPermissoes" onclick="openPermissions()" style="background:#1a2547;color:#fff;font-size:12px;margin-right:8px">🔐 Permissões</button>
       <button class="btn save" onclick="handleSaveAll(this)" style="margin-right:auto">💾 Salvar Tudo</button>
       <button class="btn" onclick="closeConfig()">Fechar</button>
     </div>
@@ -985,9 +996,24 @@ function openConfig(){
   if(_session && _session.user){
     document.getElementById('cfgUserInfo').textContent = 'Logado como: ' + _session.user.email;
   }
-  // Mostra botão de Permissões só para admins
-  var btnPerm = document.getElementById('btnPermissoes');
-  if(btnPerm) btnPerm.style.display = isAdmin() ? '' : 'none';
+  // Mostra seção de Permissões só para admins
+  var permSection = document.getElementById('cfgPermSection');
+  if(permSection){
+    if(isAdmin()){
+      permSection.style.display = '';
+      // Popula lista de usuários
+      var permEmails = Object.keys(USER_PERMISSIONS).sort();
+      var permHtml = permEmails.length
+        ? permEmails.map(function(email){
+            var areas = (USER_PERMISSIONS[email]&&USER_PERMISSIONS[email].budgetAreas)||[];
+            return permRow(email, areas);
+          }).join('')
+        : '<p style="font-size:11px;color:#aaa;margin:0">Nenhum usuário cadastrado — todos têm acesso total.</p>';
+      document.getElementById('cfgPermRows').innerHTML = permHtml;
+    } else {
+      permSection.style.display = 'none';
+    }
+  }
   // Constrói rows OTB
   var otbDefs = [
     {key:'stk',      label:'📦 Estoque',    dateCol:'ANO_MES'},
@@ -1035,35 +1061,14 @@ function openConfig(){
 
 // ── Painel de Permissões de Budget ──────────────────────
 function openPermissions(){
+  // Permissões agora está inline no painel de Configurações — abre config direto
   if(!isAdmin()){ toast('Acesso restrito a administradores.','err'); return; }
-  var emails = Object.keys(USER_PERMISSIONS).sort();
-  var areaOpts = BUDGET_AREAS.map(function(a){ return '<option value="'+a+'">'+a+'</option>'; }).join('');
-
-  var h = '<div style="padding:20px;max-width:700px;margin:0 auto">';
-  h += '<h3 style="margin:0 0 6px;color:#1a2547;font-size:15px">🔐 Permissões de Budget por Usuário</h3>';
-  h += '<p style="font-size:11px;color:#7a8ab0;margin:0 0 16px">Deixe em branco para acesso total. Selecione as áreas que o usuário pode ver em Despesas.</p>';
-
-  // Existing users
-  h += '<div id="permRows">';
-  if(emails.length){
-    emails.forEach(function(email){
-      var areas = (USER_PERMISSIONS[email]&&USER_PERMISSIONS[email].budgetAreas)||[];
-      h += permRow(email, areas);
-    });
-  }
-  h += '</div>';
-  h += '<div style="margin-top:12px;display:flex;gap:8px;align-items:center">';
-  h += '<input id="permNewEmail" type="email" placeholder="novo@email.com" style="flex:1;padding:7px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:12px;font-family:inherit">';
-  h += '<button onclick="addPermRow()" style="padding:7px 14px;background:#1a2547;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600">+ Adicionar</button>';
-  h += '</div>';
-  h += '<div style="margin-top:16px;display:flex;gap:8px;justify-content:flex-end">';
-  h += '<button onclick="savePermissions(this)" style="padding:8px 20px;background:#1a7c3e;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:700">💾 Salvar Permissões</button>';
-  h += '</div>';
-  h += '</div>';
-
-  var card = '<div style="background:#fff;border-radius:12px;box-shadow:0 24px 64px rgba(0,0,0,.4);width:min(720px,95vw);max-height:85vh;overflow-y:auto">'+h+'</div>';
-  document.getElementById('permOverlay').innerHTML = card;
-  document.getElementById('permOverlay').style.display = 'flex';
+  openConfig();
+  // Scroll até a seção de permissões
+  setTimeout(function(){
+    var sec = document.getElementById('cfgPermSection');
+    if(sec) sec.scrollIntoView({behavior:'smooth', block:'start'});
+  }, 100);
 }
 
 function permRow(email, selectedAreas){
@@ -1084,9 +1089,15 @@ function addPermRow(){
   var email = document.getElementById('permNewEmail').value.trim().toLowerCase();
   if(!email) return;
   if(document.querySelector('.perm-row[data-email="'+email+'"]')){ toast('E-mail já existe','err'); return; }
-  var div = document.createElement('div');
-  div.innerHTML = permRow(email, []);
-  document.getElementById('permRows').appendChild(div.firstChild);
+  var container = document.getElementById('cfgPermRows');
+  if(container){
+    // Remove placeholder text if present
+    var placeholder = container.querySelector('p');
+    if(placeholder) placeholder.remove();
+    var div = document.createElement('div');
+    div.innerHTML = permRow(email, []);
+    container.appendChild(div.firstChild);
+  }
   document.getElementById('permNewEmail').value = '';
 }
 
@@ -1101,9 +1112,8 @@ async function savePermissions(btn){
   try{
     await supaSave(TBLS.save_dre, 'user_permissions', newPerms);
     USER_PERMISSIONS = newPerms;
-    toast('✔ Permissões salvas');
-    document.getElementById('permOverlay').style.display = 'none';
-  } catch(e){ toast('Erro: '+e.message,'err'); }
+    toast('✔ Permissões salvas com sucesso');
+  } catch(e){ toast('Erro ao salvar permissões: '+e.message,'err'); }
   btn.disabled=false; btn.textContent=orig;
 }
 
