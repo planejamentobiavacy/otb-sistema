@@ -183,27 +183,32 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
 .dre-prog-label{font-size:12px;color:#7a8ab0;font-weight:600}
 
 /* ── Folha ──────────────────────────────────────── */
-#folhaPivotWrap{display:flex;flex:1;overflow:hidden;min-height:0}
-#folhaSidebar{width:160px;min-width:160px;flex-shrink:0;background:#fff;border-right:1px solid #dde3f0;padding:12px 10px;overflow-y:auto;display:flex;flex-direction:column;gap:14px}
-.fp-fl{display:flex;flex-direction:column;gap:4px}
-.fp-fl label{font-size:10px;font-weight:700;color:#1a2236;letter-spacing:.6px;text-transform:uppercase}
-.fp-fl select{width:100%;font-size:11px;padding:4px 6px;border:1px solid #c8d0e0;border-radius:4px;background:#f7f9fc;color:#1a2236;cursor:pointer;outline:none}
-#folhaMain{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0}
-#folhaTabsBar{display:flex;background:#fff;border-bottom:2px solid #dde3f0;flex-shrink:0}
-.fp-tab{font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:12px 22px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;font-family:inherit}
-.fp-tab.active{color:#7b2d8b;border-bottom-color:#7b2d8b;font-weight:700}
-#folhaTablesArea{flex:1;overflow:auto;padding:0;background:#f4f5f7}
-.fp-scroll{overflow-x:auto;border-radius:4px;border:1px solid #dde3f0;background:#fff}
-.fp-tbl{border-collapse:collapse;font-size:11.5px;width:100%;white-space:nowrap;font-variant-numeric:tabular-nums}
-.fp-tbl thead th{position:sticky;top:0;z-index:4}
-.fp-th-dim{padding:7px 12px;text-align:left;font-weight:700;font-size:11px;position:sticky;left:0;top:0;z-index:6;background:#1a2236;color:#fff;min-width:180px;border-right:1px solid rgba(255,255,255,.15)}
-.fp-th-m{padding:7px 10px;text-align:center;font-weight:700;font-size:10px;min-width:76px;border-left:1px solid rgba(255,255,255,.08);background:#1a2236;color:#fff}
-.fp-td-dim{padding:5px 12px;font-size:11.5px;color:#1a2236;font-weight:500;position:sticky;left:0;z-index:1;background:#fff;border-right:1px solid #dde3f0;border-bottom:1px solid #eef0f6}
-.fp-td-val{padding:5px 10px;text-align:center;color:#222;border-bottom:1px solid #eef0f6;border-left:1px solid #f0f2f7;font-size:11.5px}
-.fp-td-val.z{color:#ccc}
-.fp-tbl tbody tr:nth-child(even) .fp-td-dim,.fp-tbl tbody tr:nth-child(even) .fp-td-val{background:#f9fafb}
-.fp-tbl tbody tr:hover .fp-td-dim,.fp-tbl tbody tr:hover .fp-td-val{background:#f0eaf5!important}
-.fp-tot .fp-td-dim,.fp-tot .fp-td-val{background:#1a2236!important;color:#fff!important;font-weight:700;border-top:2px solid #7b2d8b}
+#folhaTablesArea{flex:1;overflow:auto;background:#f4f5f7}
+/* Pill tabs */
+.fp-tab-pill{background:transparent;border:none;padding:5px 14px;font-size:12px;font-weight:600;color:#6b7280;cursor:pointer;border-radius:4px;font-family:inherit;transition:all .15s}
+.fp-tab-pill.active{background:#fff;color:#7b2d8b;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.fp-tab-pill:hover:not(.active){color:#1a2236;background:rgba(255,255,255,.6)}
+/* Budget-style table */
+.fh-wrap{background:#fff;min-width:100%}
+.fh-tbl{border-collapse:separate;border-spacing:0;font-size:12px;width:100%;font-variant-numeric:tabular-nums;background:#fff;white-space:nowrap}
+.fh-tbl thead tr:first-child th{background:linear-gradient(180deg,#1e3fa8 0%,#1a2a6c 100%);color:#fff;font-weight:700;font-size:11px;padding:10px 14px;text-align:center;position:sticky;top:0;z-index:5;border-left:1px solid rgba(255,255,255,.1);letter-spacing:.5px;text-transform:uppercase}
+.fh-tbl thead th.fh-ind{text-align:left;position:sticky;left:0;top:0;z-index:10;min-width:220px;max-width:220px;border-right:2px solid rgba(255,255,255,.2)}
+/* Section header */
+.fh-tbl tr.fh-sec td{background:linear-gradient(90deg,#1a2a6c 0%,#2352c8 100%)!important;color:#fff;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;padding:8px 14px}
+.fh-tbl tr.fh-sec td.fh-fix{position:sticky;left:0;z-index:2;background:linear-gradient(90deg,#1a2a6c,#2352c8)!important}
+/* Area row */
+.fh-tbl tr.fh-area td{background:#eef1f4!important;color:#1a2a6c;font-weight:700;font-size:13px;padding:8px 14px;border-bottom:1px solid #d0d8ee}
+.fh-tbl tr.fh-area td.fh-fix{position:sticky;left:0;z-index:2;background:#eef1f4!important}
+/* Sub rows */
+.fh-tbl tr.fh-sub td{background:#fff;color:#1a1f2e;font-size:12px;padding:6px 14px;border-bottom:1px solid #eef1f4}
+.fh-tbl tr.fh-sub td.fh-fix{position:sticky;left:0;z-index:2;background:#fff;padding-left:28px;color:#3b4660;font-weight:500}
+.fh-tbl tr.fh-sub:hover td{background:#f5f7fb!important}
+/* Total row */
+.fh-tbl tr.fh-tot td{background:#1a2547!important;color:#fff!important;font-weight:700;font-size:13px;padding:10px 14px;border-top:2px solid #2352c8}
+.fh-tbl tr.fh-tot td.fh-fix{position:sticky;left:0;z-index:2;background:#1a2547!important}
+/* Values */
+.fh-tbl td.fh-val{text-align:right;padding:6px 14px;white-space:nowrap}
+.fh-tbl td.fh-val.fh-zero{color:#c0c8d8}
 
 /* ── DRE Multi-select filter ─────────────────────────── */
 .dre-ms{position:relative;display:inline-flex;flex-direction:column;gap:4px}
@@ -460,23 +465,36 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
     </div>
     <button class="btn save" id="btnSaveFolha" onclick="handleSaveFolha(this)">💾 Salvar Folha</button>
   </header>
-  <div id="folhaPivotWrap" style="flex:1;overflow:hidden;min-height:0;display:flex">
-    <div id="folhaSidebar">
-      <div class="fp-fl"><label>SITUAÇÃO</label><select id="fpFS"><option>Todos</option></select></div>
-      <div class="fp-fl"><label>TIPO</label><select id="fpFT"><option>Todos</option></select></div>
-      <div class="fp-fl"><label>ÁREA</label><select id="fpFA"><option>Todos</option></select></div>
-      <div class="fp-fl"><label>NOME</label><select id="fpFN"><option>Todos</option></select></div>
-      <div class="fp-fl"><label>ANO</label><select id="fpFAno"><option>Todos</option></select></div>
+  <!-- Barra de filtros + abas estilo Budget -->
+  <div style="background:#fff;border-bottom:1px solid #d9dde3;padding:8px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;flex-shrink:0">
+    <div style="display:flex;align-items:center;gap:6px">
+      <label style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">ANO:</label>
+      <select id="fpFAno" onchange="FOLHA_FILTROS.ano=this.value;_folhaRenderAll()" style="font-size:12px;padding:4px 8px;border:1.5px solid #d0d8ee;border-radius:4px;background:#f7f9fc;color:#1a2236;cursor:pointer;outline:none"><option>Todos</option></select>
     </div>
-    <div id="folhaMain">
-      <div id="folhaTabsBar">
-        <button class="fp-tab active" id="fpTabArea"  onclick="folhaSwitchAba('area')">POR ÁREA</button>
-        <button class="fp-tab"        id="fpTabCargo" onclick="folhaSwitchAba('cargo')">POR CARGO</button>
-        <button class="fp-tab"        id="fpTabNome"  onclick="folhaSwitchAba('nome')">POR NOME</button>
-      </div>
-      <div id="folhaTablesArea"><div id="fpTblPrincipal"></div></div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <label style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">ÁREA:</label>
+      <select id="fpFA" onchange="FOLHA_FILTROS.area=this.value;_folhaRenderAll()" style="font-size:12px;padding:4px 8px;border:1.5px solid #d0d8ee;border-radius:4px;background:#f7f9fc;color:#1a2236;cursor:pointer;outline:none"><option>Todos</option></select>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <label style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">SITUAÇÃO:</label>
+      <select id="fpFS" onchange="FOLHA_FILTROS.situacao=this.value;_folhaRenderAll()" style="font-size:12px;padding:4px 8px;border:1.5px solid #d0d8ee;border-radius:4px;background:#f7f9fc;color:#1a2236;cursor:pointer;outline:none"><option>Todos</option></select>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <label style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">TIPO:</label>
+      <select id="fpFT" onchange="FOLHA_FILTROS.tipo=this.value;_folhaRenderAll()" style="font-size:12px;padding:4px 8px;border:1.5px solid #d0d8ee;border-radius:4px;background:#f7f9fc;color:#1a2236;cursor:pointer;outline:none"><option>Todos</option></select>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <label style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">NOME:</label>
+      <select id="fpFN" onchange="FOLHA_FILTROS.nome=this.value;_folhaRenderAll()" style="font-size:12px;padding:4px 8px;border:1.5px solid #d0d8ee;border-radius:4px;background:#f7f9fc;color:#1a2236;cursor:pointer;outline:none"><option>Todos</option></select>
+    </div>
+    <!-- Abas de agrupamento -->
+    <div style="margin-left:auto;display:flex;gap:2px;background:#eef1f4;padding:3px;border-radius:6px">
+      <button class="fp-tab-pill active" id="fpTabArea"  onclick="folhaSwitchAba('area')">Por Área</button>
+      <button class="fp-tab-pill"        id="fpTabCargo" onclick="folhaSwitchAba('cargo')">Por Cargo</button>
+      <button class="fp-tab-pill"        id="fpTabNome"  onclick="folhaSwitchAba('nome')">Por Nome</button>
     </div>
   </div>
+  <div id="folhaTablesArea" style="flex:1;overflow:auto;background:#f4f5f7"><div id="fpTblPrincipal"></div></div>
 </div>
 
 <!-- ══════════════════ CONFIGURAÇÕES ══════════════ -->
@@ -3459,100 +3477,87 @@ function _fpMeses(rows){var s={};rows.forEach(function(r){var p=String(folhaGetP
 function _fpMesLabel(am){var n=['JAN','FEV','MAR','ABR','MAI','JUN','JUL','AGO','SET','OUT','NOV','DEZ'];return(n[parseInt(am.slice(4,6),10)-1]||am.slice(4))+'/'+am.slice(2,4);}
 function _fpAgregar(rows,getFn){var result={};rows.forEach(function(r){var dim=getFn(r)||'(outros)',am=String(folhaGetPeriodo(r)).replace(/\D/g,'').slice(0,6);if(am.length!==6) return;var val=folhaTotal(r);if(!result[dim])result[dim]={};result[dim][am]=(result[dim][am]||0)+val;});return result;}
 function _fpRenderTabela(cid,rows,getFn){
-  // Legacy fallback — não usado no novo layout
   var c=document.getElementById(cid);if(!c) return;
   _folhaRenderBudgetStyle(c, rows);
 }
 
 function _folhaRenderBudgetStyle(container, rows){
   var meses = _fpMeses(rows);
-  if(!meses.length){ container.innerHTML='<div style="padding:40px;color:#999;font-size:13px;text-align:center">Sem dados</div>'; return; }
+  if(!meses.length){ container.innerHTML='<div style="padding:60px;color:#999;font-size:13px;text-align:center">Sem dados</div>'; return; }
 
-  // Monta estrutura: área → cargo → { [am]: valor }
-  var estrutura = {}; // { area: { cargo: { am: val } } }
-  var totArea   = {}; // { area: { am: val } }
-  var totGeral  = {}; // { am: val }
+  // Monta estrutura: área → sub (cargo ou nome) → { [am]: valor }
+  var estrutura = {};
+  var totArea   = {};
+  var totGeral  = {};
   rows.forEach(function(r){
-    var area  = folhaGetArea(r);
-    var cargo = FOLHA_ABA === 'nome' ? folhaGetNome(r) : FOLHA_ABA === 'cargo' ? folhaGetCargo(r) : folhaGetCargo(r);
-    var am    = String(folhaGetPeriodo(r)).replace(/\D/g,'').slice(0,6);
-    if(am.length !== 6) return;
-    var val   = folhaTotal(r);
-    if(!estrutura[area]) estrutura[area] = {};
-    if(!estrutura[area][cargo]) estrutura[area][cargo] = {};
-    estrutura[area][cargo][am] = (estrutura[area][cargo][am]||0) + val;
-    if(!totArea[area]) totArea[area] = {};
-    totArea[area][am] = (totArea[area][am]||0) + val;
-    totGeral[am] = (totGeral[am]||0) + val;
+    var area = folhaGetArea(r);
+    var sub  = FOLHA_ABA==='nome' ? folhaGetNome(r) : folhaGetCargo(r);
+    var am   = String(folhaGetPeriodo(r)).replace(/\D/g,'').slice(0,6);
+    if(am.length!==6) return;
+    var val  = folhaTotal(r);
+    if(!estrutura[area]) estrutura[area]={};
+    if(!estrutura[area][sub]) estrutura[area][sub]={};
+    estrutura[area][sub][am]=(estrutura[area][sub][am]||0)+val;
+    if(!totArea[area]) totArea[area]={};
+    totArea[area][am]=(totArea[area][am]||0)+val;
+    totGeral[am]=(totGeral[am]||0)+val;
   });
 
-  var areas = Object.keys(estrutura).sort();
-  var n = meses.length;
-  var subLabel = FOLHA_ABA === 'nome' ? 'Pessoa' : 'Cargo';
+  var areas=Object.keys(estrutura).sort();
+  var n=meses.length;
+  function brl(v){ return 'R$ '+folhaBrl(v); }
 
-  // ── CSS inline (Budget style) ──
-  var css = '<style>'
-    +'.fh-tbl{border-collapse:collapse;font-size:12px;width:100%;font-variant-numeric:tabular-nums;background:#fff}'
-    +'.fh-tbl th{background:#1a2547;color:#fff;font-weight:700;font-size:11px;padding:9px 14px;text-align:center;white-space:nowrap;position:sticky;top:0;z-index:5;border-left:1px solid rgba(255,255,255,.1)}'
-    +'.fh-tbl th.fh-ind{text-align:left;position:sticky;left:0;top:0;z-index:10;min-width:220px;border-right:2px solid rgba(255,255,255,.2)}'
-    +'.fh-sec td{background:linear-gradient(90deg,#7b2d8b 0%,#a044b8 100%)!important;color:#fff!important;font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:1.5px;padding:7px 14px;border-bottom:none}'
-    +'.fh-sec td.fh-fix{position:sticky;left:0;z-index:2;background:linear-gradient(90deg,#7b2d8b 0%,#a044b8 100%)!important}'
-    +'.fh-area td{background:#f7f0fa!important;color:#5a0070;font-weight:800;font-size:13px;padding:8px 14px;border-top:2px solid #7b2d8b;border-bottom:1px solid #d8b8e8}'
-    +'.fh-area td.fh-fix{position:sticky;left:0;z-index:2;background:#f7f0fa!important}'
-    +'.fh-sub td{background:#fff;color:#1a1f2e;font-size:12px;padding:5px 14px;border-bottom:1px solid #eef0f6}'
-    +'.fh-sub td.fh-fix{position:sticky;left:0;z-index:2;background:#fff;color:#555;padding-left:28px;font-weight:500}'
-    +'.fh-sub:hover td{background:#f9f0fc!important}'
-    +'.fh-tot td{background:#1a2547!important;color:#fff!important;font-weight:700;font-size:13px;padding:10px 14px;border-top:3px solid #7b2d8b}'
-    +'.fh-tot td.fh-fix{position:sticky;left:0;z-index:2;background:#1a2547!important}'
-    +'.fh-val{text-align:right;padding:5px 14px;white-space:nowrap}'
-    +'.fh-val.z{color:#ccc}'
-    +'</style>';
+  var h='<div class="fh-wrap"><table class="fh-tbl"><thead><tr>'
+    +'<th class="fh-ind">INDICADOR</th>';
+  meses.forEach(function(am){ h+='<th>'+_fpMesLabel(am)+'</th>'; });
+  h+='</tr></thead><tbody>';
 
-  var h = css + '<div style="overflow-x:auto"><table class="fh-tbl"><thead><tr>'
-    + '<th class="fh-ind">INDICADOR</th>';
-  meses.forEach(function(am){ h += '<th>'+_fpMesLabel(am)+'</th>'; });
-  h += '</tr></thead><tbody>';
-
-  // Seção FOLHA DE PAGAMENTO
-  h += '<tr class="fh-sec"><td class="fh-fix" colspan="'+(n+1)+'">👥 FOLHA DE PAGAMENTO</td></tr>';
+  // Seção header
+  h+='<tr class="fh-sec"><td class="fh-fix" colspan="'+(n+1)+'">👥 FOLHA DE PAGAMENTO</td></tr>';
 
   areas.forEach(function(area){
-    var cargos = Object.keys(estrutura[area]).sort();
-    // Linha da área (total)
-    h += '<tr class="fh-area"><td class="fh-fix">'+area+'</td>';
+    var subs=Object.keys(estrutura[area]).sort();
+    // Linha da área — bold, fundo cinza-azulado igual ao Budget
+    h+='<tr class="fh-area"><td class="fh-fix">'+area+'</td>';
     meses.forEach(function(am){
-      var v = totArea[area][am]||0;
-      h += '<td class="fh-val'+(v===0?' z':'')+'">'+(v?'R$ '+folhaBrl(v):'—')+'</td>';
+      var v=totArea[area][am]||0;
+      h+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'—')+'</td>';
     });
-    h += '</tr>';
-    // Sub-linhas por cargo/nome
-    cargos.forEach(function(cargo){
-      h += '<tr class="fh-sub"><td class="fh-fix">↳ '+cargo+'</td>';
+    h+='</tr>';
+    // Sub-linhas
+    subs.forEach(function(sub){
+      h+='<tr class="fh-sub"><td class="fh-fix">↳ '+sub+'</td>';
       meses.forEach(function(am){
-        var v = estrutura[area][cargo][am]||0;
-        h += '<td class="fh-val'+(v===0?' z':'')+'">'+(v?'R$ '+folhaBrl(v):'—')+'</td>';
+        var v=estrutura[area][sub][am]||0;
+        h+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'—')+'</td>';
       });
-      h += '</tr>';
+      h+='</tr>';
     });
   });
 
-  // Total geral
-  h += '<tr class="fh-tot"><td class="fh-fix">TOTAL GERAL</td>';
+  // Total geral — fundo azul-escuro igual ao Budget
+  h+='<tr class="fh-tot"><td class="fh-fix">TOTAL GERAL</td>';
   meses.forEach(function(am){
-    var v = totGeral[am]||0;
-    h += '<td class="fh-val">'+(v?'R$ '+folhaBrl(v):'—')+'</td>';
+    var v=totGeral[am]||0;
+    h+='<td class="fh-val">'+(v?brl(v):'—')+'</td>';
   });
-  h += '</tr></tbody></table></div>';
+  h+='</tr></tbody></table></div>';
 
-  container.innerHTML = h;
+  container.innerHTML=h;
 }
 
 function _folhaRenderAll(){
-  var rows = _folhaFiltrar();
-  var meta = document.getElementById('folhaHeaderMeta');
-  if(meta) meta.innerHTML = '<strong>'+rows.length.toLocaleString('pt-BR')+' registros</strong>';
-  var c = document.getElementById('fpTblPrincipal');
-  if(c) _folhaRenderBudgetStyle(c, rows);
+  var rows=_folhaFiltrar();
+  var meta=document.getElementById('folhaHeaderMeta');
+  if(meta) meta.innerHTML='<strong>'+rows.length.toLocaleString('pt-BR')+' registros</strong>';
+  // Atualiza pill tabs
+  ['area','cargo','nome'].forEach(function(a){
+    var id='fpTab'+a.charAt(0).toUpperCase()+a.slice(1);
+    var btn=document.getElementById(id);
+    if(btn) btn.className='fp-tab-pill'+(a===FOLHA_ABA?' active':'');
+  });
+  var c=document.getElementById('fpTblPrincipal');
+  if(c) _folhaRenderBudgetStyle(c,rows);
 }
 
 // ═══════════════════════════════════════════════════════
