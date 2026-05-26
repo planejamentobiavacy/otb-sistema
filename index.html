@@ -463,7 +463,10 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
         <small id="folhaHeaderMeta">Carregando...</small>
       </div>
     </div>
-    <button class="btn save" id="btnSaveFolha" onclick="handleSaveFolha(this)">💾 Salvar Folha</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn" onclick="openFolhaCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button>
+      <button class="btn save" id="btnSaveFolha" onclick="handleSaveFolha(this)">💾 Salvar</button>
+    </div>
   </header>
   <!-- Barra de filtros + abas estilo Budget -->
   <div style="background:#fff;border-bottom:1px solid #d9dde3;padding:8px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;flex-shrink:0">
@@ -492,6 +495,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       <button class="fp-tab-pill active" id="fpTabArea"  onclick="folhaSwitchAba('area')">Por Área</button>
       <button class="fp-tab-pill"        id="fpTabCargo" onclick="folhaSwitchAba('cargo')">Por Cargo</button>
       <button class="fp-tab-pill"        id="fpTabNome"  onclick="folhaSwitchAba('nome')">Por Nome</button>
+      <button class="fp-tab-pill"        id="fpTabCanal" onclick="folhaSwitchAba('canal')">Por Canal</button>
     </div>
   </div>
   <div id="folhaTablesArea" style="flex:1;overflow:auto;background:#f4f5f7"><div id="fpTblPrincipal"></div></div>
@@ -3404,13 +3408,27 @@ function dreTabela(cols){
 // ═══════════════════════════════════════════════════════
 var FOLHA_RAW=[], FOLHA_LOADED=false, FOLHA_ABA='area';
 var FOLHA_FILTROS={situacao:'Todos',tipo:'Todos',area:'Todos',nome:'Todos',ano:'Todos'};
+// Configurações de classificação por pessoa (override de área e canal)
+var FOLHA_CFG={ classif:{} }; // { 'NOME_PESSOA': { area:'Comercial', canal:'Closer' } }
+var FOLHA_CANAIS = ['—','Farmer','Developer','Closer','Hava','KA'];
+var FOLHA_AREAS_PADRAO = ['Administrativo','Avacy','Comercial','Compras','E-comm/Mkt','Financeiro','Fiscal','Operações','RH','TI'];
 var FOLHA_VERBAS=['SALARIO_BASE','BONIFICACAO','AJUDA_CUSTO','CURSOS','UTILIDADE','COMISSAO','DSR','GRENDENE','HORAS_EXTRA','DSR_HE','AUX_DOENCA','AUX_SEGURO','AUX_MATERN','VERBAS_RESCIS','S13_PARC'];
 
 function folhaNum(v){if(!v&&v!==0) return 0;if(typeof v==='number') return v;var s=String(v).trim().replace(/\./g,'').replace(',','.');var n=parseFloat(s);return isNaN(n)?0:n;}
 function folhaBrl(v){return Math.round(v).toLocaleString('pt-BR');}
 function folhaGetField(r,candidates){for(var i=0;i<candidates.length;i++){var k=candidates[i],keys=Object.keys(r),found=keys.find(function(rk){return rk.toUpperCase()===k.toUpperCase();});if(found!==undefined&&r[found]!==null&&r[found]!==undefined&&String(r[found]).trim()!=='') return String(r[found]).trim();}return'';}
 function folhaGetPeriodo(r){return folhaGetField(r,['ano_mes','PERIODO','ANO_MES','periodo']);}
-function folhaGetArea(r){return folhaGetField(r,['area','AREA','SETOR','DEPARTAMENTO'])||'(sem área)';}
+function folhaGetArea(r){
+  var nome = folhaGetNome(r);
+  var cfg  = FOLHA_CFG.classif[nome];
+  if(cfg && cfg.area) return cfg.area;
+  return folhaGetField(r,['area','AREA','SETOR','DEPARTAMENTO'])||'(sem área)';
+}
+function folhaGetCanal(r){
+  var nome = folhaGetNome(r);
+  var cfg  = FOLHA_CFG.classif[nome];
+  return (cfg && cfg.canal && cfg.canal!=='—') ? cfg.canal : '';
+}
 function folhaGetCargo(r){return folhaGetField(r,['cargo','CARGO','DESC_FUNCAO','FUNCAO','desc_funcao'])||'(sem cargo)';}
 function folhaGetNome(r){return folhaGetField(r,['pessoa','NOME','NOME_FUNCIONARIO','FUNCIONARIO','nome'])||'(sem nome)';}
 function folhaGetTipo(r){return folhaGetField(r,['TIPO','TIPO_CONTRATO','VINCULO','tipo'])||'';}
@@ -3426,7 +3444,11 @@ function folhaTotal(r){
 
 async function loadFolhaFromSupabase(){
   try{
-    // Sempre busca da tabela — dados brutos não são salvos no cache
+    // Carrega classificações salvas antes de renderizar
+    try{
+      var savedCfg = await supaLoad(TBLS.save_folha, 'folha_classif');
+      if(savedCfg && savedCfg.classif) FOLHA_CFG.classif = savedCfg.classif;
+    } catch(e){}
     FOLHA_RAW=await fetchAll(TBLS.folha, null, null);
     FOLHA_LOADED=FOLHA_RAW.length>0;
     if(FOLHA_LOADED) initFolha();
@@ -3435,8 +3457,119 @@ async function loadFolhaFromSupabase(){
 }
 
 async function handleSaveFolha(btn){
-  // Folha não tem configurações para salvar — dados ficam no Supabase
-  toast('Folha carrega sempre direto do Supabase — não há configurações para salvar.');
+  await saveFolhaCfg(btn);
+}
+
+// ─── FOLHA CONFIG ────────────────────────────────────────
+async function openFolhaCfg(){
+  // Carrega cfg salva se ainda não carregou
+  if(!Object.keys(FOLHA_CFG.classif).length){
+    try{
+      var saved = await supaLoad(TBLS.save_folha, 'folha_classif');
+      if(saved && saved.classif) FOLHA_CFG.classif = saved.classif;
+    } catch(e){}
+  }
+
+  // Coleta nomes únicos dos dados brutos
+  var nomes = {};
+  FOLHA_RAW.forEach(function(r){
+    var nome = folhaGetNome(r);
+    if(!nome || nome.startsWith('(sem')) return;
+    if(!nomes[nome]){
+      nomes[nome] = {
+        areaBruta: folhaGetArea(r),
+        cargo: folhaGetCargo(r)
+      };
+    }
+  });
+
+  // Ordena e renderiza
+  var lista = Object.keys(nomes).sort();
+  window._folhaCfgLista = lista;
+  window._folhaCfgNomes = nomes;
+
+  folhaCfgRender(lista);
+  document.getElementById('folhaCfgOverlay').style.display = 'flex';
+}
+
+function folhaCfgRender(lista){
+  var nomes = window._folhaCfgNomes || {};
+  var areaOpts = FOLHA_AREAS_PADRAO.map(function(a){
+    return '<option value="'+a+'">'+a+'</option>';
+  }).join('');
+  var canalOpts = FOLHA_CANAIS.map(function(c){
+    return '<option value="'+c+'">'+c+'</option>';
+  }).join('');
+
+  var h = '<table style="width:100%;border-collapse:collapse;font-size:12px">'
+    +'<thead><tr style="background:#1a2547;color:#fff;position:sticky;top:0;z-index:2">'
+    +'<th style="padding:9px 14px;text-align:left;font-weight:700;font-size:11px;letter-spacing:.5px;min-width:220px">NOME</th>'
+    +'<th style="padding:9px 14px;text-align:left;font-weight:700;font-size:11px;letter-spacing:.5px">CARGO (base)</th>'
+    +'<th style="padding:9px 14px;text-align:left;font-weight:700;font-size:11px;letter-spacing:.5px;min-width:160px">ÁREA</th>'
+    +'<th style="padding:9px 14px;text-align:left;font-weight:700;font-size:11px;letter-spacing:.5px;min-width:130px">CANAL</th>'
+    +'</tr></thead><tbody>';
+
+  lista.forEach(function(nome, i){
+    var info   = nomes[nome] || {};
+    var salvo  = FOLHA_CFG.classif[nome] || {};
+    var area   = salvo.area  || info.areaBruta || '';
+    var canal  = salvo.canal || '—';
+    var bg     = i%2===0 ? '#fff' : '#f7f9ff';
+
+    h += '<tr style="background:'+bg+'" data-nome="'+escHtml(nome)+'">'
+      +'<td style="padding:7px 14px;font-weight:600;color:#1a2547;border-bottom:1px solid #eef1f4">'+escHtml(nome)+'</td>'
+      +'<td style="padding:7px 14px;color:#7a8ab0;font-size:11px;border-bottom:1px solid #eef1f4">'+escHtml(info.cargo||'')+'</td>'
+      +'<td style="padding:5px 10px;border-bottom:1px solid #eef1f4">'
+        +'<select class="fcfg-area" data-nome="'+escHtml(nome)+'" style="width:100%;padding:5px 8px;border:1.5px solid #d0d8ee;border-radius:4px;font-size:12px;font-family:inherit;background:#fff">'
+        +'<option value="">— manter original —</option>'
+        +FOLHA_AREAS_PADRAO.map(function(a){ return '<option value="'+a+'"'+(a===area?' selected':'')+'>'+a+'</option>'; }).join('')
+        +'</select>'
+      +'</td>'
+      +'<td style="padding:5px 10px;border-bottom:1px solid #eef1f4">'
+        +'<select class="fcfg-canal" data-nome="'+escHtml(nome)+'" style="width:100%;padding:5px 8px;border:1.5px solid #d0d8ee;border-radius:4px;font-size:12px;font-family:inherit;background:#fff">'
+        +FOLHA_CANAIS.map(function(c){ return '<option value="'+c+'"'+(c===canal?' selected':'')+'>'+c+'</option>'; }).join('')
+        +'</select>'
+      +'</td>'
+      +'</tr>';
+  });
+
+  h += '</tbody></table>';
+
+  document.getElementById('folhaCfgBody').innerHTML = h;
+  var cnt = document.getElementById('folhaCfgCount');
+  if(cnt) cnt.textContent = lista.length + ' colaboradores';
+}
+
+function folhaCfgFilter(q){
+  var lista = window._folhaCfgLista || [];
+  var filtered = q.trim() ? lista.filter(function(n){ return n.toUpperCase().includes(q.toUpperCase()); }) : lista;
+  folhaCfgRender(filtered);
+}
+
+function closeFolhaCfg(){
+  document.getElementById('folhaCfgOverlay').style.display = 'none';
+}
+
+async function saveFolhaCfg(btn){
+  var orig = btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
+
+  // Lê todos os selects do modal
+  document.querySelectorAll('#folhaCfgBody tr[data-nome]').forEach(function(row){
+    var nome   = row.getAttribute('data-nome');
+    var area   = row.querySelector('.fcfg-area')  ? row.querySelector('.fcfg-area').value  : '';
+    var canal  = row.querySelector('.fcfg-canal') ? row.querySelector('.fcfg-canal').value : '—';
+    if(!FOLHA_CFG.classif[nome]) FOLHA_CFG.classif[nome] = {};
+    FOLHA_CFG.classif[nome].area  = area;
+    FOLHA_CFG.classif[nome].canal = canal;
+  });
+
+  try{
+    await supaSave(TBLS.save_folha, 'folha_classif', { classif: FOLHA_CFG.classif, savedAt: new Date().toISOString() });
+    toast('✔ Classificações da Folha salvas');
+    _folhaRenderAll(); // Re-renderiza com novas classificações
+    closeFolhaCfg();
+  } catch(e){ toast('Erro ao salvar: '+e.message,'err'); }
+  btn.disabled=false; btn.textContent=orig;
 }
 
 function initFolha(){
@@ -3450,9 +3583,9 @@ function initFolha(){
 }
 function folhaSwitchAba(aba){
   FOLHA_ABA=aba;
-  ['area','cargo','nome'].forEach(function(a){
+  ['area','cargo','nome','canal'].forEach(function(a){
     var id='fpTab'+a.charAt(0).toUpperCase()+a.slice(1),btn=document.getElementById(id);
-    if(btn) btn.className='fp-tab'+(a===aba?' active':'');
+    if(btn) btn.className='fp-tab-pill'+(a===aba?' active':'');
   });
   _folhaRenderAll();
 }
@@ -3485,7 +3618,53 @@ function _folhaRenderBudgetStyle(container, rows){
   var meses = _fpMeses(rows);
   if(!meses.length){ container.innerHTML='<div style="padding:60px;color:#999;font-size:13px;text-align:center">Sem dados</div>'; return; }
 
-  // Monta estrutura: área → sub (cargo ou nome) → { [am]: valor }
+  var CANAL_COLORS = {'Farmer':'#0b8a3e','Developer':'#1e5bb8','Closer':'#c8102e','Hava':'#7b2d8b','KA':'#c48a00'};
+  var n=meses.length;
+  function brl(v){ return 'R$ '+folhaBrl(v); }
+
+  // ── Aba Por Canal ────────────────────────────────────
+  if(FOLHA_ABA==='canal'){
+    var byCN={}; var totC={}; var totG2={};
+    rows.forEach(function(r){
+      var canal=folhaGetCanal(r)||'(sem canal)';
+      var nome=folhaGetNome(r)||'(sem nome)';
+      var am=String(folhaGetPeriodo(r)).replace(/\D/g,'').slice(0,6);
+      if(am.length!==6) return;
+      var val=folhaTotal(r);
+      if(!byCN[canal]) byCN[canal]={};
+      if(!byCN[canal][nome]) byCN[canal][nome]={};
+      byCN[canal][nome][am]=(byCN[canal][nome][am]||0)+val;
+      if(!totC[canal]) totC[canal]={};
+      totC[canal][am]=(totC[canal][am]||0)+val;
+      totG2[am]=(totG2[am]||0)+val;
+    });
+    var canaisOrder=['Closer','Developer','Farmer','Hava','KA','(sem canal)'];
+    var canais=Object.keys(byCN).sort(function(a,b){ return (canaisOrder.indexOf(a)<0?99:canaisOrder.indexOf(a))-(canaisOrder.indexOf(b)<0?99:canaisOrder.indexOf(b)); });
+    var h2='<div class="fh-wrap"><table class="fh-tbl"><thead><tr><th class="fh-ind">INDICADOR</th>';
+    meses.forEach(function(am){ h2+='<th>'+_fpMesLabel(am)+'</th>'; });
+    h2+='</tr></thead><tbody>';
+    h2+='<tr class="fh-sec"><td class="fh-fix" colspan="'+(n+1)+'">\ud83d\udc65 FOLHA POR CANAL</td></tr>';
+    canais.forEach(function(canal){
+      var cor=CANAL_COLORS[canal]||'#555';
+      var ns=Object.keys(byCN[canal]).sort();
+      h2+='<tr class="fh-area"><td class="fh-fix" style="border-left:4px solid '+cor+'">'
+        +'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+cor+';margin-right:6px;vertical-align:middle"></span>'
+        +canal+'</td>';
+      meses.forEach(function(am){ var v=totC[canal][am]||0; h2+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'\u2014')+'</td>'; });
+      h2+='</tr>';
+      ns.forEach(function(nome){
+        h2+='<tr class="fh-sub"><td class="fh-fix">\u21b3 '+nome+'</td>';
+        meses.forEach(function(am){ var v=byCN[canal][nome][am]||0; h2+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'\u2014')+'</td>'; });
+        h2+='</tr>';
+      });
+    });
+    h2+='<tr class="fh-tot"><td class="fh-fix">TOTAL GERAL</td>';
+    meses.forEach(function(am){ var v=totG2[am]||0; h2+='<td class="fh-val">'+(v?brl(v):'\u2014')+'</td>'; });
+    h2+='</tr></tbody></table></div>';
+    container.innerHTML=h2; return;
+  }
+
+  // ── Agrupamento padrão: área → sub ──────────────────
   var estrutura = {};
   var totArea   = {};
   var totGeral  = {};
@@ -3504,45 +3683,28 @@ function _folhaRenderBudgetStyle(container, rows){
   });
 
   var areas=Object.keys(estrutura).sort();
-  var n=meses.length;
-  function brl(v){ return 'R$ '+folhaBrl(v); }
-
-  var h='<div class="fh-wrap"><table class="fh-tbl"><thead><tr>'
-    +'<th class="fh-ind">INDICADOR</th>';
+  var h='<div class="fh-wrap"><table class="fh-tbl"><thead><tr><th class="fh-ind">INDICADOR</th>';
   meses.forEach(function(am){ h+='<th>'+_fpMesLabel(am)+'</th>'; });
   h+='</tr></thead><tbody>';
-
-  // Seção header
-  h+='<tr class="fh-sec"><td class="fh-fix" colspan="'+(n+1)+'">👥 FOLHA DE PAGAMENTO</td></tr>';
+  h+='<tr class="fh-sec"><td class="fh-fix" colspan="'+(n+1)+'">\ud83d\udc65 FOLHA DE PAGAMENTO</td></tr>';
 
   areas.forEach(function(area){
     var subs=Object.keys(estrutura[area]).sort();
-    // Linha da área — bold, fundo cinza-azulado igual ao Budget
     h+='<tr class="fh-area"><td class="fh-fix">'+area+'</td>';
-    meses.forEach(function(am){
-      var v=totArea[area][am]||0;
-      h+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'—')+'</td>';
-    });
+    meses.forEach(function(am){ var v=totArea[area][am]||0; h+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'\u2014')+'</td>'; });
     h+='</tr>';
-    // Sub-linhas
     subs.forEach(function(sub){
-      h+='<tr class="fh-sub"><td class="fh-fix">↳ '+sub+'</td>';
-      meses.forEach(function(am){
-        var v=estrutura[area][sub][am]||0;
-        h+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'—')+'</td>';
-      });
+      var badge='';
+      if(FOLHA_ABA==='nome'){ var cfgS=FOLHA_CFG.classif[sub]; if(cfgS&&cfgS.canal&&cfgS.canal!=='\u2014'){ var cr=CANAL_COLORS[cfgS.canal]||'#555'; badge=' <span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;background:'+cr+';color:#fff;margin-left:4px">'+cfgS.canal+'</span>'; } }
+      h+='<tr class="fh-sub"><td class="fh-fix">\u21b3 '+sub+badge+'</td>';
+      meses.forEach(function(am){ var v=estrutura[area][sub][am]||0; h+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'\u2014')+'</td>'; });
       h+='</tr>';
     });
   });
 
-  // Total geral — fundo azul-escuro igual ao Budget
   h+='<tr class="fh-tot"><td class="fh-fix">TOTAL GERAL</td>';
-  meses.forEach(function(am){
-    var v=totGeral[am]||0;
-    h+='<td class="fh-val">'+(v?brl(v):'—')+'</td>';
-  });
+  meses.forEach(function(am){ var v=totGeral[am]||0; h+='<td class="fh-val">'+(v?brl(v):'\u2014')+'</td>'; });
   h+='</tr></tbody></table></div>';
-
   container.innerHTML=h;
 }
 
@@ -3551,7 +3713,7 @@ function _folhaRenderAll(){
   var meta=document.getElementById('folhaHeaderMeta');
   if(meta) meta.innerHTML='<strong>'+rows.length.toLocaleString('pt-BR')+' registros</strong>';
   // Atualiza pill tabs
-  ['area','cargo','nome'].forEach(function(a){
+  ['area','cargo','nome','canal'].forEach(function(a){
     var id='fpTab'+a.charAt(0).toUpperCase()+a.slice(1);
     var btn=document.getElementById(id);
     if(btn) btn.className='fp-tab-pill'+(a===FOLHA_ABA?' active':'');
@@ -4839,6 +5001,26 @@ async function saveBudgetCfg(btn){
       <button class="btn" onclick="budgetForceReload(this);closeBudgetCfg();" style="background:#f0f3fa;border-color:#d0d8ee;color:#0f1a3a;font-size:12px">🔄 Recarregar Dados</button>
       <button class="btn save" onclick="saveBudgetCfg(this)">💾 Salvar Configurações</button>
       <button class="btn" onclick="closeBudgetCfg()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ FOLHA CONFIG MODAL ══════════════ -->
+<div class="dre-cfg-overlay" id="folhaCfgOverlay" onclick="if(event.target===this)closeFolhaCfg()" style="display:none">
+  <div class="dre-cfg-box" style="width:min(900px,96vw)">
+    <div class="dre-cfg-hd">
+      <div><h2>⚙️ Configurações — Folha de Pagamento</h2><small>Edite a Área e o Canal de cada colaborador</small></div>
+      <button class="dre-cfg-close" onclick="closeFolhaCfg()">×</button>
+    </div>
+    <div style="padding:12px 20px;background:#f7f9ff;border-bottom:1px solid #dde3f0;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <input id="folhaCfgSearch" type="text" placeholder="🔍 Buscar pessoa..." oninput="folhaCfgFilter(this.value)"
+        style="flex:1;min-width:200px;padding:7px 12px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:12px;font-family:inherit;outline:none">
+      <span style="font-size:11px;color:#7a8ab0" id="folhaCfgCount"></span>
+    </div>
+    <div style="padding:0 20px 16px;max-height:60vh;overflow-y:auto" id="folhaCfgBody"></div>
+    <div class="dre-cfg-ft">
+      <button class="btn save" onclick="saveFolhaCfg(this)">💾 Salvar Classificações</button>
+      <button class="btn" onclick="closeFolhaCfg()">Fechar</button>
     </div>
   </div>
 </div>
