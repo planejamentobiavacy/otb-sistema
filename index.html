@@ -1039,15 +1039,17 @@ function openConfig(){
   var dreDefs = [
     {key:'venda_dre', label:'📊 Venda DRE'},
     {key:'frete_dre', label:'🚚 Frete DRE'},
-    {key:'folha',     label:'👥 Folha Pag.'},
+    {key:'folha',     label:'👥 Folha Pag.', diag:true},
     {key:'despesa',   label:'💸 Despesas'},
     {key:'canais',    label:'📣 Canais DRE'},
     {key:'cluster',   label:'🏷️ Cluster DRE'},
   ];
   document.getElementById('cfgDreRows').innerHTML = dreDefs.map(function(d){
     var tbl = TBLS[d.key];
-    var testBtn = (d.key==='despesa') ? '<button class="btn" onclick="gcDiagnoseDespesa(this)" style="font-size:11px;padding:5px 10px;background:#f0f3fa;border-color:#d0d8ee;color:#0f1a3a">🔍 Diagnóstico</button>' : '';
-    var spanCols = (d.key==='despesa') ? '' : 'grid-column:span 2;';
+    var testBtn = (d.key==='despesa') ? '<button class="btn" onclick="gcDiagnoseDespesa(this)" style="font-size:11px;padding:5px 10px;background:#f0f3fa;border-color:#d0d8ee;color:#0f1a3a">🔍 Diagnóstico</button>'
+              : (d.key==='folha')   ? '<button class="btn" onclick="gcDiagnoseTbl(\'folha\',this)" style="font-size:11px;padding:5px 10px;background:#f0f3fa;border-color:#d0d8ee;color:#0f1a3a">🔍 Diagnóstico</button>'
+              : '';
+    var spanCols = (d.key==='despesa'||d.key==='folha') ? '' : 'grid-column:span 2;';
     return '<div class="cfg-row">'
       + '<div><span>'+d.label+'</span>'
       + '<input class="tbl-input" id="tbl_'+d.key+'" value="'+tbl+'" oninput="TBLS[&apos;'+d.key+'&apos;]=this.value;localStorage.setItem(&apos;otb_tbl_'+d.key+'&apos;,this.value)">'
@@ -1225,6 +1227,41 @@ async function gcDiagnoseDespesa(btn){
   }
 
   if(st) st.textContent = msg.slice(0,80);
+  btn.disabled=false; btn.textContent=orig;
+}
+
+async function gcDiagnoseTbl(key, btn){
+  var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳';
+  var tbl = TBLS[key];
+  var st  = document.getElementById('cfg_status_'+key);
+  var token = _session.access_token;
+  try{
+    // Teste sem Range header — detecta RLS
+    var r = await fetch(SUPA_URL+'/rest/v1/'+tbl+'?select=*&limit=3',{
+      headers:{'apikey':SUPA_ANON_KEY,'Authorization':'Bearer '+token,'Accept':'application/json'}
+    });
+    var body = await r.text();
+    var rows=[]; try{rows=JSON.parse(body);}catch(e){}
+    if(!r.ok){
+      var msg='✘ HTTP '+r.status+': '+body.slice(0,120);
+      toast(msg,'err'); if(st) st.textContent=msg.slice(0,60);
+      btn.disabled=false; btn.textContent=orig; return;
+    }
+    if(Array.isArray(rows)&&rows.length>0){
+      var cols=Object.keys(rows[0]).join(', ');
+      toast('✅ '+tbl+': '+rows.length+' linhas visíveis | cols: '+cols.slice(0,80));
+      if(st) st.textContent='✅ '+rows.length+' linhas | '+cols.slice(0,50);
+      console.log('[gcDiagnoseTbl]',tbl,'cols:',cols,'rows[0]:',rows[0]);
+    } else {
+      var msg2='❌ '+tbl+' retornou 0 linhas (possível RLS). HTTP '+r.status;
+      toast(msg2,'err');
+      if(st) st.textContent='❌ 0 linhas — verificar RLS no Supabase';
+      alert('Tabela "'+tbl+'" existe mas retornou 0 linhas.\n\nSolução provável: habilitar política RLS no Supabase:\n\nCREATE POLICY "authenticated read"\nON '+tbl+'\nFOR SELECT TO authenticated\nUSING (true);\n\nOu: Table Editor → '+tbl+' → RLS → Disable RLS');
+    }
+  }catch(e){
+    toast('Erro: '+e.message,'err');
+    if(st) st.textContent='Erro: '+e.message;
+  }
   btn.disabled=false; btn.textContent=orig;
 }
 
