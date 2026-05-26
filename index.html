@@ -1013,7 +1013,7 @@ function openConfig(){
   ];
   document.getElementById('cfgDreRows').innerHTML = dreDefs.map(function(d){
     var tbl = TBLS[d.key];
-    var testBtn = '';
+    var testBtn = (d.key==='despesa') ? '<button class="btn" onclick="gcDiagnoseDespesa(this)" style="font-size:11px;padding:5px 10px;background:#f0f3fa;border-color:#d0d8ee;color:#0f1a3a">🔍 Diagnóstico</button>' : '';
     var spanCols = (d.key==='despesa') ? '' : 'grid-column:span 2;';
     return '<div class="cfg-row">'
       + '<div><span>'+d.label+'</span>'
@@ -1112,6 +1112,40 @@ async function gcAtualizar(key, dateCol, btn){
     processAll(); renderTabs(); renderTable();
   } catch(e){ toast('Erro ao atualizar ' + key + ': ' + e.message, 'err'); if(st) st.textContent = 'Erro'; }
   btn.disabled = false; btn.textContent = orig;
+}
+
+async function gcDiagnoseDespesa(btn){
+  var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳';
+  var tbl = TBLS.despesa;
+  var st = document.getElementById('cfg_status_despesa');
+  var token = _session.access_token;
+  var headers = {
+    'apikey': SUPA_ANON_KEY, 'Authorization': 'Bearer '+token,
+    'Accept': 'application/json', 'Range': '0-4', 'Range-Unit': 'items', 'Prefer': 'count=exact'
+  };
+  try {
+    // Teste 1: select=* sem filtro
+    var r = await fetch(SUPA_URL+'/rest/v1/'+tbl+'?select=*', {headers});
+    var cr = r.headers.get('content-range')||'';
+    var body = await r.text();
+    var total = (cr.match(/\/(\d+)/)||[])[1]||'?';
+    if(!r.ok){
+      toast('✘ '+tbl+': HTTP '+r.status+' — '+body.slice(0,200),'err');
+      if(st) st.textContent='✘ HTTP '+r.status+': '+body.slice(0,80);
+      btn.disabled=false; btn.textContent=orig; return;
+    }
+    var rows = [];
+    try{ rows = JSON.parse(body); } catch(e){}
+    var cols = (rows && rows[0]) ? Object.keys(rows[0]).join(', ') : '(sem colunas)';
+    var msg = '✔ HTTP '+r.status+' | total='+total+' | colunas: '+cols;
+    toast(msg, total==='0'||total===0?'err':undefined);
+    if(st) st.textContent = 'total='+total+' | cols: '+cols.slice(0,60);
+    console.log('[gcDiagnoseDespesa]', tbl, '| total:', total, '| colunas:', cols, '| primeiras linhas:', rows.slice(0,2));
+  } catch(e){
+    toast('Erro diagnóstico: '+e.message,'err');
+    if(st) st.textContent='Erro: '+e.message;
+  }
+  btn.disabled=false; btn.textContent=orig;
 }
 
 async function gcTestTable(btn){
