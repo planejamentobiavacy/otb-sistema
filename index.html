@@ -207,7 +207,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
 .fh-tbl tr.fh-tot td{background:#1a2547!important;color:#fff!important;font-weight:700;font-size:13px;padding:10px 14px;border-top:2px solid #2352c8}
 .fh-tbl tr.fh-tot td.fh-fix{position:sticky;left:0;z-index:2;background:#1a2547!important}
 /* Values */
-.fh-tbl td.fh-val{text-align:right;padding:6px 14px;white-space:nowrap}
+.fh-tbl td.fh-val{text-align:center;padding:6px 14px;white-space:nowrap}
 .fh-tbl td.fh-val.fh-zero{color:#c0c8d8}
 
 /* ── DRE Multi-select filter ─────────────────────────── */
@@ -469,27 +469,43 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       <button class="btn save" id="btnSaveFolha" onclick="handleSaveFolha(this)">💾 Salvar</button>
     </div>
   </header>
+  <!-- CSS multi-select dropdown -->
+  <style>
+    .fms-wrap{position:relative;display:inline-block}
+    .fms-btn{font-size:12px;padding:4px 24px 4px 8px;border:1.5px solid #d0d8ee;border-radius:4px;background:#f7f9fc;color:#1a2236;cursor:pointer;outline:none;min-width:110px;text-align:left;position:relative;font-family:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px}
+    .fms-btn::after{content:'▾';position:absolute;right:7px;top:50%;transform:translateY(-50%);font-size:10px;color:#6b7280}
+    .fms-btn.active{border-color:#1a2547;background:#eef1fa;color:#1a2547;font-weight:600}
+    .fms-drop{display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:200px;max-width:280px;background:#fff;border:1.5px solid #d0d8ee;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:200;max-height:280px;overflow-y:auto}
+    .fms-drop.open{display:block}
+    .fms-search{width:100%;box-sizing:border-box;padding:7px 10px;border:none;border-bottom:1px solid #eef1f4;font-size:12px;outline:none;font-family:inherit}
+    .fms-item{display:flex;align-items:center;gap:8px;padding:6px 12px;cursor:pointer;font-size:12px;color:#1a2236}
+    .fms-item:hover{background:#f5f7ff}
+    .fms-item input[type=checkbox]{accent-color:#1a2547;width:13px;height:13px;cursor:pointer;flex-shrink:0}
+    .fms-item.all{font-weight:600;border-bottom:1px solid #eef1f4;color:#1a2547}
+    .fms-clear{display:block;width:100%;padding:6px 12px;font-size:11px;color:#c8102e;background:none;border:none;border-top:1px solid #eef1f4;cursor:pointer;text-align:left;font-family:inherit}
+    .fms-clear:hover{background:#fff5f5}
+  </style>
   <!-- Barra de filtros + abas estilo Budget -->
-  <div style="background:#fff;border-bottom:1px solid #d9dde3;padding:8px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;flex-shrink:0">
+  <div style="background:#fff;border-bottom:1px solid #d9dde3;padding:8px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;flex-shrink:0" id="folhaFilterBar">
     <div style="display:flex;align-items:center;gap:6px">
       <label style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">ANO:</label>
-      <select id="fpFAno" onchange="FOLHA_FILTROS.ano=this.value;_folhaRenderAll()" style="font-size:12px;padding:4px 8px;border:1.5px solid #d0d8ee;border-radius:4px;background:#f7f9fc;color:#1a2236;cursor:pointer;outline:none"><option>Todos</option></select>
+      <div class="fms-wrap" id="fmsWrap_ano"><button class="fms-btn" id="fmsBtn_ano" onclick="fmsToggle('ano')">Todos</button><div class="fms-drop" id="fmsDrop_ano"></div></div>
     </div>
     <div style="display:flex;align-items:center;gap:6px">
       <label style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">ÁREA:</label>
-      <select id="fpFA" onchange="FOLHA_FILTROS.area=this.value;_folhaRenderAll()" style="font-size:12px;padding:4px 8px;border:1.5px solid #d0d8ee;border-radius:4px;background:#f7f9fc;color:#1a2236;cursor:pointer;outline:none"><option>Todos</option></select>
+      <div class="fms-wrap" id="fmsWrap_area"><button class="fms-btn" id="fmsBtn_area" onclick="fmsToggle('area')">Todos</button><div class="fms-drop" id="fmsDrop_area"></div></div>
     </div>
     <div style="display:flex;align-items:center;gap:6px">
       <label style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">SITUAÇÃO:</label>
-      <select id="fpFS" onchange="FOLHA_FILTROS.situacao=this.value;_folhaRenderAll()" style="font-size:12px;padding:4px 8px;border:1.5px solid #d0d8ee;border-radius:4px;background:#f7f9fc;color:#1a2236;cursor:pointer;outline:none"><option>Todos</option></select>
+      <div class="fms-wrap" id="fmsWrap_situacao"><button class="fms-btn" id="fmsBtn_situacao" onclick="fmsToggle('situacao')">Todos</button><div class="fms-drop" id="fmsDrop_situacao"></div></div>
     </div>
     <div style="display:flex;align-items:center;gap:6px">
       <label style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">TIPO:</label>
-      <select id="fpFT" onchange="FOLHA_FILTROS.tipo=this.value;_folhaRenderAll()" style="font-size:12px;padding:4px 8px;border:1.5px solid #d0d8ee;border-radius:4px;background:#f7f9fc;color:#1a2236;cursor:pointer;outline:none"><option>Todos</option></select>
+      <div class="fms-wrap" id="fmsWrap_tipo"><button class="fms-btn" id="fmsBtn_tipo" onclick="fmsToggle('tipo')">Todos</button><div class="fms-drop" id="fmsDrop_tipo"></div></div>
     </div>
     <div style="display:flex;align-items:center;gap:6px">
       <label style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">NOME:</label>
-      <select id="fpFN" onchange="FOLHA_FILTROS.nome=this.value;_folhaRenderAll()" style="font-size:12px;padding:4px 8px;border:1.5px solid #d0d8ee;border-radius:4px;background:#f7f9fc;color:#1a2236;cursor:pointer;outline:none"><option>Todos</option></select>
+      <div class="fms-wrap" id="fmsWrap_nome"><button class="fms-btn" id="fmsBtn_nome" onclick="fmsToggle('nome')">Todos</button><div class="fms-drop" id="fmsDrop_nome"></div></div>
     </div>
     <!-- Abas de agrupamento -->
     <div style="margin-left:auto;display:flex;gap:2px;background:#eef1f4;padding:3px;border-radius:6px">
@@ -3426,7 +3442,7 @@ function dreTabela(cols){
 //  FOLHA
 // ═══════════════════════════════════════════════════════
 var FOLHA_RAW=[], FOLHA_LOADED=false, FOLHA_ABA='area';
-var FOLHA_FILTROS={situacao:'Todos',tipo:'Todos',area:'Todos',nome:'Todos',ano:'Todos'};
+var FOLHA_FILTROS={situacao:[],tipo:[],area:[],nome:[],ano:[]}; // [] = todos
 // Configurações de classificação por pessoa (override de área e canal)
 var FOLHA_CFG={ classif:{} }; // { 'NOME_PESSOA': { area:'Comercial', canal:'Closer' } }
 var FOLHA_CANAIS = ['—','Farmer','Developer','Closer','Hava','KA'];
@@ -3597,10 +3613,7 @@ function initFolha(){
   if(!FOLHA_RAW||!FOLHA_RAW.length){document.getElementById('folhaHeaderMeta').textContent='Sem dados';return;}
   document.getElementById('folhaHeaderMeta').innerHTML='<strong>'+FOLHA_RAW.length.toLocaleString('pt-BR')+' registros</strong>';
   _folhaPopulateFilters();_folhaRenderAll();
-  [['fpFS','situacao'],['fpFT','tipo'],['fpFA','area'],['fpFN','nome'],['fpFAno','ano']].forEach(function(p){
-    var el=document.getElementById(p[0]);if(!el) return;
-    el.addEventListener('change',function(){FOLHA_FILTROS[p[1]]=el.value;_folhaRenderAll();});
-  });
+  // multi-select listeners são registrados em fmsBuild — nada a fazer aqui
 }
 function folhaSwitchAba(aba){
   FOLHA_ABA=aba;
@@ -3610,20 +3623,117 @@ function folhaSwitchAba(aba){
   });
   _folhaRenderAll();
 }
+// ── Multi-select filter engine ──────────────────────────────────────────
+var _fmsData = {}; // { key: [val1, val2, ...] }
+
+function fmsBuild(key, vals){
+  var drop = document.getElementById('fmsDrop_'+key);
+  if(!drop) return;
+  _fmsData[key] = vals;
+  var hasSearch = vals.length > 8;
+  var html = hasSearch ? '<input class="fms-search" id="fmsSrch_'+key+'" placeholder="Buscar..." oninput="fmsSearch(''+key+'')">' : '';
+  html += '<div id="fmsList_'+key+'">';
+  html += fmsListHtml(key, vals);
+  html += '</div>';
+  html += '<button class="fms-clear" onclick="fmsClear(''+key+'')">✕ Limpar seleção</button>';
+  drop.innerHTML = html;
+  fmsUpdateBtn(key);
+}
+
+function fmsListHtml(key, vals){
+  var sel = FOLHA_FILTROS[key] || [];
+  var allChecked = sel.length === 0;
+  var h = '<label class="fms-item all"><input type="checkbox" '+(allChecked?'checked':'')+' onchange="fmsToggleAll(''+key+'',this)"> Todos</label>';
+  vals.forEach(function(v){
+    var chk = sel.includes(v) ? 'checked' : '';
+    h += '<label class="fms-item"><input type="checkbox" value="'+escHtml(v)+'" '+chk+' onchange="fmsChange(''+key+'')"> '+escHtml(v)+'</label>';
+  });
+  return h;
+}
+
+function fmsSearch(key){
+  var q = (document.getElementById('fmsSrch_'+key)||{}).value||'';
+  var vals = (_fmsData[key]||[]).filter(function(v){ return !q||v.toUpperCase().includes(q.toUpperCase()); });
+  var list = document.getElementById('fmsList_'+key);
+  if(list) list.innerHTML = fmsListHtml(key, vals);
+}
+
+function fmsToggle(key){
+  var drop = document.getElementById('fmsDrop_'+key);
+  if(!drop) return;
+  var isOpen = drop.classList.contains('open');
+  // Close all
+  document.querySelectorAll('.fms-drop.open').forEach(function(d){ d.classList.remove('open'); });
+  if(!isOpen){ drop.classList.add('open'); }
+}
+
+function fmsToggleAll(key, cb){
+  if(cb.checked){
+    FOLHA_FILTROS[key] = [];
+    // uncheck others
+    var drop = document.getElementById('fmsDrop_'+key);
+    if(drop) drop.querySelectorAll('input[type=checkbox][value]').forEach(function(c){ c.checked=false; });
+  }
+  fmsUpdateBtn(key); _folhaRenderAll();
+}
+
+function fmsChange(key){
+  var drop = document.getElementById('fmsDrop_'+key);
+  var checked = [];
+  if(drop) drop.querySelectorAll('input[type=checkbox][value]:checked').forEach(function(c){ checked.push(c.value); });
+  FOLHA_FILTROS[key] = checked;
+  // Update "Todos" checkbox
+  var allCb = drop ? drop.querySelector('.fms-item.all input') : null;
+  if(allCb) allCb.checked = checked.length === 0;
+  fmsUpdateBtn(key); _folhaRenderAll();
+}
+
+function fmsClear(key){
+  FOLHA_FILTROS[key] = [];
+  var drop = document.getElementById('fmsDrop_'+key);
+  if(drop){
+    drop.querySelectorAll('input[type=checkbox]').forEach(function(c){ c.checked=false; });
+    var allCb = drop.querySelector('.fms-item.all input');
+    if(allCb) allCb.checked = true;
+  }
+  fmsUpdateBtn(key); _folhaRenderAll();
+}
+
+function fmsUpdateBtn(key){
+  var btn = document.getElementById('fmsBtn_'+key);
+  if(!btn) return;
+  var sel = FOLHA_FILTROS[key] || [];
+  if(sel.length === 0){ btn.textContent='Todos'; btn.classList.remove('active'); }
+  else if(sel.length === 1){ btn.textContent=sel[0]; btn.classList.add('active'); }
+  else { btn.textContent=sel.length+' selecionados'; btn.classList.add('active'); }
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', function(e){
+  if(!e.target.closest('.fms-wrap')) document.querySelectorAll('.fms-drop.open').forEach(function(d){ d.classList.remove('open'); });
+});
+
 function _folhaPopulateFilters(){
   function uv(fn){var s={};FOLHA_RAW.forEach(function(r){var v=fn(r);if(v&&v.indexOf('(sem ')<0)s[v]=true;});return Object.keys(s).sort();}
-  function fill(id,vals,key){var el=document.getElementById(id);if(!el) return;var prev=FOLHA_FILTROS[key]||'Todos';el.innerHTML='<option>Todos</option>';vals.forEach(function(v){var o=document.createElement('option');o.value=v;o.textContent=v;el.appendChild(o);});el.value=(vals.indexOf(prev)>=0)?prev:'Todos';FOLHA_FILTROS[key]=el.value;}
-  fill('fpFS',uv(folhaGetSituacao),'situacao');fill('fpFT',uv(folhaGetTipo),'tipo');fill('fpFA',uv(folhaGetArea),'area');fill('fpFN',uv(folhaGetNome),'nome');
+  fmsBuild('situacao', uv(folhaGetSituacao));
+  fmsBuild('tipo',     uv(folhaGetTipo));
+  fmsBuild('area',     uv(folhaGetArea));
+  fmsBuild('nome',     uv(folhaGetNome));
   var anos={};FOLHA_RAW.forEach(function(r){var p=folhaGetPeriodo(r);if(p&&String(p).length>=4)anos[String(p).replace(/\D/g,'').slice(0,4)]=true;});
-  fill('fpFAno',Object.keys(anos).sort(),'ano');
+  fmsBuild('ano', Object.keys(anos).sort());
 }
+
 function _folhaFiltrar(){
   return FOLHA_RAW.filter(function(r){
-    if(FOLHA_FILTROS.situacao!=='Todos'&&folhaGetSituacao(r)!==FOLHA_FILTROS.situacao) return false;
-    if(FOLHA_FILTROS.tipo!=='Todos'&&folhaGetTipo(r)!==FOLHA_FILTROS.tipo) return false;
-    if(FOLHA_FILTROS.area!=='Todos'&&folhaGetArea(r)!==FOLHA_FILTROS.area) return false;
-    if(FOLHA_FILTROS.nome!=='Todos'&&folhaGetNome(r)!==FOLHA_FILTROS.nome) return false;
-    if(FOLHA_FILTROS.ano!=='Todos'){var p=String(folhaGetPeriodo(r)).replace(/\D/g,'').slice(0,4);if(p!==FOLHA_FILTROS.ano) return false;}
+    var f = FOLHA_FILTROS;
+    if(f.situacao.length && !f.situacao.includes(folhaGetSituacao(r))) return false;
+    if(f.tipo.length     && !f.tipo.includes(folhaGetTipo(r)))         return false;
+    if(f.area.length     && !f.area.includes(folhaGetArea(r)))          return false;
+    if(f.nome.length     && !f.nome.includes(folhaGetNome(r)))          return false;
+    if(f.ano.length){
+      var p=String(folhaGetPeriodo(r)).replace(/\D/g,'').slice(0,4);
+      if(!f.ano.includes(p)) return false;
+    }
     return true;
   });
 }
