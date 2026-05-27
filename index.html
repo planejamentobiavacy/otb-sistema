@@ -3311,8 +3311,13 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
     if(absVals.length){ return absVals.reduce(function(s,v){return s+v;},0)/absVals.length; }
     return rb*getSalPct(key);
   }
-  var sv_closer=getSalAbs('closer',rb_closer),sv_developer=getSalAbs('developer',rb_developer),sv_farmer=getSalAbs('farmer',rb_farmer);
-  var com_martins=rb_martins*getSalPct('martins'),com_rca=rb_rca*getSalPct('rca');
+  // Quando em contexto de canal: só aplica o salário do canal correspondente
+  var sv_closer   = (!canalCtxUC || canalCtxUC==='CLOSER')    ? getSalAbs('closer',   rb_closer)   : 0;
+  var sv_developer= (!canalCtxUC || canalCtxUC==='DEVELOPER')  ? getSalAbs('developer',rb_developer) : 0;
+  var sv_farmer   = (!canalCtxUC || canalCtxUC==='FARMER')     ? getSalAbs('farmer',   rb_farmer)   : 0;
+  // Comissões: só aplica ao canal correspondente
+  var com_martins = (!canalCtxUC || canalCtxUC==='MARTINS') ? rb_martins*getSalPct('martins') : 0;
+  var com_rca     = (!canalCtxUC || canalCtxUC==='RCA')     ? rb_rca*getSalPct('rca')         : 0;
   var sv=sv_closer+sv_developer+sv_farmer,com=com_martins+com_rca;
   var mb=rl-cmv-fob-grade,mc=mb-sv-com;
   var rf_rec=a.rec_frete,cf=a.custo_frete>0?a.custo_frete:rl*0.031;
