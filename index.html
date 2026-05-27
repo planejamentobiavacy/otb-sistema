@@ -3464,7 +3464,7 @@ var FOLHA_FILTROS={situacao:[],tipo:[],area:[],nome:[],ano:[]}; // [] = todos
 // Configurações de classificação por pessoa (override de área e canal)
 var FOLHA_CFG={ classif:{} }; // { 'NOME_PESSOA': { area:'Comercial', canal:'Closer' } }
 var FOLHA_CANAIS = ['—','Farmer','Developer','Closer','Hava','KA'];
-var FOLHA_AREAS_PADRAO = ['Administrativo','Avacy','Comercial','Compras','E-comm/Mkt','Financeiro','Fiscal','Operações','RH','TI'];
+var FOLHA_AREAS_PADRAO = ['Administrativo','Avacy','Comercial','Compras','E-comm/Mkt','Faturamento','Financeiro','Fiscal','Operações','Planejamento','RH','TI'];
 var FOLHA_VERBAS=['SALARIO_BASE','BONIFICACAO','AJUDA_CUSTO','CURSOS','UTILIDADE','COMISSAO','DSR','GRENDENE','HORAS_EXTRA','DSR_HE','AUX_DOENCA','AUX_SEGURO','AUX_MATERN','VERBAS_RESCIS','S13_PARC'];
 
 function folhaNum(v){if(!v&&v!==0) return 0;if(typeof v==='number') return v;var s=String(v).trim().replace(/\./g,'').replace(',','.');var n=parseFloat(s);return isNaN(n)?0:n;}
@@ -3474,8 +3474,8 @@ function folhaGetPeriodo(r){return folhaGetField(r,['ano_mes','PERIODO','ANO_MES
 function folhaGetArea(r){
   var nome = folhaGetNome(r);
   var cfg  = FOLHA_CFG.classif[nome];
-  if(cfg && cfg.area) return cfg.area;
-  return folhaGetField(r,['area','AREA','SETOR','DEPARTAMENTO'])||'(sem área)';
+  var raw  = (cfg && cfg.area) ? cfg.area : (folhaGetField(r,['area','AREA','SETOR','DEPARTAMENTO'])||'(sem área)');
+  return raw.toUpperCase();
 }
 function folhaGetCanal(r){
   var nome = folhaGetNome(r);
