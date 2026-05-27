@@ -4326,7 +4326,26 @@ async function openDreCfg(){
   var folhaKaS13        = folhaTotalCanalS13('KA',am);
   var folhaRca    = folhaTotalCanal('RCA',am);
   var despMkt     = despTotal('MARKETING',am)||despTotal('MKT',am);
-  var despGerais  = despTotal('DESPESA GERAL',am)||despTotal('DESP GERAL',am)||despTotal('GERAL',am);
+  // Despesas Gerais: se tiposDespGerais configurado, soma do Budget; senão usa despTotal
+  var despGerais = (function(){
+    var tipos = Object.keys(BUDGET_CFG.tiposDespGerais||{}).filter(function(k){ return BUDGET_CFG.tiposDespGerais[k]; });
+    if(tipos.length && BUDGET_DESP_RAW && BUDGET_DESP_RAW.length){
+      var total=0;
+      BUDGET_DESP_RAW.forEach(function(r){
+        var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
+        var hist=String(r.e2_hist||r.E2_HIST||'').trim();
+        var k=nomfor+'|'+hist;
+        var classif=BUDGET_CFG.classif[k]||BUDGET_CFG.classif[nomfor]||{};
+        if(!classif.tipo || !tipos.includes(classif.tipo)) return;
+        if(classif.desconsiderar==='sim') return;
+        var rAm=budgetDespAm(r);
+        if(rAm!==am) return;
+        total+=parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0);
+      });
+      return total;
+    }
+    return despTotal('DESPESA GERAL',am)||despTotal('DESP GERAL',am)||despTotal('GERAL',am);
+  })();
   var despCd      = despTotal('CD',am)||despTotal('CENTRO DE DISTRIBUIÇÃO',am)||despTotal('DISTRIBUICAO',am);
   var folhaAdm    = folhaTotalAdm(am);
   var despCusto   = despTotal('CUSTO',am);
@@ -4542,6 +4561,7 @@ var BUDGET_CFG = {
   classif: {},
   // tiposIgnorados: set de tipos excluídos do Budget
   tiposIgnorados: {},
+  tiposDespGerais: {}, // tipos que entram em Despesas Gerais no DRE
   // sim: valores simulados por mês {ym: {icms_pct, piscofins_pct, mg_prod}}
   sim: {}
 };
@@ -4583,6 +4603,7 @@ async function loadBudget(forceRaw){
     var savedClassif = await supaLoad(TBLS.save_dre,'budget_classif');
     if(savedClassif && savedClassif.classif){
       if(savedClassif.tiposIgnorados) BUDGET_CFG.tiposIgnorados = savedClassif.tiposIgnorados;
+      if(savedClassif.tiposDespGerais) BUDGET_CFG.tiposDespGerais = savedClassif.tiposDespGerais;
       if(savedClassif.sim) BUDGET_CFG.sim = savedClassif.sim;
       // Merge: preserva entradas existentes, aplica por cima as salvas na chave dedicada
       Object.assign(BUDGET_CFG.classif, savedClassif.classif);
@@ -5294,7 +5315,7 @@ async function handleSaveBudget(btn){
     };
     var kb = Math.round(JSON.stringify(payload).length/1024);
     // Salva classif em chave separada ANTES do payload (snapshot pode falhar)
-    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados||{}, sim: BUDGET_CFG.sim||{}, savedAt: new Date().toISOString()});
+    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados||{}, tiposDespGerais: BUDGET_CFG.tiposDespGerais||{}, sim: BUDGET_CFG.sim||{}, savedAt: new Date().toISOString()});
     await supaSave(TBLS.save_dre,'budget_cfg', payload);
     toast('✔ Budget salvo — snapshot de '+(snapshot?snapshot.length.toLocaleString('pt-BR'):0)+' linhas ('+kb+'KB), era '+BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' linhas brutas');
     // Badge
@@ -5362,12 +5383,36 @@ function openBudgetCfg(){
   body._inpStyle = inpStyle;
   body._fmtVal   = fmtVal;
 
+  // Add Despesas Gerais DRE section before the table
+  var dgSection = document.createElement('div');
+  dgSection.style.cssText='background:#f7f9ff;border:1.5px solid #d0d8ee;border-radius:8px;padding:14px 18px';
+  var dgHtml='<div style="font-size:12px;font-weight:700;color:#1a2547;margin-bottom:10px;display:flex;align-items:center;gap:8px">'
+    +'<span>🏢 Tipos que entram em <strong>Despesas Gerais</strong> no DRE</span>'
+    +'<span style="font-size:11px;color:#7a8ab0;font-weight:400">(marque os tipos que compõem o valor de Desp. Gerais usado no DRE)</span>'
+    +'</div>';
+  dgHtml += '<div style="display:flex;flex-wrap:wrap;gap:8px 16px">';
+  BUDGET_TIPOS.forEach(function(tipo){
+    var checked = BUDGET_CFG.tiposDespGerais[tipo] ? 'checked' : '';
+    dgHtml += '<label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#0f1a3a;cursor:pointer">'
+      +'<input type="checkbox" data-tipo-dg="'+tipo+'" '+checked+' style="accent-color:#1a2547;width:13px;height:13px">'
+      +tipo+'</label>';
+  });
+  dgHtml += '</div>';
+  dgSection.innerHTML = dgHtml;
+  body.innerHTML = '';
+  body.appendChild(dgSection);
+
+  // Create table container
+  var tableContainer = document.createElement('div');
+  tableContainer.id = 'bcfgTableWrap';
+  body.appendChild(tableContainer);
+
   renderBudgetCfgTable('');
   document.getElementById('budgetCfgOverlay').style.display='flex';
 }
 
 function renderBudgetCfgTable(search){
-  var body = document.getElementById('budgetCfgBody');
+  var body = document.getElementById('bcfgTableWrap') || document.getElementById('budgetCfgBody');
   if(!body||!body._allKeys) return;
   var allKeys   = body._allKeys;
   var combos    = body._combos;
@@ -5571,6 +5616,12 @@ async function saveBudgetCfg(btn){
 
   // Lê os tipos ignorados dos checkboxes
   BUDGET_CFG.tiposIgnorados = {};
+  // Save tiposDespGerais
+  BUDGET_CFG.tiposDespGerais = {};
+  document.querySelectorAll('input[data-tipo-dg]:checked').forEach(function(cb){
+    BUDGET_CFG.tiposDespGerais[cb.getAttribute('data-tipo-dg')] = true;
+  });
+
   document.querySelectorAll('#budgetCfgBody input[data-tipo-ignorar]').forEach(function(cb){
     if(cb.checked) BUDGET_CFG.tiposIgnorados[cb.getAttribute('data-tipo-ignorar')] = true;
   });
