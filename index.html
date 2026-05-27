@@ -4218,7 +4218,21 @@ async function openDreCfg(){
       var s13val = s13key ? parseFloat(r[s13key])||0 : 0;
       return s + (total - s13val);
     }, 0);
-    if(canal==='CLOSER') console.log('[DRE_CFG] CLOSER: matched',matched,'rows, total=',result,'| am=',am);
+    if(canal==='CLOSER'){
+      // Show why rows aren't matching
+      var sampleCloser = DRE_FOLHA_RAW.filter(function(r){
+        var nome = _nk ? String(r[_nk]).trim() : '';
+        return _lkp[nome]==='CLOSER';
+      }).slice(0,3);
+      console.log('[DRE_CFG] CLOSER rows (no am filter):', sampleCloser.length);
+      if(sampleCloser.length>0){
+        var sr=sampleCloser[0];
+        var anomes_raw = sr.ano_mes||sr.ANO_MES;
+        var anomes_calc = String(anomes_raw||'').replace(/\D/g,'').slice(0,6);
+        console.log('[DRE_CFG] sample CLOSER row ano_mes raw=',anomes_raw,'calc=',anomes_calc,'| am filter=',am);
+      }
+      console.log('[DRE_CFG] CLOSER: matched',matched,'rows, total=',result,'| am=',am);
+    }
     return result;
   }
   // Debug: log DRE_FOLHA_RAW size and sample
