@@ -4341,19 +4341,19 @@ async function openDreCfg(){
     +'<div class="dre-cfg-grid">'
     +fieldBrl('Sal. Closer (R$)', 'closer_abs',
       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].closer_abs!=null)?DRE_CFG_PARAMS[am].closer_abs:(folhaCloserS13||0),
-      folhaCloserS13 ? '👥 Verbas Folha (exc. 13º): '+fmt(folhaCloserS13) : '')
+      '👥 Verbas Folha (exc. 13º): '+(folhaCloserS13?fmt(folhaCloserS13):'R$ 0'))
     +fieldBrl('Sal. Developer (R$)', 'developer_abs',
       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].developer_abs!=null)?DRE_CFG_PARAMS[am].developer_abs:(folhaDeveloperS13||0),
-      folhaDeveloperS13 ? '👥 Verbas Folha (exc. 13º): '+fmt(folhaDeveloperS13) : '')
+      '👥 Verbas Folha (exc. 13º): '+(folhaDeveloperS13?fmt(folhaDeveloperS13):'R$ 0'))
     +fieldBrl('Sal. Farmer (R$)', 'farmer_abs',
       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].farmer_abs!=null)?DRE_CFG_PARAMS[am].farmer_abs:(folhaFarmerS13||0),
-      folhaFarmerS13 ? '👥 Verbas Folha (exc. 13º): '+fmt(folhaFarmerS13) : '')
+      '👥 Verbas Folha (exc. 13º): '+(folhaFarmerS13?fmt(folhaFarmerS13):'R$ 0'))
     +fieldBrl('Sal. Hava (R$)', 'hava_abs',
       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].hava_abs!=null)?DRE_CFG_PARAMS[am].hava_abs:(folhaHavaS13||0),
-      folhaHavaS13 ? '👥 Verbas Folha (exc. 13º): '+fmt(folhaHavaS13) : '')
+      '👥 Verbas Folha (exc. 13º): '+(folhaHavaS13?fmt(folhaHavaS13):'R$ 0 — classifique pessoas como HAVA na Folha'))
     +fieldBrl('Sal. KA (R$)', 'ka_abs',
       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].ka_abs!=null)?DRE_CFG_PARAMS[am].ka_abs:(folhaKaS13||0),
-      folhaKaS13 ? '👥 Verbas Folha (exc. 13º): '+fmt(folhaKaS13) : '')
+      '👥 Verbas Folha (exc. 13º): '+(folhaKaS13?fmt(folhaKaS13):'R$ 0 — classifique pessoas como KA na Folha'))
     +'</div></div>'
 
     // ── COMISSÕES ──
