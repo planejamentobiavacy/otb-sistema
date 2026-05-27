@@ -2440,7 +2440,7 @@ function renderTable(){
   document.getElementById('kCart').textContent=fmtNum(curCell.cartQty);
   document.getElementById('kCob').textContent=covAvg.toFixed(1)+' meses';
   var elFatAno=document.getElementById('kFatAno');
-  if(elFatAno) elFatAno.textContent=fatAnoVal>0?'R$\u00a0'+fmtNum(fatAnoVal):'—';
+  if(elFatAno) elFatAno.textContent=fatAnoVal>0?'R$ '+fmtNum(fatAnoVal):'—';
   months.forEach(function(ym){
     var cell=matrix[ym],lyYm=(parseInt(ym.split('-')[0])-1)+'-'+ym.split('-')[1],ly=matrix[lyYm];
     cell.varLyQty=(ly&&ly.fatQty>0)?(cell.fatQty/ly.fatQty-1)*100:null;
@@ -3649,31 +3649,49 @@ function fmsBuild(key, vals){
   if(!drop) return;
   _fmsData[key] = vals;
   var hasSearch = vals.length > 8;
-  var html = hasSearch ? '<input class="fms-search" id="fmsSrch_'+key+'" placeholder="Buscar..." oninput="fmsSearch(''+key+'')">' : '';
+  var html = '';
+  if(hasSearch) html += '<input class="fms-search" id="fmsSrch_'+key+'" placeholder="Buscar..." data-key="'+key+'">';
   html += '<div id="fmsList_'+key+'">';
   html += fmsListHtml(key, vals);
   html += '</div>';
-  html += '<button class="fms-clear" onclick="fmsClear(''+key+'')">✕ Limpar seleção</button>';
+  html += '<button class="fms-clear" data-key="'+key+'">&#x2715; Limpar</button>';
   drop.innerHTML = html;
+  // Attach events via JS (avoids any quote-in-onclick issues)
+  var srch = drop.querySelector('.fms-search');
+  if(srch) srch.addEventListener('input', function(){ fmsSearch(key); });
+  var clearBtn = drop.querySelector('.fms-clear');
+  if(clearBtn) clearBtn.addEventListener('click', function(e){ e.stopPropagation(); fmsClear(key); });
   fmsUpdateBtn(key);
 }
 
 function fmsListHtml(key, vals){
   var sel = FOLHA_FILTROS[key] || [];
   var allChecked = sel.length === 0;
-  var h = '<label class="fms-item all"><input type="checkbox" '+(allChecked?'checked':'')+' onchange="fmsToggleAll(''+key+'',this)"> Todos</label>';
+  var h = '<label class="fms-item all"><input type="checkbox" data-all="1" data-key="'+key+'" '+(allChecked?'checked':'')+'>  Todos</label>';
   vals.forEach(function(v){
     var chk = sel.includes(v) ? 'checked' : '';
-    h += '<label class="fms-item"><input type="checkbox" value="'+escHtml(v)+'" '+chk+' onchange="fmsChange(''+key+'')"> '+escHtml(v)+'</label>';
+    h += '<label class="fms-item"><input type="checkbox" data-key="'+key+'" value="'+escHtml(v)+'" '+chk+'>&nbsp;'+escHtml(v)+'</label>';
   });
   return h;
 }
+
+// Event delegation for checkboxes inside fms-drop
+document.addEventListener('change', function(e){
+  var el = e.target;
+  if(!el.matches || !el.closest) return;
+  if(!el.closest('.fms-drop')) return;
+  var key = el.getAttribute('data-key');
+  if(!key) return;
+  if(el.getAttribute('data-all')==='1') fmsToggleAll(key, el);
+  else fmsChange(key);
+});
 
 function fmsSearch(key){
   var q = (document.getElementById('fmsSrch_'+key)||{}).value||'';
   var vals = (_fmsData[key]||[]).filter(function(v){ return !q||v.toUpperCase().includes(q.toUpperCase()); });
   var list = document.getElementById('fmsList_'+key);
   if(list) list.innerHTML = fmsListHtml(key, vals);
+  // Re-attach checkbox events handled by delegation — no extra work needed
 }
 
 function fmsToggle(key){
@@ -3792,23 +3810,23 @@ function _folhaRenderBudgetStyle(container, rows){
     var h2='<div class="fh-wrap"><table class="fh-tbl"><thead><tr><th class="fh-ind">INDICADOR</th>';
     meses.forEach(function(am){ h2+='<th>'+_fpMesLabel(am)+'</th>'; });
     h2+='</tr></thead><tbody>';
-    h2+='<tr class="fh-sec"><td class="fh-fix" colspan="'+(n+1)+'">\ud83d\udc65 FOLHA POR CANAL</td></tr>';
+    h2+='<tr class="fh-sec"><td class="fh-fix" colspan="'+(n+1)+'">👥 FOLHA POR CANAL</td></tr>';
     canais.forEach(function(canal){
       var cor=CANAL_COLORS[canal]||'#555';
       var ns=Object.keys(byCN[canal]).sort();
       h2+='<tr class="fh-area"><td class="fh-fix" style="border-left:4px solid '+cor+'">'
         +'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+cor+';margin-right:6px;vertical-align:middle"></span>'
         +canal+'</td>';
-      meses.forEach(function(am){ var v=totC[canal][am]||0; h2+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'\u2014')+'</td>'; });
+      meses.forEach(function(am){ var v=totC[canal][am]||0; h2+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'—')+'</td>'; });
       h2+='</tr>';
       ns.forEach(function(nome){
-        h2+='<tr class="fh-sub"><td class="fh-fix">\u21b3 '+nome+'</td>';
-        meses.forEach(function(am){ var v=byCN[canal][nome][am]||0; h2+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'\u2014')+'</td>'; });
+        h2+='<tr class="fh-sub"><td class="fh-fix">↳ '+nome+'</td>';
+        meses.forEach(function(am){ var v=byCN[canal][nome][am]||0; h2+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'—')+'</td>'; });
         h2+='</tr>';
       });
     });
     h2+='<tr class="fh-tot"><td class="fh-fix">TOTAL GERAL</td>';
-    meses.forEach(function(am){ var v=totG2[am]||0; h2+='<td class="fh-val">'+(v?brl(v):'\u2014')+'</td>'; });
+    meses.forEach(function(am){ var v=totG2[am]||0; h2+='<td class="fh-val">'+(v?brl(v):'—')+'</td>'; });
     h2+='</tr></tbody></table></div>';
     container.innerHTML=h2; return;
   }
@@ -3835,24 +3853,24 @@ function _folhaRenderBudgetStyle(container, rows){
   var h='<div class="fh-wrap"><table class="fh-tbl"><thead><tr><th class="fh-ind">INDICADOR</th>';
   meses.forEach(function(am){ h+='<th>'+_fpMesLabel(am)+'</th>'; });
   h+='</tr></thead><tbody>';
-  h+='<tr class="fh-sec"><td class="fh-fix" colspan="'+(n+1)+'">\ud83d\udc65 FOLHA DE PAGAMENTO</td></tr>';
+  h+='<tr class="fh-sec"><td class="fh-fix" colspan="'+(n+1)+'">👥 FOLHA DE PAGAMENTO</td></tr>';
 
   areas.forEach(function(area){
     var subs=Object.keys(estrutura[area]).sort();
     h+='<tr class="fh-area"><td class="fh-fix">'+area+'</td>';
-    meses.forEach(function(am){ var v=totArea[area][am]||0; h+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'\u2014')+'</td>'; });
+    meses.forEach(function(am){ var v=totArea[area][am]||0; h+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'—')+'</td>'; });
     h+='</tr>';
     subs.forEach(function(sub){
       var badge='';
-      if(FOLHA_ABA==='nome'){ var cfgS=FOLHA_CFG.classif[sub]; if(cfgS&&cfgS.canal&&cfgS.canal!=='\u2014'){ var cr=CANAL_COLORS[cfgS.canal]||'#555'; badge=' <span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;background:'+cr+';color:#fff;margin-left:4px">'+cfgS.canal+'</span>'; } }
-      h+='<tr class="fh-sub"><td class="fh-fix">\u21b3 '+sub+badge+'</td>';
-      meses.forEach(function(am){ var v=estrutura[area][sub][am]||0; h+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'\u2014')+'</td>'; });
+      if(FOLHA_ABA==='nome'){ var cfgS=FOLHA_CFG.classif[sub]; if(cfgS&&cfgS.canal&&cfgS.canal!=='—'){ var cr=CANAL_COLORS[cfgS.canal]||'#555'; badge=' <span style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:10px;background:'+cr+';color:#fff;margin-left:4px">'+cfgS.canal+'</span>'; } }
+      h+='<tr class="fh-sub"><td class="fh-fix">↳ '+sub+badge+'</td>';
+      meses.forEach(function(am){ var v=estrutura[area][sub][am]||0; h+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'—')+'</td>'; });
       h+='</tr>';
     });
   });
 
   h+='<tr class="fh-tot"><td class="fh-fix">TOTAL GERAL</td>';
-  meses.forEach(function(am){ var v=totGeral[am]||0; h+='<td class="fh-val">'+(v?brl(v):'\u2014')+'</td>'; });
+  meses.forEach(function(am){ var v=totGeral[am]||0; h+='<td class="fh-val">'+(v?brl(v):'—')+'</td>'; });
   h+='</tr></tbody></table></div>';
   container.innerHTML=h;
 }
