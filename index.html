@@ -4071,6 +4071,13 @@ var _dreCfgSelectedAm = '';
 function openDreCfg(){
   var body = document.getElementById('dreCfgBody');
   if(!body) return;
+  // Garante que FOLHA_CFG está carregado antes de calcular salários por canal
+  if(!Object.keys(FOLHA_CFG.classif).length){
+    supaLoad(TBLS.save_folha, 'folha_classif').then(function(saved){
+      if(saved && saved.classif) FOLHA_CFG.classif = saved.classif;
+      console.log('[DRE_CFG] FOLHA_CFG carregado:', Object.keys(FOLHA_CFG.classif).length, 'pessoas');
+    }).catch(function(){});
+  }
 
   // ── Helpers ──────────────────────────────────────────
   function pct(v){ return parseFloat((v*100).toFixed(4)); }
@@ -4080,10 +4087,15 @@ function openDreCfg(){
   function folhaTotalCanal(canal, am){
     var canalUp = canal.toUpperCase();
     return DRE_FOLHA_RAW.filter(function(r){
-      var nome   = folhaGetNome(r);
-      var cfg    = FOLHA_CFG.classif[nome];
-      var canalR = (cfg && cfg.canal) ? cfg.canal.toUpperCase() : '';
-      if(!canalR) canalR = String(r.canal||r.CANAL||r.area||r.AREA||'').toUpperCase();
+      var keys = Object.keys(r);
+      var nomeKey = keys.find(function(k){ return /^(nome|pessoa|name|employee)$/i.test(k); });
+      var nome = nomeKey ? String(r[nomeKey]).trim() : '';
+      var cfg = nome ? FOLHA_CFG.classif[nome] : null;
+      var canalR = (cfg && cfg.canal && cfg.canal !== '—') ? cfg.canal.toUpperCase() : '';
+      if(!canalR){
+        var canalKey = keys.find(function(k){ return /^(canal|channel)$/i.test(k); });
+        canalR = canalKey ? String(r[canalKey]).toUpperCase() : '';
+      }
       var anomes = String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
       return canalR.includes(canalUp) && (!am || anomes===am);
     }).reduce(function(s,r){ return s + (parseFloat(r.valor||r.VALOR)||0); }, 0);
@@ -4169,39 +4181,52 @@ function openDreCfg(){
   console.log('[DRE_CFG] canais em DRE_RAW:', JSON.stringify(_canaisRaw), '| rbMartins=',rbMartins,'| rbRca=',rbRca);
   // Folha por canal excluindo S13_PARC (parcela do 13o salário)
   function folhaTotalCanalS13(canal, am){
-    // Usa FOLHA_CFG.classif para identificar canal de cada pessoa
-    // Também tenta area direta para compatibilidade
     var canalUp = canal.toUpperCase();
+    // Monta lookup nome→canal a partir de FOLHA_CFG (salvo pelo usuário)
+    // ou usa o campo canal/area direto da linha como fallback
     return DRE_FOLHA_RAW.filter(function(r){
-      var nome   = folhaGetNome(r);
-      var cfg    = FOLHA_CFG.classif[nome];
-      var canalR = (cfg && cfg.canal) ? cfg.canal.toUpperCase() : '';
-      // Fallback: tenta área ou campo canal diretamente
+      // Tenta pegar nome da pessoa por múltiplos campos possíveis
+      var keys = Object.keys(r);
+      var nomeKey = keys.find(function(k){ return /^(nome|pessoa|name|employee)$/i.test(k); });
+      var nome = nomeKey ? String(r[nomeKey]).trim() : '';
+      // Busca canal na classificação salva
+      var cfg = nome ? FOLHA_CFG.classif[nome] : null;
+      var canalR = (cfg && cfg.canal && cfg.canal !== '—') ? cfg.canal.toUpperCase() : '';
+      // Fallback: campo canal direto na linha
       if(!canalR){
-        canalR = String(r.canal||r.CANAL||r.area||r.AREA||'').toUpperCase();
+        var canalKey = keys.find(function(k){ return /^(canal|channel)$/i.test(k); });
+        canalR = canalKey ? String(r[canalKey]).toUpperCase() : '';
       }
       var anomes = String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
       return canalR.includes(canalUp) && (!am || anomes===am);
     }).reduce(function(s,r){
-      var keys=Object.keys(r);
-      var s13key=keys.find(function(k){return k.toUpperCase()==='S13_PARC';});
-      // Soma verbas individuais (sem S13_PARC) se disponíveis
-      var verbas = FOLHA_VERBAS.filter(function(k){ return k!=='S13_PARC'; });
+      var keys = Object.keys(r);
+      // Soma verbas individuais excluindo S13_PARC
+      var verbas = FOLHA_VERBAS.filter(function(k){ return k !== 'S13_PARC'; });
       var totalVerbas = 0;
       verbas.forEach(function(k){
-        var found=keys.find(function(rk){return rk.toUpperCase()===k;});
-        if(found) totalVerbas+=folhaNum(r[found]);
+        var found = keys.find(function(rk){ return rk.toUpperCase() === k; });
+        if(found) totalVerbas += folhaNum(r[found]);
       });
-      // Se tem verbas individuais, usa elas; senão usa valor - s13
-      if(totalVerbas>0) return s+totalVerbas;
-      var total=parseFloat(r.valor||r.VALOR)||0;
-      var s13val=s13key?parseFloat(r[s13key])||0:0;
-      return s+(total-s13val);
+      if(totalVerbas > 0) return s + totalVerbas;
+      // Fallback: valor total - s13_parc
+      var s13key = keys.find(function(k){ return k.toUpperCase() === 'S13_PARC'; });
+      var total = parseFloat(r.valor||r.VALOR)||0;
+      var s13val = s13key ? parseFloat(r[s13key])||0 : 0;
+      return s + (total - s13val);
     }, 0);
   }
   // Debug: log DRE_FOLHA_RAW size and sample
   console.log('[DRE_CFG] DRE_FOLHA_RAW:', DRE_FOLHA_RAW.length, 'rows | am:', am);
   if(DRE_FOLHA_RAW.length>0){ var _s=DRE_FOLHA_RAW[0]; console.log('[DRE_CFG] sample row keys:', Object.keys(_s)); console.log('[DRE_CFG] sample canal/area:', _s.canal||_s.CANAL||_s.area||_s.AREA); }
+  // Debug: show sample nome field from DRE_FOLHA_RAW
+  if(DRE_FOLHA_RAW.length>0){
+    var _sr=DRE_FOLHA_RAW[0], _sk=Object.keys(_sr);
+    var _nk=_sk.find(function(k){return /^(nome|pessoa|name|employee)$/i.test(k);});
+    var _nm=_nk?String(_sr[_nk]).trim():'(não encontrado)';
+    var _cfg=_nm?FOLHA_CFG.classif[_nm]:null;
+    console.log('[DRE_CFG] nomeKey=',_nk,'| nome sample=',_nm,'| cfg=',JSON.stringify(_cfg),'| FOLHA_CFG total=',Object.keys(FOLHA_CFG.classif).length);
+  }
   var folhaCloserS13    = folhaTotalCanalS13('CLOSER',am);
   console.log('[DRE_CFG] folhaCloserS13=',folhaCloserS13,'folhaDeveloperS13=',folhaTotalCanalS13('DEVELOPER',am),'folhaFarmerS13=',folhaTotalCanalS13('FARMER',am));
   var folhaDeveloperS13 = folhaTotalCanalS13('DEVELOPER',am);
