@@ -409,6 +409,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
     <div class="kpi-card blue"><span class="k">Estoque Atual (Pares)</span><span class="v" id="kStk">—</span></div>
     <div class="kpi-card green"><span class="k">Carteira Futura (Pares)</span><span class="v" id="kCart">—</span></div>
     <div class="kpi-card amber"><span class="k">Cobertura Futura Média</span><span class="v" id="kCob">—</span></div>
+    <div class="kpi-card" style="border-left:3px solid #0b8a3e"><span class="k">Fat. Ano Atual (R$)</span><span class="v" id="kFatAno">—</span></div>
     <div class="spacer" style="flex:1"></div>
     <div class="legend">
       <span><span class="sw" style="background:#fff"></span>Realizado</span>
@@ -1940,7 +1941,7 @@ function processAll(){
   // Diagnóstico: mostra o que o stkAgg tem para março
   var vendaAgg=aggregate(vendaDedup,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['faturamento','FATURAMENTO','VALOR']},'venda');
   var cartAgg=aggregate(state.cart,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['valor','VALOR','VL_CARTEIRA']},'cart');
-  var minYm='2024-01',maxYm='2026-12',months=[],ym=minYm;
+  var minYm='2024-01',maxYm='2027-03',months=[],ym=minYm; // inclui jan-mar/27 para cobertura futura
   while(ym<=maxYm){months.push(ym);ym=ymNext(ym);}
   state.months=months;
   // Detecta o último mês com dados reais de estoque
@@ -2352,7 +2353,7 @@ function renderTabs(){
 function renderCatTabs(){
   var catTabs=document.getElementById('otbCatTabs'); if(!catTabs) return;
   var cats=getCategoriesForSupplier(state.activeSupplier);
-  if(cats.length<=2||state.activeSupplier==='ALPARG'){catTabs.style.display='none';state.activeCategory='TODAS';return;}
+  if(cats.length<=2){catTabs.style.display='none';state.activeCategory='TODAS';return;}
   catTabs.style.display='flex'; catTabs.innerHTML='';
   if(!cats.includes(state.activeCategory)) state.activeCategory='TODAS';
   var COLORS=['c0','c1','c2','c3','c4','c5'];
@@ -2395,11 +2396,17 @@ function renderTable(){
   var futM=months.filter(function(y){return y>=cur;}),next3=futM.slice(0,3);
   var fatProx3=next3.reduce(function(s,y){return s+((matrix[y]&&matrix[y].fatQty)||0);},0);
   var covAvg=futM.length?futM.reduce(function(s,y){return s+(matrix[y].coberturaQ||0);},0)/futM.length:0;
+  // Fat. Ano Atual (R$) — soma do faturamento do ano calendário atual
+  var anoAtual = cur.split('-')[0];
+  var fatAnoVal = months.filter(function(y){ return y.startsWith(anoAtual) && y<=cur; })
+    .reduce(function(s,y){ return s+((matrix[y]&&matrix[y].fatVal)||0); },0);
   document.getElementById('kFatUlt').textContent=fmtNum(fatUlt3);
   document.getElementById('kFatProx').textContent=fmtNum(fatProx3);
   document.getElementById('kStk').textContent=fmtNum(curCell.estQty);
   document.getElementById('kCart').textContent=fmtNum(curCell.cartQty);
   document.getElementById('kCob').textContent=covAvg.toFixed(1)+' meses';
+  var elFatAno=document.getElementById('kFatAno');
+  if(elFatAno) elFatAno.textContent=fatAnoVal>0?'R$\u00a0'+fmtNum(fatAnoVal):'—';
   months.forEach(function(ym){
     var cell=matrix[ym],lyYm=(parseInt(ym.split('-')[0])-1)+'-'+ym.split('-')[1],ly=matrix[lyYm];
     cell.varLyQty=(ly&&ly.fatQty>0)?(cell.fatQty/ly.fatQty-1)*100:null;
