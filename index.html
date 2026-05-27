@@ -4216,13 +4216,13 @@ function openDreCfg(){
     +'<div class="dre-cfg-grid">'
     +fieldBrl('Sal. Closer (R$)', 'closer_abs',
       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].closer_abs!=null)?DRE_CFG_PARAMS[am].closer_abs:(rbCloser>0?Math.round(rbCloser*getP('closer')):0),
-      (folhaCloserS13?'👥 Folha (s/ 13º): '+fmt(folhaCloserS13):'') + (rbCloser>0?' &nbsp;&nbsp; 🏦 RB Canal: '+fmt(rbCloser):''))
+      folhaCloserS13 ? '👥 Verbas Folha (exc. 13º): '+fmt(folhaCloserS13) : '')
     +fieldBrl('Sal. Developer (R$)', 'developer_abs',
       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].developer_abs!=null)?DRE_CFG_PARAMS[am].developer_abs:(rbDeveloper>0?Math.round(rbDeveloper*getP('developer')):0),
-      (folhaDeveloperS13?'👥 Folha (s/ 13º): '+fmt(folhaDeveloperS13):'') + (rbDeveloper>0?' &nbsp;&nbsp; 🏦 RB Canal: '+fmt(rbDeveloper):''))
+      folhaDeveloperS13 ? '👥 Verbas Folha (exc. 13º): '+fmt(folhaDeveloperS13) : '')
     +fieldBrl('Sal. Farmer (R$)', 'farmer_abs',
       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].farmer_abs!=null)?DRE_CFG_PARAMS[am].farmer_abs:(rbFarmer>0?Math.round(rbFarmer*getP('farmer')):0),
-      (folhaFarmerS13?'👥 Folha (s/ 13º): '+fmt(folhaFarmerS13):'') + (rbFarmer>0?' &nbsp;&nbsp; 🏦 RB Canal: '+fmt(rbFarmer):''))
+      folhaFarmerS13 ? '👥 Verbas Folha (exc. 13º): '+fmt(folhaFarmerS13) : '')
     +'</div></div>'
 
     // ── COMISSÕES ──
