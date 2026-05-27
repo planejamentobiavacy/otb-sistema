@@ -3840,10 +3840,15 @@ function fmsToggle(key){
 }
 
 function fmsToggleAll(key, cb){
+  var drop = document.getElementById('fmsDrop_'+key);
+  var allVals = _fmsData[key] || [];
   if(cb.checked){
+    // Marcar "Todos" → marca todos individualmente (para poder desmarcar um por um)
+    FOLHA_FILTROS[key] = allVals.slice(); // cópia de todos os valores
+    if(drop) drop.querySelectorAll('input[type=checkbox][value]').forEach(function(c){ c.checked=true; });
+  } else {
+    // Desmarcar "Todos" → desmarca todos (nenhum filtro ativo = volta ao estado Todos implícito)
     FOLHA_FILTROS[key] = [];
-    // uncheck others
-    var drop = document.getElementById('fmsDrop_'+key);
     if(drop) drop.querySelectorAll('input[type=checkbox][value]').forEach(function(c){ c.checked=false; });
   }
   fmsUpdateBtn(key); _folhaRenderAll();
@@ -3853,10 +3858,12 @@ function fmsChange(key){
   var drop = document.getElementById('fmsDrop_'+key);
   var checked = [];
   if(drop) drop.querySelectorAll('input[type=checkbox][value]:checked').forEach(function(c){ checked.push(c.value); });
-  FOLHA_FILTROS[key] = checked;
-  // Update "Todos" checkbox
+  var allVals = _fmsData[key] || [];
+  // Se todos estão marcados individualmente = equivale a "Todos" (sem filtro)
+  FOLHA_FILTROS[key] = (checked.length === allVals.length) ? [] : checked;
+  // Update "Todos" checkbox — marcado quando nenhum ou todos individuais marcados
   var allCb = drop ? drop.querySelector('.fms-item.all input') : null;
-  if(allCb) allCb.checked = checked.length === 0;
+  if(allCb) allCb.checked = checked.length === 0 || checked.length === allVals.length;
   fmsUpdateBtn(key); _folhaRenderAll();
 }
 
@@ -3875,7 +3882,8 @@ function fmsUpdateBtn(key){
   var btn = document.getElementById('fmsBtn_'+key);
   if(!btn) return;
   var sel = FOLHA_FILTROS[key] || [];
-  if(sel.length === 0){ btn.textContent='Todos'; btn.classList.remove('active'); }
+  var allVals = _fmsData[key] || [];
+  if(sel.length === 0 || sel.length === allVals.length){ btn.textContent='Todos'; btn.classList.remove('active'); }
   else if(sel.length === 1){ btn.textContent=sel[0]; btn.classList.add('active'); }
   else { btn.textContent=sel.length+' selecionados'; btn.classList.add('active'); }
 }
@@ -3940,7 +3948,7 @@ function _folhaRenderBudgetStyle(container, rows){
   var meses = _fpMeses(rows);
   if(!meses.length){ container.innerHTML='<div style="padding:60px;color:#999;font-size:13px;text-align:center">Sem dados</div>'; return; }
 
-  var CANAL_COLORS = {'Farmer':'#0b8a3e','Developer':'#1e5bb8','Closer':'#c8102e','Hava':'#7b2d8b','KA':'#c48a00'};
+  var CANAL_COLORS = {'CLOSER':'#c8102e','DEVELOPER':'#1e5bb8','FARMER':'#0b8a3e','HAVA':'#7b2d8b','KA':'#c48a00','Closer':'#c8102e','Developer':'#1e5bb8','Farmer':'#0b8a3e','Hava':'#7b2d8b'};
   var n=meses.length;
   function brl(v){ return 'R$ '+folhaBrl(v); }
 
@@ -3948,7 +3956,9 @@ function _folhaRenderBudgetStyle(container, rows){
   if(FOLHA_ABA==='canal'){
     var byCN={}; var totC={}; var totG2={};
     rows.forEach(function(r){
-      var canal=folhaGetCanal(r)||'(sem canal)';
+      var canalRaw=folhaGetCanal(r);
+      if(!canalRaw || canalRaw==='—') return; // exclui quem não tem canal
+      var canal=canalRaw.toUpperCase();
       var nome=folhaGetNome(r)||'(sem nome)';
       var am=String(folhaGetPeriodo(r)).replace(/\D/g,'').slice(0,6);
       if(am.length!==6) return;
@@ -3960,7 +3970,7 @@ function _folhaRenderBudgetStyle(container, rows){
       totC[canal][am]=(totC[canal][am]||0)+val;
       totG2[am]=(totG2[am]||0)+val;
     });
-    var canaisOrder=['Closer','Developer','Farmer','Hava','KA','(sem canal)'];
+    var canaisOrder=['CLOSER','DEVELOPER','FARMER','HAVA','KA'];
     var canais=Object.keys(byCN).sort(function(a,b){ return (canaisOrder.indexOf(a)<0?99:canaisOrder.indexOf(a))-(canaisOrder.indexOf(b)<0?99:canaisOrder.indexOf(b)); });
     var h2='<div class="fh-wrap"><table class="fh-tbl"><thead><tr><th class="fh-ind">INDICADOR</th>';
     meses.forEach(function(am){ h2+='<th>'+_fpMesLabel(am)+'</th>'; });
