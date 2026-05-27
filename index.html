@@ -4217,6 +4217,21 @@ async function openDreCfg(){
   }
   // Debug: log DRE_FOLHA_RAW size and sample
 
+  // Debug: check canal distribution in FOLHA_CFG
+  var _canalCount = {};
+  Object.values(FOLHA_CFG.classif).forEach(function(c){ var k=(c.canal||'—').toUpperCase(); _canalCount[k]=(_canalCount[k]||0)+1; });
+  console.log('[DRE_CFG] canal dist em FOLHA_CFG:', JSON.stringify(_canalCount));
+  // Also check a sample nome match between DRE_FOLHA_RAW and FOLHA_CFG
+  if(DRE_FOLHA_RAW.length>0){
+    var _r=DRE_FOLHA_RAW[0], _keys=Object.keys(_r);
+    var _nk=_keys.find(function(k){return /^(nome|pessoa|name|employee)$/i.test(k);});
+    var _nm=_nk?String(_r[_nk]).trim():'';
+    var _cfg=FOLHA_CFG.classif[_nm];
+    console.log('[DRE_CFG] sample nome=',_nm,'cfg=',JSON.stringify(_cfg));
+    // Check if FOLHA_CFG keys match the nome field format
+    var _firstCfgKey = Object.keys(FOLHA_CFG.classif)[0];
+    console.log('[DRE_CFG] first FOLHA_CFG key=',JSON.stringify(_firstCfgKey));
+  }
   var folhaCloserS13    = folhaTotalCanalS13('CLOSER',am);
   var folhaDeveloperS13 = folhaTotalCanalS13('DEVELOPER',am);
   var folhaFarmerS13    = folhaTotalCanalS13('FARMER',am);
