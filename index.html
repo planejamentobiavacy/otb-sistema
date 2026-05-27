@@ -3128,7 +3128,7 @@ function dreRender(){
   if(!DRE_LOADED) return;
   try{
     if(DRE_TAB==='mensal') dreRenderMensal();
-    else if(DRE_TAB==='canal')      dreRenderDim('CANAL','dre-ano-canal','dre-mes-canal','dre-canal-canal','canal');
+    else if(DRE_TAB==='canal')      dreRenderDim('CANAL','dre-ano-canal','dre-mes-canal',null,'canal');
     else if(DRE_TAB==='cluster')    dreRenderDim('CLUSTER','dre-ano-cluster','dre-mes-cluster','dre-canal-cluster','cluster');
     else if(DRE_TAB==='regiao')     dreRenderDim('REGIAO','dre-ano-regiao','dre-mes-regiao','dre-canal-regiao','regiao');
     else if(DRE_TAB==='fornecedor') dreRenderDim('FORNECEDOR','dre-ano-forn','dre-mes-forn','dre-canal-forn','forn');
@@ -3174,7 +3174,7 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
 
   // Normaliza para maiúsculo para comparação consistente (snapshot usa minúsculo, raw usa maiúsculo)
   var dimVal = function(r){ return String(r[dimKey]||r[dim]||'').toUpperCase(); };
-  var dimsFromData = Array.from(new Set(rows.map(dimVal))).filter(Boolean);
+  var dimsFromData = Array.from(new Set(rows.map(dimVal))).filter(function(d){ return d && d !== 'NULL' && d !== 'UNDEFINED'; });
   // Order: if refRaw defines order, use it; else sort alphabetically
   var dims;
   if(Object.keys(dimLabelMap).length){
@@ -3768,9 +3768,11 @@ function fmsVerbasList(verbas){
 function fmsVerbaUpdateBtn(){
   var btn = document.getElementById('fmsBtn_verbas');
   if(!btn) return;
-  if(!FOLHA_VERBAS_SEL.length){ btn.textContent='Todas'; btn.classList.remove('active'); }
-  else if(FOLHA_VERBAS_SEL.length===1){ btn.textContent=(window._folhaVerbasLabels||{})[FOLHA_VERBAS_SEL[0]]||FOLHA_VERBAS_SEL[0]; btn.classList.add('active'); }
-  else { btn.textContent=FOLHA_VERBAS_SEL.length+' verbas'; btn.classList.add('active'); }
+  var avail = window._folhaVerbasDisponiveis||FOLHA_VERBAS;
+  var n = FOLHA_VERBAS_SEL.length;
+  if(n === 0 || n === avail.length){ btn.textContent='Todas'; btn.classList.remove('active'); }
+  else if(n === 1){ btn.textContent=(window._folhaVerbasLabels||{})[FOLHA_VERBAS_SEL[0]]||FOLHA_VERBAS_SEL[0]; btn.classList.add('active'); }
+  else { btn.textContent=n+' verbas'; btn.classList.add('active'); }
 }
 
 // Event delegation for checkboxes inside fms-drop
@@ -3806,11 +3808,18 @@ document.addEventListener('change', function(e){
     fmsVerbaUpdateBtn(); _folhaRenderAll(); return;
   }
   if(el.hasAttribute('data-all') && el.getAttribute('data-all')==='verbas'){
-    FOLHA_VERBAS_SEL = [];
-    var drop2 = document.getElementById('fmsDrop_verbas');
-    // Refresh list — all checkboxes will show checked
-    var list2 = document.getElementById('fmsList_verbas');
     var avail3 = window._folhaVerbasDisponiveis||FOLHA_VERBAS;
+    var drop2   = document.getElementById('fmsDrop_verbas');
+    var list2   = document.getElementById('fmsList_verbas');
+    if(el.checked){
+      // Marcar "Todas" → marca todas individualmente (para poder desmarcar uma a uma)
+      FOLHA_VERBAS_SEL = avail3.slice();
+      if(drop2) drop2.querySelectorAll('input[data-verba]').forEach(function(c){ c.checked=true; });
+    } else {
+      // Desmarcar "Todas" → limpa seleção (volta ao estado Todas implícito = sem filtro)
+      FOLHA_VERBAS_SEL = [];
+      if(drop2) drop2.querySelectorAll('input[data-verba]').forEach(function(c){ c.checked=false; });
+    }
     if(list2) list2.innerHTML = fmsVerbasList(avail3);
     fmsVerbaUpdateBtn(); _folhaRenderAll(); return;
   }
