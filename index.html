@@ -4082,13 +4082,28 @@ async function openDreCfg(){
 
 
   // Folha por canal excluindo S13_PARC (parcela do 13o salário)
+  // Find closest available month in DRE_FOLHA_RAW to the selected am
+  var _folhaMesesDisp = (function(){
+    var s={};
+    DRE_FOLHA_RAW.forEach(function(r){
+      var p=String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
+      if(p.length===6) s[p]=true;
+    });
+    return Object.keys(s).sort();
+  })();
+  // Use latest available month <= am, or latest overall
+  var _folhaAmRef = (function(){
+    if(!_folhaMesesDisp.length) return am;
+    var candidates = _folhaMesesDisp.filter(function(m){ return m<=am; });
+    return candidates.length ? candidates[candidates.length-1] : _folhaMesesDisp[_folhaMesesDisp.length-1];
+  })();
+
   // Pre-build nome→canal lookup from FOLHA_CFG for performance
   var _folhaCanalLookup = {};
   Object.keys(FOLHA_CFG.classif).forEach(function(nome){
     var cfg = FOLHA_CFG.classif[nome];
     if(cfg && cfg.canal && cfg.canal !== '—') _folhaCanalLookup[nome] = cfg.canal.toUpperCase();
   });
-  console.log('[DRE_CFG] lookup size:', Object.keys(_folhaCanalLookup).length, 'sample:', JSON.stringify(Object.entries(_folhaCanalLookup).slice(0,3)));
 
   // Find the nome field key from the first row (cached)
   var _folhaNomeKey = (function(){
@@ -4098,7 +4113,6 @@ async function openDreCfg(){
     return keys.find(function(k){ return /^(nome|pessoa|name|employee)$/i.test(k); })
         || keys.find(function(k){ return /nome|pessoa|name/i.test(k); });
   })();
-  console.log('[DRE_CFG] _folhaNomeKey=', _folhaNomeKey, '| first row nome=', _folhaNomeKey&&DRE_FOLHA_RAW[0]?String(DRE_FOLHA_RAW[0][_folhaNomeKey]).trim():'');
 
   // ── Helpers ──────────────────────────────────────────
   function pct(v){ return parseFloat((v*100).toFixed(4)); }
@@ -4112,8 +4126,9 @@ async function openDreCfg(){
     return DRE_FOLHA_RAW.filter(function(r){
       var nome = _nk ? String(r[_nk]).trim() : '';
       var canalR = _lkp[nome] || '';
-      var anomes = String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
-      return canalR === canalUp && (!am || anomes===am);
+      var anomes = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
+      var amRef2 = (typeof _folhaAmRef!=='undefined') ? _folhaAmRef : am;
+      return canalR === canalUp && (!amRef2 || anomes===amRef2);
     }).reduce(function(s,r){ return s + (parseFloat(r.valor||r.VALOR)||0); }, 0);
   }
   function folhaTotalAdm(am){
@@ -4200,8 +4215,10 @@ async function openDreCfg(){
     var result = DRE_FOLHA_RAW.filter(function(r){
       var nome = _nk ? String(r[_nk]).trim() : '';
       var canalR = _lkp[nome] || '';
-      var anomes = String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
-      var ok = canalR === canalUp && (!am || anomes===am);
+      // Use folhaGetPeriodo which handles all column name variants
+      var anomes = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
+      var amRef = (typeof _folhaAmRef!=='undefined') ? _folhaAmRef : am;
+      var ok = canalR === canalUp && (!amRef || anomes===amRef);
       if(ok) matched++;
       return ok;
     }).reduce(function(s,r){
@@ -4218,43 +4235,12 @@ async function openDreCfg(){
       var s13val = s13key ? parseFloat(r[s13key])||0 : 0;
       return s + (total - s13val);
     }, 0);
-    if(canal==='CLOSER'){
-      // Show why rows aren't matching
-      var sampleCloser = DRE_FOLHA_RAW.filter(function(r){
-        var nome = _nk ? String(r[_nk]).trim() : '';
-        return _lkp[nome]==='CLOSER';
-      }).slice(0,3);
-      console.log('[DRE_CFG] CLOSER rows (no am filter):', sampleCloser.length);
-      if(sampleCloser.length>0){
-        var sr=sampleCloser[0];
-        console.log('[DRE_CFG] ALL CLOSER row fields:', JSON.stringify(sr));
-        // Find period field
-        var periodKey = Object.keys(sr).find(function(k){ return /period|ano_mes|anomes|mes|month|data|date/i.test(k); });
-        console.log('[DRE_CFG] period key found:', periodKey, '=', periodKey?sr[periodKey]:'NOT FOUND');
-        // Show all keys
-        console.log('[DRE_CFG] CLOSER row keys:', Object.keys(sr).join(', '));
-      }
-      console.log('[DRE_CFG] CLOSER: matched',matched,'rows, total=',result,'| am=',am);
-    }
+
     return result;
   }
   // Debug: log DRE_FOLHA_RAW size and sample
 
-  // Debug: check canal distribution in FOLHA_CFG
-  var _canalCount = {};
-  Object.values(FOLHA_CFG.classif).forEach(function(c){ var k=(c.canal||'—').toUpperCase(); _canalCount[k]=(_canalCount[k]||0)+1; });
-  console.log('[DRE_CFG] canal dist em FOLHA_CFG:', JSON.stringify(_canalCount));
-  // Also check a sample nome match between DRE_FOLHA_RAW and FOLHA_CFG
-  if(DRE_FOLHA_RAW.length>0){
-    var _r=DRE_FOLHA_RAW[0], _keys=Object.keys(_r);
-    var _nk=_keys.find(function(k){return /^(nome|pessoa|name|employee)$/i.test(k);});
-    var _nm=_nk?String(_r[_nk]).trim():'';
-    var _cfg=FOLHA_CFG.classif[_nm];
-    console.log('[DRE_CFG] sample nome=',_nm,'cfg=',JSON.stringify(_cfg));
-    // Check if FOLHA_CFG keys match the nome field format
-    var _firstCfgKey = Object.keys(FOLHA_CFG.classif)[0];
-    console.log('[DRE_CFG] first FOLHA_CFG key=',JSON.stringify(_firstCfgKey));
-  }
+
   var folhaCloserS13    = folhaTotalCanalS13('CLOSER',am);
   var folhaDeveloperS13 = folhaTotalCanalS13('DEVELOPER',am);
   var folhaFarmerS13    = folhaTotalCanalS13('FARMER',am);
