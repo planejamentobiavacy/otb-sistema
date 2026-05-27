@@ -4979,6 +4979,14 @@ function renderBudget(anoFilter){
 
   // ── SALÁRIO FOLHA — por área ajustada ──────────────────────────────
   var folhaRawSrc = FOLHA_RAW && FOLHA_RAW.length ? FOLHA_RAW : [];
+  console.log('[Budget Folha] FOLHA_RAW:', FOLHA_RAW.length, '| FOLHA_CFG keys:', Object.keys(FOLHA_CFG.classif).length, '| selectedAno:', selectedAno, '| months sample:', months.slice(0,3));
+  if(folhaRawSrc.length>0){
+    // Debug first row
+    var _fr0=folhaRawSrc[0];
+    var _fn0=folhaGetNome(_fr0), _fp0=folhaGetPeriodo(_fr0), _fa0=folhaGetArea(_fr0);
+    var _cfg0=FOLHA_CFG.classif[_fn0];
+    console.log('[Budget Folha] sample row: nome=',_fn0,'periodo=',_fp0,'area=',_fa0,'cfg=',JSON.stringify(_cfg0));
+  }
   if(folhaRawSrc.length){
     // Agrupa: area → am → total verbas (exc. 13º)
     var folhaByArea = {};
