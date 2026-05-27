@@ -2430,9 +2430,9 @@ function renderTable(){
   var futM=months.filter(function(y){return y>=cur;}),next3=futM.slice(0,3);
   var fatProx3=next3.reduce(function(s,y){return s+((matrix[y]&&matrix[y].fatQty)||0);},0);
   var covAvg=futM.length?futM.reduce(function(s,y){return s+(matrix[y].coberturaQ||0);},0)/futM.length:0;
-  // Fat. Ano Atual (R$) — soma do faturamento do ano calendário atual
+  // Fat. Ano Atual (R$) — soma de todo o ano calendário atual (real + planejado)
   var anoAtual = cur.split('-')[0];
-  var fatAnoVal = months.filter(function(y){ return y.startsWith(anoAtual) && y<=cur; })
+  var fatAnoVal = months.filter(function(y){ return y.startsWith(anoAtual); })
     .reduce(function(s,y){ return s+((matrix[y]&&matrix[y].fatVal)||0); },0);
   document.getElementById('kFatUlt').textContent=fmtNum(fatUlt3);
   document.getElementById('kFatProx').textContent=fmtNum(fatProx3);
