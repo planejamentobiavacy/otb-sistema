@@ -3010,7 +3010,8 @@ async function initDre(){
   var tabsDefs=[{id:'mensal',label:'📅 Todos os Meses'},{id:'canal',label:'📡 Canal'},{id:'cluster',label:'🗂 Cluster'},{id:'regiao',label:'📍 Região'},{id:'fornecedor',label:'🏭 Fornecedor'}];
   var bar=document.getElementById('dreTabsBar'); bar.innerHTML='';
   tabsDefs.forEach(function(t){
-    var btn=document.createElement('button'); btn.className='dre-tab-btn'; btn.textContent=t.label;
+    var btn=document.createElement('button'); btn.className='dre-tab-btn'; btn.setAttribute('data-tab',t.id); btn.textContent=t.label;
+    if(t.id===DRE_TAB) btn.classList.add('active');
     btn.onclick=function(){dreSwitchTab(t.id);}; bar.appendChild(btn);
   });
   var selAno=function(id){var opts=['TODOS'].concat(anos);return '<div style="display:flex;flex-direction:column;gap:4px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700">Ano</div><select onchange="dreRender()" id="'+id+'" style="background:#f4f6fb;border:1.5px solid #d0d8ee;color:#0f1a3a;padding:7px 12px;border-radius:8px;font-family:inherit;font-size:13px;cursor:pointer;min-width:90px">'+opts.map(function(a){return'<option value="'+a+'"'+(a===anos[anos.length-1]?' selected':'')+'>'+a+'</option>';}).join('')+'</select></div>';};
@@ -3039,9 +3040,7 @@ function dreSwitchTab(tab){
     p.style.display=p.id==='drePanel-'+tab?'block':'none';
   });
   document.querySelectorAll('.dre-tab-btn').forEach(function(b){
-    var t=b.getAttribute('onclick')||'';
-    var isA=t.includes("'"+tab+"'");
-    b.classList.toggle('active', isA);
+    b.classList.toggle('active', b.getAttribute('data-tab')===tab);
   });
   dreRender();
 }
