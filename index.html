@@ -3290,7 +3290,13 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
     // Sem dados de canal (ex: view por fornecedor sem campo canal): distribui pelo shareRB
     rb_closer=rb_developer=rb_farmer=rb_martins=rb_rca=rb_dev*shareRB;
   }
-  var sv_closer=rb_closer*getSalPct('closer'),sv_developer=rb_developer*getSalPct('developer'),sv_farmer=rb_farmer*getSalPct('farmer');
+  // Salários: usa valor absoluto salvo (closer_abs etc) se disponível, senão % da RB
+  function getSalAbs(key, rb){
+    var absVals=[]; a.anomesList.forEach(function(am){ var p=DRE_CFG_PARAMS[am]; if(p&&p[key+'_abs']!=null) absVals.push(p[key+'_abs']); });
+    if(absVals.length){ return absVals.reduce(function(s,v){return s+v;},0)/absVals.length; }
+    return rb*getSalPct(key);
+  }
+  var sv_closer=getSalAbs('closer',rb_closer),sv_developer=getSalAbs('developer',rb_developer),sv_farmer=getSalAbs('farmer',rb_farmer);
   var com_martins=rb_martins*getSalPct('martins'),com_rca=rb_rca*getSalPct('rca');
   var sv=sv_closer+sv_developer+sv_farmer,com=com_martins+com_rca;
   var mb=rl-cmv-fob-grade,mc=mb-sv-com;
@@ -3744,10 +3750,12 @@ function fmsBuildVerbas(verbas){
 
 function fmsVerbasList(verbas){
   var labels = window._folhaVerbasLabels || {};
-  var allChk = FOLHA_VERBAS_SEL.length===0 ? 'checked' : '';
+  var allSel = FOLHA_VERBAS_SEL.length===0; // nenhuma = todas selecionadas
+  var allChk = allSel ? 'checked' : '';
   var h = '<label class="fms-item all"><input type="checkbox" data-all="verbas" '+allChk+'> Todas</label>';
   verbas.forEach(function(k){
-    var chk = FOLHA_VERBAS_SEL.includes(k) ? 'checked' : '';
+    // Quando "Todas" está ativo, todas aparecem marcadas (para poder desmarcar individualmente)
+    var chk = (allSel || FOLHA_VERBAS_SEL.includes(k)) ? 'checked' : '';
     h += '<label class="fms-item"><input type="checkbox" data-verba="'+k+'" '+chk+'>&nbsp;'+(labels[k]||k)+'</label>';
   });
   return h;
@@ -3770,17 +3778,36 @@ document.addEventListener('change', function(e){
   // Verbas filter
   if(el.hasAttribute('data-verba')){
     var k = el.getAttribute('data-verba');
-    if(el.checked){ if(!FOLHA_VERBAS_SEL.includes(k)) FOLHA_VERBAS_SEL.push(k); }
-    else { FOLHA_VERBAS_SEL = FOLHA_VERBAS_SEL.filter(function(x){ return x!==k; }); }
+    var wasAll = FOLHA_VERBAS_SEL.length===0;
+    if(wasAll && !el.checked){
+      // Was "Todas" active — now unchecking one: select all except this one
+      FOLHA_VERBAS_SEL = (window._folhaVerbasDisponiveis||FOLHA_VERBAS).filter(function(x){ return x!==k; });
+    } else if(el.checked){
+      if(!FOLHA_VERBAS_SEL.includes(k)) FOLHA_VERBAS_SEL.push(k);
+      // If all are now selected, revert to "Todas" (empty = all)
+      var avail = window._folhaVerbasDisponiveis||FOLHA_VERBAS;
+      if(FOLHA_VERBAS_SEL.length === avail.length) FOLHA_VERBAS_SEL = [];
+    } else {
+      FOLHA_VERBAS_SEL = FOLHA_VERBAS_SEL.filter(function(x){ return x!==k; });
+    }
     var drop = document.getElementById('fmsDrop_verbas');
     var allCb = drop ? drop.querySelector('input[data-all]') : null;
     if(allCb) allCb.checked = FOLHA_VERBAS_SEL.length===0;
+    // Refresh list so checkboxes reflect state
+    var list = document.getElementById('fmsList_verbas');
+    var avail2 = window._folhaVerbasDisponiveis||FOLHA_VERBAS;
+    var q = drop ? (drop.querySelector('.fms-search')||{}).value||'' : '';
+    var filtered2 = !q ? avail2 : avail2.filter(function(v){ return v.includes(q.toUpperCase())||(window._folhaVerbasLabels&&(window._folhaVerbasLabels[v]||'').toUpperCase().includes(q.toUpperCase())); });
+    if(list) list.innerHTML = fmsVerbasList(filtered2);
     fmsVerbaUpdateBtn(); _folhaRenderAll(); return;
   }
   if(el.hasAttribute('data-all') && el.getAttribute('data-all')==='verbas'){
     FOLHA_VERBAS_SEL = [];
     var drop2 = document.getElementById('fmsDrop_verbas');
-    if(drop2) drop2.querySelectorAll('input[data-verba]').forEach(function(c){ c.checked=false; });
+    // Refresh list — all checkboxes will show checked
+    var list2 = document.getElementById('fmsList_verbas');
+    var avail3 = window._folhaVerbasDisponiveis||FOLHA_VERBAS;
+    if(list2) list2.innerHTML = fmsVerbasList(avail3);
     fmsVerbaUpdateBtn(); _folhaRenderAll(); return;
   }
 
@@ -4125,8 +4152,26 @@ function openDreCfg(){
   var rbCloser    = rbCanal('CLOSER',am),    folhaCloser    = folhaTotalCanal('CLOSER',am);
   var rbDeveloper = rbCanal('DEVELOPER',am), folhaDeveloper = folhaTotalCanal('DEVELOPER',am);
   var rbFarmer    = rbCanal('FARMER',am),    folhaFarmer    = folhaTotalCanal('FARMER',am);
-  var rbMartins   = rbCanal('MARTINS',am);
+  var rbMartins   = rbCanal('MARTINS',am),   folhaMartins   = folhaTotalCanal('MARTINS',am);
   var rbRca       = rbCanal('RCA',am),       despRca        = despTotal('COMISSÃO RCA',am)||despTotal('COMISSAO RCA',am)||despTotal('RCA',am);
+  // Folha por canal excluindo S13_PARC (parcela do 13o salário)
+  function folhaTotalCanalS13(canal, am){
+    return DRE_FOLHA_RAW.filter(function(r){
+      var area  = String(r.area||r.AREA||folhaGetArea(r)||'').toUpperCase();
+      var anomes= String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
+      return area.includes(canal.toUpperCase()) && (!am || anomes===am);
+    }).reduce(function(s,r){
+      var keys=Object.keys(r);
+      var s13key=keys.find(function(k){return k.toUpperCase()==='S13_PARC';});
+      var total=parseFloat(r.valor||r.VALOR)||0;
+      var s13val=s13key?parseFloat(r[s13key])||0:0;
+      return s+(total-s13val);
+    }, 0);
+  }
+  var folhaCloserS13    = folhaTotalCanalS13('CLOSER',am);
+  var folhaDeveloperS13 = folhaTotalCanalS13('DEVELOPER',am);
+  var folhaFarmerS13    = folhaTotalCanalS13('FARMER',am);
+  var folhaRca    = folhaTotalCanal('RCA',am);
   var despMkt     = despTotal('MARKETING',am)||despTotal('MKT',am);
   var despGerais  = despTotal('DESPESA GERAL',am)||despTotal('DESP GERAL',am)||despTotal('GERAL',am);
   var despCd      = despTotal('CD',am)||despTotal('CENTRO DE DISTRIBUIÇÃO',am)||despTotal('DISTRIBUICAO',am);
@@ -4167,14 +4212,17 @@ function openDreCfg(){
 
     // ── SALÁRIOS COMERCIAIS ──
     +'<div class="dre-cfg-sec">'
-    +'<div class="dre-cfg-sec-hd">💼 Salários Comerciais (% da Rec. Bruta do Canal)</div>'
+    +'<div class="dre-cfg-sec-hd">💼 Salários Comerciais (R$ — valor absoluto mensal)</div>'
     +'<div class="dre-cfg-grid">'
-    +fieldPct('% Sal. Closer', 'closer', getP('closer'),
-      rbCloser>0 ? '🏦 RB Canal: '+fmt(rbCloser)+(folhaCloser?' &nbsp;|&nbsp; 👥 Folha: '+fmt(folhaCloser):'') : (folhaCloser?'👥 Folha: '+fmt(folhaCloser):''))
-    +fieldPct('% Sal. Developer', 'developer', getP('developer'),
-      rbDeveloper>0 ? '🏦 RB Canal: '+fmt(rbDeveloper)+(folhaDeveloper?' &nbsp;|&nbsp; 👥 Folha: '+fmt(folhaDeveloper):'') : (folhaDeveloper?'👥 Folha: '+fmt(folhaDeveloper):''))
-    +fieldPct('% Sal. Farmer', 'farmer', getP('farmer'),
-      rbFarmer>0 ? '🏦 RB Canal: '+fmt(rbFarmer)+(folhaFarmer?' &nbsp;|&nbsp; 👥 Folha: '+fmt(folhaFarmer):'') : (folhaFarmer?'👥 Folha: '+fmt(folhaFarmer):''))
+    +fieldBrl('Sal. Closer (R$)', 'closer_abs',
+      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].closer_abs!=null)?DRE_CFG_PARAMS[am].closer_abs:(rbCloser>0?Math.round(rbCloser*getP('closer')):0),
+      (folhaCloserS13?'👥 Folha (s/ 13º): '+fmt(folhaCloserS13):'') + (rbCloser>0?' &nbsp;&nbsp; 🏦 RB Canal: '+fmt(rbCloser):''))
+    +fieldBrl('Sal. Developer (R$)', 'developer_abs',
+      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].developer_abs!=null)?DRE_CFG_PARAMS[am].developer_abs:(rbDeveloper>0?Math.round(rbDeveloper*getP('developer')):0),
+      (folhaDeveloperS13?'👥 Folha (s/ 13º): '+fmt(folhaDeveloperS13):'') + (rbDeveloper>0?' &nbsp;&nbsp; 🏦 RB Canal: '+fmt(rbDeveloper):''))
+    +fieldBrl('Sal. Farmer (R$)', 'farmer_abs',
+      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].farmer_abs!=null)?DRE_CFG_PARAMS[am].farmer_abs:(rbFarmer>0?Math.round(rbFarmer*getP('farmer')):0),
+      (folhaFarmerS13?'👥 Folha (s/ 13º): '+fmt(folhaFarmerS13):'') + (rbFarmer>0?' &nbsp;&nbsp; 🏦 RB Canal: '+fmt(rbFarmer):''))
     +'</div></div>'
 
     // ── COMISSÕES ──
@@ -4182,9 +4230,9 @@ function openDreCfg(){
     +'<div class="dre-cfg-sec-hd">🤝 Comissões (% da Rec. Bruta do Canal)</div>'
     +'<div class="dre-cfg-grid">'
     +fieldPct('% Comissão Martins', 'martins', getP('martins'),
-      rbMartins>0 ? '🏦 RB Canal: '+fmt(rbMartins) : '')
+      (rbMartins>0?'🏦 RB Canal: '+fmt(rbMartins):'') + (folhaMartins>0?' &nbsp;|&nbsp; 👥 Folha: '+fmt(folhaMartins):''))
     +fieldPct('% Comissão RCA', 'rca', getP('rca'),
-      (rbRca>0?'🏦 RB Canal: '+fmt(rbRca):'') + (despRca?' &nbsp;|&nbsp; 💸 Desp.: '+fmt(despRca):''))
+      (rbRca>0?'🏦 RB Canal: '+fmt(rbRca):'') + (folhaRca>0?' &nbsp;|&nbsp; 👥 Folha: '+fmt(folhaRca):'') + (despRca?' &nbsp;|&nbsp; 💸 Desp.: '+fmt(despRca):''))
     +'</div></div>'
 
     // ── MARKETING ──
@@ -4287,6 +4335,11 @@ function applyDreCfg(){
       DRE_CONFIG[k][am] = val;
     });
     DRE_CFG_PARAMS[am].desp_mkt = gv('desp_mkt');
+    // Salários absolutos (closer_abs etc)
+    ['closer_abs','developer_abs','farmer_abs'].forEach(function(k){
+      var val = gv(k);
+      DRE_CFG_PARAMS[am][k] = val > 0 ? val : null;
+    });
     // Backfill NÃO roda aqui — só no carregamento inicial (evita sobrescrever valores salvos)
   } else {
     // Sem mês selecionado: atualiza defaults globais E limpa overrides por mês
