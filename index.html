@@ -2806,7 +2806,7 @@ function backfillDreConfig(){
         refVal = existingVals.length%2===0 ? (existingVals[mid-1]+existingVals[mid])/2 : existingVals[mid];
       }
     }
-    console.log('[backfill] key='+k+' existing='+JSON.stringify(existingVals)+' ref='+refVal);
+    // console.log('[backfill] key='+k+' existing='+JSON.stringify(existingVals)+' ref='+refVal);
 
     // Para cada mês sem entrada, usa o valor de referência
     allMonths.forEach(function(am){
@@ -2825,7 +2825,7 @@ function backfillDreConfig(){
       DRE_CFG_PARAMS[am][k] = fillVal;
     });
   });
-  console.log('[DRE] backfill OK: meses='+allMonths.length+' closer='+JSON.stringify(DRE_CONFIG.closer));
+  // console.log('[DRE] backfill OK: meses='+allMonths.length);
 }
 
 
@@ -4923,7 +4923,7 @@ function openBudgetDetail(tipo, area, ano){
     var val = parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||r.e2_valor||r.E2_VALOR||r.value||r.VALUE||r.vlr||r.VLR||r.e2_valto||r.E2_VALTO)||0;
     // Agrupa por fornecedor normalizado (nomfor) — hist diferentes ficam na mesma linha
     var nomforKey = nomfor.toUpperCase().replace(/\s+/g,' '); // normaliza capitalização e espaços
-    if(nomfor.toUpperCase().indexOf('HEI') >= 0) console.log('[debug HEI MAP] nomforKey='+JSON.stringify(nomforKey)+' am='+am+' val='+val);
+
     if(!map[nomforKey]) map[nomforKey] = {total:0, byMonth:{}, histByMonth:{}, allHists:{}, obs: classif.obs||'', nomforDisplay: nomfor};
     map[nomforKey].total += val;
     map[nomforKey].byMonth[am] = (map[nomforKey].byMonth[am]||0) + val;
