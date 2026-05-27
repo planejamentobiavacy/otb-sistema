@@ -2703,15 +2703,19 @@ async function loadDreFromSupabase(forceRaw){
     var snapOk = snapRows && snapRows.length > 0;
     if(!forceRaw && snapOk){
       DRE_RAW = snapRows;
-      // Carrega canais/cluster em paralelo (não bloqueia renderização)
+      // Carrega folha, despesa, canais e cluster em paralelo (não bloqueia renderização)
       Promise.all([
+        fetchAll(TBLS.folha,   null, null).catch(function(){ return []; }),
+        fetchAll(TBLS.despesa, null, 'despesa').catch(function(){ return []; }),
         fetchAll(TBLS.canais).catch(function(){ return []; }),
         fetchAll(TBLS.cluster).catch(function(){ return []; })
       ]).then(function(res){
-        DRE_CANAIS_RAW  = res[0];
-        DRE_CLUSTER_RAW = res[1];
+        DRE_FOLHA_RAW   = res[0];
+        DRE_DESP_RAW    = res[1];
+        DRE_CANAIS_RAW  = res[2];
+        DRE_CLUSTER_RAW = res[3];
         dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
-        dreRender(); // re-renderiza com canal enriquecido
+        dreRender(); // re-renderiza com canal e folha enriquecidos
       });
       dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
       DRE_SNAPSHOT = true;
@@ -4118,10 +4122,12 @@ function openDreCfg(){
 
   // Faturamento bruto por canal no mês
   function rbCanal(canal, am){
+    var canalUp = canal.toUpperCase();
     return DRE_RAW.filter(function(r){
       var c = String(r.canal||r.CANAL||'').toUpperCase();
       var anomes = String(r.ano||r.ANO||'')+ String(r.mes||r.MES||'').padStart(2,'0');
-      return c===canal.toUpperCase() && (!am || anomes===am);
+      // Aceita igualdade exata ou inclusão parcial (ex: 'RCA' dentro de 'CANAL RCA')
+      return (c===canalUp || c.includes(canalUp)) && (!am || anomes===am);
     }).reduce(function(s,r){ return s + (parseFloat(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO)||0); }, 0);
   }
 
