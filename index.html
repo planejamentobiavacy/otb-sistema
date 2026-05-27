@@ -4088,17 +4088,10 @@ async function openDreCfg(){
   function folhaTotalCanal(canal, am){
     var canalUp = canal.toUpperCase();
     return DRE_FOLHA_RAW.filter(function(r){
-      var keys = Object.keys(r);
-      var nomeKey = keys.find(function(k){ return /^(nome|pessoa|name|employee)$/i.test(k); });
-      var nome = nomeKey ? String(r[nomeKey]).trim() : '';
-      var cfg = nome ? FOLHA_CFG.classif[nome] : null;
-      var canalR = (cfg && cfg.canal && cfg.canal !== '—') ? cfg.canal.toUpperCase() : '';
-      if(!canalR){
-        var canalKey = keys.find(function(k){ return /^(canal|channel)$/i.test(k); });
-        canalR = canalKey ? String(r[canalKey]).toUpperCase() : '';
-      }
+      var nome = _folhaNomeKey ? String(r[_folhaNomeKey]).trim() : '';
+      var canalR = _folhaCanalLookup[nome] || '';
       var anomes = String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
-      return canalR.includes(canalUp) && (!am || anomes===am);
+      return canalR === canalUp && (!am || anomes===am);
     }).reduce(function(s,r){ return s + (parseFloat(r.valor||r.VALOR)||0); }, 0);
   }
   function folhaTotalAdm(am){
@@ -4179,28 +4172,36 @@ async function openDreCfg(){
   var rbRca       = rbCanal('RCA',am),       despRca        = despTotal('COMISSÃO RCA',am)||despTotal('COMISSAO RCA',am)||despTotal('RCA',am);
 
   // Folha por canal excluindo S13_PARC (parcela do 13o salário)
+  // Pre-build nome→canal lookup from FOLHA_CFG for performance
+  var _folhaCanalLookup = {};
+  Object.keys(FOLHA_CFG.classif).forEach(function(nome){
+    var cfg = FOLHA_CFG.classif[nome];
+    if(cfg && cfg.canal && cfg.canal !== '—') _folhaCanalLookup[nome] = cfg.canal.toUpperCase();
+  });
+  console.log('[DRE_CFG] lookup size:', Object.keys(_folhaCanalLookup).length, 'sample:', JSON.stringify(Object.entries(_folhaCanalLookup).slice(0,3)));
+
+  // Find the nome field key from the first row (cached)
+  var _folhaNomeKey = (function(){
+    if(!DRE_FOLHA_RAW.length) return null;
+    var keys = Object.keys(DRE_FOLHA_RAW[0]);
+    // Exact match first, then partial
+    return keys.find(function(k){ return /^(nome|pessoa|name|employee)$/i.test(k); })
+        || keys.find(function(k){ return /nome|pessoa|name/i.test(k); });
+  })();
+  console.log('[DRE_CFG] _folhaNomeKey=', _folhaNomeKey, '| first row nome=', _folhaNomeKey&&DRE_FOLHA_RAW[0]?String(DRE_FOLHA_RAW[0][_folhaNomeKey]).trim():'');
+
   function folhaTotalCanalS13(canal, am){
     var canalUp = canal.toUpperCase();
-    // Monta lookup nome→canal a partir de FOLHA_CFG (salvo pelo usuário)
-    // ou usa o campo canal/area direto da linha como fallback
-    return DRE_FOLHA_RAW.filter(function(r){
-      // Tenta pegar nome da pessoa por múltiplos campos possíveis
-      var keys = Object.keys(r);
-      var nomeKey = keys.find(function(k){ return /^(nome|pessoa|name|employee)$/i.test(k); });
-      var nome = nomeKey ? String(r[nomeKey]).trim() : '';
-      // Busca canal na classificação salva
-      var cfg = nome ? FOLHA_CFG.classif[nome] : null;
-      var canalR = (cfg && cfg.canal && cfg.canal !== '—') ? cfg.canal.toUpperCase() : '';
-      // Fallback: campo canal direto na linha
-      if(!canalR){
-        var canalKey = keys.find(function(k){ return /^(canal|channel)$/i.test(k); });
-        canalR = canalKey ? String(r[canalKey]).toUpperCase() : '';
-      }
+    var matched = 0;
+    var result = DRE_FOLHA_RAW.filter(function(r){
+      var nome = _folhaNomeKey ? String(r[_folhaNomeKey]).trim() : '';
+      var canalR = _folhaCanalLookup[nome] || '';
       var anomes = String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
-      return canalR.includes(canalUp) && (!am || anomes===am);
+      var ok = canalR === canalUp && (!am || anomes===am);
+      if(ok) matched++;
+      return ok;
     }).reduce(function(s,r){
       var keys = Object.keys(r);
-      // Soma verbas individuais excluindo S13_PARC
       var verbas = FOLHA_VERBAS.filter(function(k){ return k !== 'S13_PARC'; });
       var totalVerbas = 0;
       verbas.forEach(function(k){
@@ -4208,12 +4209,13 @@ async function openDreCfg(){
         if(found) totalVerbas += folhaNum(r[found]);
       });
       if(totalVerbas > 0) return s + totalVerbas;
-      // Fallback: valor total - s13_parc
       var s13key = keys.find(function(k){ return k.toUpperCase() === 'S13_PARC'; });
       var total = parseFloat(r.valor||r.VALOR)||0;
       var s13val = s13key ? parseFloat(r[s13key])||0 : 0;
       return s + (total - s13val);
     }, 0);
+    if(canal==='CLOSER') console.log('[DRE_CFG] CLOSER: matched',matched,'rows, total=',result,'| am=',am);
+    return result;
   }
   // Debug: log DRE_FOLHA_RAW size and sample
 
