@@ -3190,7 +3190,9 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   var cols=dims.map(function(d){
     var label = dimLabelMap[d] || d;
     var canalCtx = dimKey==='canal' ? d : null;
-    return{label:label,d:dreCalcShare(rows.filter(function(r){return dimVal(r)===d;}),rows,canalCtx)};
+    var sliceRows = rows.filter(function(r){return dimVal(r)===d;});
+    console.log('[dreRenderDim col]', d, '| slice:', sliceRows.length, '| sample dimVal:', rows.slice(0,3).map(dimVal));
+    return{label:label,d:dreCalcShare(sliceRows,rows,canalCtx)};
   });
   if(cols.length>1) cols=cols.concat([{label:'<strong>Total</strong>',d:dreCalc(dreAgg(rows),1,1),isTotal:true}]);
   var anos=Array.from(new Set(rows.map(function(r){return r.ano||r.ANO;})));
