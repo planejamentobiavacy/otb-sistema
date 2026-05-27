@@ -5412,14 +5412,17 @@ function openBudgetCfg(){
 }
 
 function renderBudgetCfgTable(search){
-  var body = document.getElementById('bcfgTableWrap') || document.getElementById('budgetCfgBody');
-  if(!body||!body._allKeys) return;
-  var allKeys   = body._allKeys;
-  var combos    = body._combos;
-  var tipoOpts  = body._tipoOpts;
-  var areaOpts  = body._areaOpts;
-  var selStyle  = body._selStyle;
-  var inpStyle  = body._inpStyle;
+  var container = document.getElementById('bcfgTableWrap') || document.getElementById('budgetCfgBody');
+  // Data always stored on budgetCfgBody
+  var dataEl = document.getElementById('budgetCfgBody');
+  var body = container;
+  if(!dataEl||!dataEl._allKeys) return;
+  var allKeys   = dataEl._allKeys;
+  var combos    = dataEl._combos;
+  var tipoOpts  = dataEl._tipoOpts;
+  var areaOpts  = dataEl._areaOpts;
+  var selStyle  = dataEl._selStyle;
+  var inpStyle  = dataEl._inpStyle;
   var fmtVal    = body._fmtVal;
 
   var searchUC = (search||'').trim().toUpperCase();
