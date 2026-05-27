@@ -3335,7 +3335,7 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   var com_martins = (!canalCtxUC || canalCtxUC==='MARTINS') ? rb_martins*getSalPct('martins') : 0;
   var com_rca     = (!canalCtxUC || canalCtxUC==='RCA')     ? rb_rca*getSalPct('rca')         : 0;
   var sv=sv_closer+sv_developer+sv_farmer+sv_hava+sv_ka,com=com_martins+com_rca;
-  var mb=rl-cmv-fob-grade,mc=mb-sv-com;
+  var mb=rl-cmv-fob-grade; var sv13ferias=sv*0.11; var mc=mb-sv-com-sv13ferias;
   var rf_rec=a.rec_frete,cf=a.custo_frete>0?a.custo_frete:rl*0.031;
   // Marketing: valor fixo do mês (FIXOS_DEF.marketing) * shareRB
   // branding e leads são shares do total (ex: 60% branding, 40% performance)
@@ -3435,7 +3435,7 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   var cd_unit = getFixo('cd_mensal', FIXOS_DEF.cd_mensal);
   var mcon=mc+rf_rec-cf-mkt,sa=sa_unit*shareRB,dg=dg_unit*shareRB,cd=cd_unit*shareQTD;
   var ebt=mcon-sa-dg-cd;
-  return{rb_dev,dev,rb_gross,rb,imp,icms:a.icms,pc:a.cofins+a.pis+a.fecpst,rl,qtd:a.qtd,cmv_b,cmv,mkp,mg_prod,fob,mb,sv,sv_closer,sv_developer,sv_farmer,sv_hava,sv_ka,com,com_martins,com_rca,mc,rf:rf_rec,cf,mkt,mkt_branding,mkt_leads,mcon,grade,sa,dg,cd,ebt};
+  return{rb_dev,dev,rb_gross,rb,imp,icms:a.icms,pc:a.cofins+a.pis+a.fecpst,rl,qtd:a.qtd,cmv_b,cmv,mkp,mg_prod,fob,mb,sv,sv_closer,sv_developer,sv_farmer,sv_hava,sv_ka,sv13ferias,com,com_martins,com_rca,mc,rf:rf_rec,cf,mkt,mkt_branding,mkt_leads,mcon,grade,sa,dg,cd,ebt};
 }
 var dreBrl=function(v){var n=Math.round(v);return n<0?'<span style="color:#c0181a;font-weight:700">-R$ '+Math.abs(n).toLocaleString('pt-BR')+'</span>':'R$ '+n.toLocaleString('pt-BR');};
 var dreBrlp=function(v){return'R$ '+Math.round(v).toLocaleString('pt-BR');};
@@ -3494,7 +3494,7 @@ function dreTabela(cols){
   +sp()+sec('📦 VOLUME')+row('Pares',function(d){return dreNum2(d.qtd);})+row('Preço Médio',function(d){return d.qtd>0?'R$ '+(d.rb/d.qtd).toFixed(1):'-';})
   +sp()+sec('💲 CMV')+rowT('CMV (-)',function(d){return dreBrl(d.cmv);})+rowP('% CMV',function(d){return drePct(d.cmv,d.rl);})+rowP('CMV Bruto',function(d){return d.cmv_b>0?dreBrlp(d.cmv_b):'-';})+rowP('MKP %',function(d){return d.cmv_b>0?drePctD(d.mkp):'-';})+rowP('Margem Produto %',function(d){return drePctD(d.mg_prod);})
   +sp()+row('FOB (-)',function(d){return dreBrl(d.fob);},'row-sub')+rowP('% FOB',function(d){return drePct(d.fob,d.rl);})+row('Montagem Grade (-)',function(d){return dreBrl(d.grade||0);},'row-sub')+rowP('% Montagem Grade',function(d){return drePct(d.grade||0,d.rl);})+sp()+rowT('Margem Bruta',function(d){return dreBrl(d.mb);})+rowP('Margem Bruta %',function(d){return drePct(d.mb,d.rl);})
-  +sp()+sec('🏷 DESPESAS COMERCIAIS')+row('Sal. Closer (-)',function(d){return dreBrl(d.sv_closer||0);},'row-sub')+row('Sal. Developer (-)',function(d){return dreBrl(d.sv_developer||0);},'row-sub')+row('Sal. Farmer (-)',function(d){return dreBrl(d.sv_farmer||0);},'row-sub')+row('Sal. Hava (-)',function(d){return dreBrl(d.sv_hava||0);},'row-sub')+row('Sal. KA (-)',function(d){return dreBrl(d.sv_ka||0);},'row-sub')+row('Comissão Martins (-)',function(d){return dreBrl(d.com_martins||d.com/2);},'row-sub')+row('Comissão RCA (-)',function(d){return dreBrl(d.com_rca||d.com/2);},'row-sub')+rowT('Total Comercial',function(d){return dreBrl((d.sv||0)+(d.com||0));})+rowP('% Total Comercial',function(d){return drePct((d.sv||0)+(d.com||0),d.rl);})
+  +sp()+sec('🏷 DESPESAS COMERCIAIS')+row('Salários (-)',function(d){return dreBrl(d.sv||0);},'row-sub')+row('Comissão (-)',function(d){return dreBrl((d.com||0));},'row-sub')+row('13º + Férias (-)',function(d){return dreBrl(d.sv13ferias||0);},'row-sub')+rowT('Total Comercial',function(d){return dreBrl((d.sv||0)+(d.com||0)+(d.sv13ferias||0));})+rowP('% Total Comercial',function(d){return drePct((d.sv||0)+(d.com||0)+(d.sv13ferias||0),d.rl);})
   +sp()+sec('🚚 FRETE')+row('Receita Frete (+)',function(d){return dreBrl(d.rf);},'row-sub')+row('Custo Frete (-)',function(d){return dreBrl(d.cf);},'row-sub')+rowP('% Frete / Rec Líq',function(d){return drePct(d.cf,d.rl);})+rowP('Frete / Par',function(d){return d.qtd>0?'R$ '+(d.cf/d.qtd).toFixed(2):'-';})
   +sp()+sec('📢 MARKETING')+row('Branding (-)',function(d){return dreBrl(d.mkt_branding!=null?d.mkt_branding:(d.mkt||0)/2);},'row-sub')+row('Leads Novos (-)',function(d){return dreBrl(d.mkt_leads!=null?d.mkt_leads:(d.mkt||0)/2);},'row-sub')+rowT('Total Marketing',function(d){return dreBrl(d.mkt||0);})+rowP('% Marketing',function(d){return drePct(d.mkt||0,d.rl);})
   +sp()+sec('💡 MARGEM DE CONTRIBUIÇÃO')+rowBig('Margem de Contribuição',function(d){return dreBrl(d.mcon);},16)+rowBigP('Margem Contrib %',function(d){return drePct(d.mcon,d.rl);},16)+rowP('Margem Contrib / Par',function(d){return d.qtd>0?'R$ '+(d.mcon/d.qtd).toFixed(2):'-';})
