@@ -2270,21 +2270,39 @@ function getMatrixForCategory(sup,cat){
   });
   if(gradesInCat.size===0) return state.matrices[sup];
   var months=state.months,cur=state.currentMonth,filtered={};
+  // Normaliza grades para lookup — inclui versão com e sem zeros à esquerda
+  var gradesInCatUpper = new Set();
+  gradesInCat.forEach(function(g){
+    var raw = String(g).trim();
+    gradesInCatUpper.add(raw.toUpperCase());
+    // Também adiciona com zeros à esquerda para EANs numéricos
+    if(/^\d+$/.test(raw)) gradesInCatUpper.add(raw); // original
+    if(/^\d+$/.test(raw)) gradesInCatUpper.add(raw.replace(/^0+/,'')); // sem zero
+  });
+
   function aggForCat(rows,dateHints,qtyHints,valHints){
     var out={}; months.forEach(function(m){out[m]={qty:0,val:0};}); if(!rows||!rows.length) return out;
     var sample=rows[0];
-    var colGrade=findCol(sample,['GRADE','GRADE_ID','COD_GRADE','COD_PRODUTO']);
-    var colDate=findCol(sample,dateHints),colQty=findCol(sample,qtyHints),colVal=findCol(sample,valHints);
+    // Include both uppercase and lowercase variants for robustness
+    var colGrade=findCol(sample,['grade','GRADE','cod_grade','GRADE_ID','COD_GRADE','COD_PRODUTO','cod_produto','sku','SKU']);
+    var allDateHints=dateHints.concat(dateHints.map(function(h){return h.toLowerCase();}));
+    var allQtyHints=qtyHints.concat(qtyHints.map(function(h){return h.toLowerCase();}));
+    var allValHints=valHints.concat(valHints.map(function(h){return h.toLowerCase();}));
+    var colDate=findCol(sample,allDateHints),colQty=findCol(sample,allQtyHints),colVal=findCol(sample,allValHints);
     rows.forEach(function(r){
-      var g=colGrade?String(r[colGrade]||'').trim():''; if(!gradesInCat.has(g)) return;
+      var gRaw=colGrade?String(r[colGrade]||'').trim():'';
+      // Normalize same way as gradeMap: strip leading zeros from numeric grades
+      var gNorm=/^\d+$/.test(gRaw)?String(parseInt(gRaw,10)):gRaw;
+      var g=gNorm.toUpperCase();
+      if(!gradesInCatUpper.has(g)&&!gradesInCatUpper.has(gRaw.toUpperCase())) return;
       var ym=monthFromDate(colDate?r[colDate]:null); if(!ym||!out[ym]) return;
       out[ym].qty+=parseNum(colQty?r[colQty]:0); out[ym].val+=parseNum(colVal?r[colVal]:0);
     });
     return out;
   }
-  var vendaAgg=aggForCat(state.venda,['ANO_MES','DATA','DT'],['QUANTIDADE','QTD','QT'],['VALOR','FATURAMENTO','VL_VENDA','VL_TOTAL']);
-  var stkAgg=aggForCat(state.stk,['ANO_MES','DATA','DT'],['ESTOQUE_QTD','QUANTIDADE','QTD'],['ESTOQUE_VALOR','VALOR','VL_ESTOQUE']);
-  var cartAgg=aggForCat(state.cart,['ANO_MES','DATA','DT'],['QTD','QUANTIDADE','QT'],['VALOR','VL_CARTEIRA']);
+  var vendaAgg=aggForCat(state.venda,['ano_mes','ANO_MES','DATA','data','DT'],['qtd','QUANTIDADE','QTD','QT'],['faturamento','FATURAMENTO','VALOR','VL_VENDA','VL_TOTAL']);
+  var stkAgg=aggForCat(state.stk,['ano_mes','ANO_MES','DATA','data','DT'],['estoque_qtd','ESTOQUE_QTD','QUANTIDADE','QTD'],['estoque_valor','ESTOQUE_VALOR','VALOR','VL_ESTOQUE']);
+  var cartAgg=aggForCat(state.cart,['ano_mes','ANO_MES','DATA','data','DT'],['qtd','QTD','QUANTIDADE','QT'],['valor','VALOR','VL_CARTEIRA']);
   var participation={};
   var realizados=months.filter(function(ym){return ym<cur;});
   for(var mo=1;mo<=12;mo++){
