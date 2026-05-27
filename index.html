@@ -4080,6 +4080,26 @@ async function openDreCfg(){
     } catch(e){ console.warn('[DRE_CFG] erro ao carregar FOLHA_CFG:', e.message); }
   }
 
+
+  // Folha por canal excluindo S13_PARC (parcela do 13o salário)
+  // Pre-build nome→canal lookup from FOLHA_CFG for performance
+  var _folhaCanalLookup = {};
+  Object.keys(FOLHA_CFG.classif).forEach(function(nome){
+    var cfg = FOLHA_CFG.classif[nome];
+    if(cfg && cfg.canal && cfg.canal !== '—') _folhaCanalLookup[nome] = cfg.canal.toUpperCase();
+  });
+  console.log('[DRE_CFG] lookup size:', Object.keys(_folhaCanalLookup).length, 'sample:', JSON.stringify(Object.entries(_folhaCanalLookup).slice(0,3)));
+
+  // Find the nome field key from the first row (cached)
+  var _folhaNomeKey = (function(){
+    if(!DRE_FOLHA_RAW.length) return null;
+    var keys = Object.keys(DRE_FOLHA_RAW[0]);
+    // Exact match first, then partial
+    return keys.find(function(k){ return /^(nome|pessoa|name|employee)$/i.test(k); })
+        || keys.find(function(k){ return /nome|pessoa|name/i.test(k); });
+  })();
+  console.log('[DRE_CFG] _folhaNomeKey=', _folhaNomeKey, '| first row nome=', _folhaNomeKey&&DRE_FOLHA_RAW[0]?String(DRE_FOLHA_RAW[0][_folhaNomeKey]).trim():'');
+
   // ── Helpers ──────────────────────────────────────────
   function pct(v){ return parseFloat((v*100).toFixed(4)); }
   function brl(v){ return Math.round(v); }
@@ -4087,9 +4107,11 @@ async function openDreCfg(){
   // Calcula totais da folha por canal/área para o ano_mes selecionado
   function folhaTotalCanal(canal, am){
     var canalUp = canal.toUpperCase();
+    var _lkp = (typeof _folhaCanalLookup !== 'undefined' && _folhaCanalLookup) ? _folhaCanalLookup : {};
+    var _nk  = (typeof _folhaNomeKey    !== 'undefined') ? _folhaNomeKey    : null;
     return DRE_FOLHA_RAW.filter(function(r){
-      var nome = _folhaNomeKey ? String(r[_folhaNomeKey]).trim() : '';
-      var canalR = _folhaCanalLookup[nome] || '';
+      var nome = _nk ? String(r[_nk]).trim() : '';
+      var canalR = _lkp[nome] || '';
       var anomes = String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
       return canalR === canalUp && (!am || anomes===am);
     }).reduce(function(s,r){ return s + (parseFloat(r.valor||r.VALOR)||0); }, 0);
@@ -4170,32 +4192,14 @@ async function openDreCfg(){
   var rbFarmer    = rbCanal('FARMER',am),    folhaFarmer    = folhaTotalCanal('FARMER',am);
   var rbMartins   = rbCanal('MARTINS',am),   folhaMartins   = folhaTotalCanal('MARTINS',am);
   var rbRca       = rbCanal('RCA',am),       despRca        = despTotal('COMISSÃO RCA',am)||despTotal('COMISSAO RCA',am)||despTotal('RCA',am);
-
-  // Folha por canal excluindo S13_PARC (parcela do 13o salário)
-  // Pre-build nome→canal lookup from FOLHA_CFG for performance
-  var _folhaCanalLookup = {};
-  Object.keys(FOLHA_CFG.classif).forEach(function(nome){
-    var cfg = FOLHA_CFG.classif[nome];
-    if(cfg && cfg.canal && cfg.canal !== '—') _folhaCanalLookup[nome] = cfg.canal.toUpperCase();
-  });
-  console.log('[DRE_CFG] lookup size:', Object.keys(_folhaCanalLookup).length, 'sample:', JSON.stringify(Object.entries(_folhaCanalLookup).slice(0,3)));
-
-  // Find the nome field key from the first row (cached)
-  var _folhaNomeKey = (function(){
-    if(!DRE_FOLHA_RAW.length) return null;
-    var keys = Object.keys(DRE_FOLHA_RAW[0]);
-    // Exact match first, then partial
-    return keys.find(function(k){ return /^(nome|pessoa|name|employee)$/i.test(k); })
-        || keys.find(function(k){ return /nome|pessoa|name/i.test(k); });
-  })();
-  console.log('[DRE_CFG] _folhaNomeKey=', _folhaNomeKey, '| first row nome=', _folhaNomeKey&&DRE_FOLHA_RAW[0]?String(DRE_FOLHA_RAW[0][_folhaNomeKey]).trim():'');
-
   function folhaTotalCanalS13(canal, am){
     var canalUp = canal.toUpperCase();
+    var _lkp = (typeof _folhaCanalLookup !== 'undefined' && _folhaCanalLookup) ? _folhaCanalLookup : {};
+    var _nk  = (typeof _folhaNomeKey    !== 'undefined') ? _folhaNomeKey    : null;
     var matched = 0;
     var result = DRE_FOLHA_RAW.filter(function(r){
-      var nome = _folhaNomeKey ? String(r[_folhaNomeKey]).trim() : '';
-      var canalR = _folhaCanalLookup[nome] || '';
+      var nome = _nk ? String(r[_nk]).trim() : '';
+      var canalR = _lkp[nome] || '';
       var anomes = String(r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
       var ok = canalR === canalUp && (!am || anomes===am);
       if(ok) matched++;
