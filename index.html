@@ -4227,9 +4227,12 @@ async function openDreCfg(){
       console.log('[DRE_CFG] CLOSER rows (no am filter):', sampleCloser.length);
       if(sampleCloser.length>0){
         var sr=sampleCloser[0];
-        var anomes_raw = sr.ano_mes||sr.ANO_MES;
-        var anomes_calc = String(anomes_raw||'').replace(/\D/g,'').slice(0,6);
-        console.log('[DRE_CFG] sample CLOSER row ano_mes raw=',anomes_raw,'calc=',anomes_calc,'| am filter=',am);
+        console.log('[DRE_CFG] ALL CLOSER row fields:', JSON.stringify(sr));
+        // Find period field
+        var periodKey = Object.keys(sr).find(function(k){ return /period|ano_mes|anomes|mes|month|data|date/i.test(k); });
+        console.log('[DRE_CFG] period key found:', periodKey, '=', periodKey?sr[periodKey]:'NOT FOUND');
+        // Show all keys
+        console.log('[DRE_CFG] CLOSER row keys:', Object.keys(sr).join(', '));
       }
       console.log('[DRE_CFG] CLOSER: matched',matched,'rows, total=',result,'| am=',am);
     }
