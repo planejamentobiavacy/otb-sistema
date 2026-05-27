@@ -4171,6 +4171,8 @@ function openDreCfg(){
   var folhaCloserS13    = folhaTotalCanalS13('CLOSER',am);
   var folhaDeveloperS13 = folhaTotalCanalS13('DEVELOPER',am);
   var folhaFarmerS13    = folhaTotalCanalS13('FARMER',am);
+  var folhaMartinsS13   = folhaTotalCanalS13('MARTINS',am);
+  var folhaRcaS13       = folhaTotalCanalS13('RCA',am);
   var folhaRca    = folhaTotalCanal('RCA',am);
   var despMkt     = despTotal('MARKETING',am)||despTotal('MKT',am);
   var despGerais  = despTotal('DESPESA GERAL',am)||despTotal('DESP GERAL',am)||despTotal('GERAL',am);
@@ -4230,9 +4232,9 @@ function openDreCfg(){
     +'<div class="dre-cfg-sec-hd">🤝 Comissões (% da Rec. Bruta do Canal)</div>'
     +'<div class="dre-cfg-grid">'
     +fieldPct('% Comissão Martins', 'martins', getP('martins'),
-      (rbMartins>0?'🏦 RB Canal: '+fmt(rbMartins):'') + (folhaMartins>0?' &nbsp;|&nbsp; 👥 Folha: '+fmt(folhaMartins):''))
+      (folhaMartinsS13>0?'👥 Verbas Folha (exc. 13º): '+fmt(folhaMartinsS13):'') + (rbMartins>0?' &nbsp;&nbsp; 🏦 RB Canal: '+fmt(rbMartins):''))
     +fieldPct('% Comissão RCA', 'rca', getP('rca'),
-      (rbRca>0?'🏦 RB Canal: '+fmt(rbRca):'') + (folhaRca>0?' &nbsp;|&nbsp; 👥 Folha: '+fmt(folhaRca):'') + (despRca?' &nbsp;|&nbsp; 💸 Desp.: '+fmt(despRca):''))
+      (folhaRcaS13>0?'👥 Verbas Folha (exc. 13º): '+fmt(folhaRcaS13):'') + (rbRca>0?' &nbsp;&nbsp; 🏦 RB Canal: '+fmt(rbRca):'') + (despRca?' &nbsp;&nbsp; 💸 Desp.: '+fmt(despRca):''))
     +'</div></div>'
 
     // ── MARKETING ──
