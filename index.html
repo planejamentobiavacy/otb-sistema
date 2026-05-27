@@ -4116,27 +4116,6 @@ async function openDreCfg(){
 
   // Folha por canal excluindo S13_PARC (parcela do 13o salário)
   // Find closest available month in DRE_FOLHA_RAW to the selected am
-  var _folhaMesesDisp = (function(){
-    var s={};
-    DRE_FOLHA_RAW.forEach(function(r){
-      var p=String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
-      if(p.length===6) s[p]=true;
-    });
-    return Object.keys(s).sort();
-  })();
-  // Use closest available month to am (prefer <= am, otherwise use nearest overall)
-  var _folhaAmRef = (function(){
-    if(!_folhaMesesDisp.length) return am;
-    // Try exact match first
-    if(_folhaMesesDisp.indexOf(am)>=0) return am;
-    // Try latest <= am
-    var before = _folhaMesesDisp.filter(function(m){ return m<=am; });
-    if(before.length) return before[before.length-1];
-    // Fallback: earliest > am
-    return _folhaMesesDisp[0];
-  })();
-  console.log('[DRE_CFG] folhaAmRef=',_folhaAmRef,'am=',am,'disponiveis=',_folhaMesesDisp.slice(-3).join(','));
-
   // Pre-build nome→canal lookup from FOLHA_CFG for performance
   var _folhaCanalLookup = {};
   Object.keys(FOLHA_CFG.classif).forEach(function(nome){
@@ -4239,6 +4218,23 @@ async function openDreCfg(){
   }
 
   var am = selectedAm;
+
+  // ── Meses disponíveis na Folha (calculado com am correto) ──────
+  _folhaMesesDisp = (function(){
+    var s={};
+    DRE_FOLHA_RAW.forEach(function(r){
+      var p=String(folhaGetPeriodo(r)||'').replace(/[^0-9]/g,'').slice(0,6);
+      if(p.length===6) s[p]=true;
+    });
+    return Object.keys(s).sort();
+  })();
+  var _folhaAmRef = (function(){
+    if(!_folhaMesesDisp.length) return am;
+    if(_folhaMesesDisp.indexOf(am)>=0) return am;
+    var before=_folhaMesesDisp.filter(function(m){return m<=am;});
+    if(before.length) return before[before.length-1];
+    return _folhaMesesDisp[_folhaMesesDisp.length-1];
+  })();
 
   // ── Ref values ────────────────────────────────────
   var rbCloser    = rbCanal('CLOSER',am),    folhaCloser    = folhaTotalCanal('CLOSER',am);
