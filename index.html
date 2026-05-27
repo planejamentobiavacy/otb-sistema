@@ -4531,6 +4531,13 @@ var BUDGET_AREAS = ['Administrativo','Avacy','Comercial','Compras','E-comm/Mkt',
 
 async function openBudget(){
   showScreen('screenBudget');
+  // Garante que FOLHA_RAW e FOLHA_CFG estão carregados para Salário Folha
+  if(!FOLHA_RAW.length && TBLS.folha){
+    try{ FOLHA_RAW = await fetchAll(TBLS.folha, null, null); FOLHA_LOADED = FOLHA_RAW.length>0; } catch(e){}
+  }
+  if(!Object.keys(FOLHA_CFG.classif).length){
+    try{ var fc=await supaLoad(TBLS.save_folha,'folha_classif'); if(fc&&fc.classif) FOLHA_CFG.classif=fc.classif; } catch(e){}
+  }
   if(!BUDGET_LOADED) await loadBudget();
   renderBudget();
 }
@@ -4968,6 +4975,50 @@ function renderBudget(anoFilter){
         });
       })(area);
     });
+  }
+
+  // ── SALÁRIO FOLHA — por área ajustada ──────────────────────────────
+  var folhaRawSrc = FOLHA_RAW && FOLHA_RAW.length ? FOLHA_RAW : [];
+  if(folhaRawSrc.length){
+    // Agrupa: area → am → total verbas (exc. 13º)
+    var folhaByArea = {};
+    folhaRawSrc.forEach(function(r){
+      var nome = folhaGetNome(r);
+      var cfg  = FOLHA_CFG.classif[nome];
+      var area = cfg && cfg.area ? cfg.area.toUpperCase() : folhaGetArea(r).toUpperCase();
+      if(!area || area==='(SEM ÁREA)') return;
+      var am   = String(folhaGetPeriodo(r)||'').replace(/[^0-9]/g,'').slice(0,6);
+      if(am.length!==6) return;
+      // Verifica se o am pertence ao ano selecionado
+      if(selectedAno && am.slice(0,4)!==String(selectedAno)) return;
+      var am_ym = am.slice(0,4)+'-'+am.slice(4,6);
+      if(!months.includes(am_ym)) return;
+      var keys = Object.keys(r);
+      var verbas = FOLHA_VERBAS.filter(function(k){ return k!=='S13_PARC'; });
+      var totalVerbas = 0;
+      verbas.forEach(function(k){
+        var found=keys.find(function(rk){return rk.toUpperCase()===k;});
+        if(found) totalVerbas+=folhaNum(r[found]);
+      });
+      if(totalVerbas===0) totalVerbas = parseFloat(r.valor||r.VALOR)||0;
+      if(!folhaByArea[area]) folhaByArea[area]={};
+      folhaByArea[area][am_ym]=(folhaByArea[area][am_ym]||0)+totalVerbas;
+    });
+    var areasComFolha = Object.keys(folhaByArea).sort();
+    if(areasComFolha.length){
+      secRow('Salário Folha', '👥');
+      areasComFolha.forEach(function(areaF){
+        (function(af){
+          dataRow(af, function(ym){ var v=folhaByArea[af][ym]; return v>0?v:null; }, {bold:true});
+        })(areaF);
+      });
+      // Total geral folha
+      dataRow('Total Salário Folha', function(ym){
+        var total=0;
+        areasComFolha.forEach(function(af){ total+=(folhaByArea[af][ym]||0); });
+        return total>0?total:null;
+      }, {bold:true, style:'background:#f0f5ff'});
+    }
   }
 
   h += '</tbody></table></div></div>';
