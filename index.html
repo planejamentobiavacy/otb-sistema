@@ -4068,15 +4068,16 @@ async function dreForceReload(btn){
 // Mês selecionado no Config DRE — persistido fora do DOM para sobreviver reconstruções
 var _dreCfgSelectedAm = '';
 
-function openDreCfg(){
+async function openDreCfg(){
   var body = document.getElementById('dreCfgBody');
   if(!body) return;
-  // Garante que FOLHA_CFG está carregado antes de calcular salários por canal
+  // Aguarda FOLHA_CFG antes de calcular salários por canal
   if(!Object.keys(FOLHA_CFG.classif).length){
-    supaLoad(TBLS.save_folha, 'folha_classif').then(function(saved){
+    try{
+      var saved = await supaLoad(TBLS.save_folha, 'folha_classif');
       if(saved && saved.classif) FOLHA_CFG.classif = saved.classif;
       console.log('[DRE_CFG] FOLHA_CFG carregado:', Object.keys(FOLHA_CFG.classif).length, 'pessoas');
-    }).catch(function(){});
+    } catch(e){ console.warn('[DRE_CFG] erro ao carregar FOLHA_CFG:', e.message); }
   }
 
   // ── Helpers ──────────────────────────────────────────
@@ -4176,9 +4177,7 @@ function openDreCfg(){
   var rbFarmer    = rbCanal('FARMER',am),    folhaFarmer    = folhaTotalCanal('FARMER',am);
   var rbMartins   = rbCanal('MARTINS',am),   folhaMartins   = folhaTotalCanal('MARTINS',am);
   var rbRca       = rbCanal('RCA',am),       despRca        = despTotal('COMISSÃO RCA',am)||despTotal('COMISSAO RCA',am)||despTotal('RCA',am);
-  // Debug canais disponíveis no DRE_RAW
-  var _canaisRaw = {}; DRE_RAW.forEach(function(r){ var c=String(r.canal||r.CANAL||'').toUpperCase(); if(c) _canaisRaw[c]=(_canaisRaw[c]||0)+1; });
-  console.log('[DRE_CFG] canais em DRE_RAW:', JSON.stringify(_canaisRaw), '| rbMartins=',rbMartins,'| rbRca=',rbRca);
+
   // Folha por canal excluindo S13_PARC (parcela do 13o salário)
   function folhaTotalCanalS13(canal, am){
     var canalUp = canal.toUpperCase();
@@ -4217,19 +4216,8 @@ function openDreCfg(){
     }, 0);
   }
   // Debug: log DRE_FOLHA_RAW size and sample
-  console.log('[DRE_CFG] DRE_FOLHA_RAW:', DRE_FOLHA_RAW.length, 'rows | am:', am);
-  if(DRE_FOLHA_RAW.length>0){ var _s=DRE_FOLHA_RAW[0]; console.log('[DRE_CFG] sample row keys:', Object.keys(_s)); console.log('[DRE_CFG] sample canal/area:', _s.canal||_s.CANAL||_s.area||_s.AREA); }
-  // Debug: show ALL keys and find nome field
-  if(DRE_FOLHA_RAW.length>0){
-    var _sr=DRE_FOLHA_RAW[0], _sk=Object.keys(_sr);
-    console.log('[DRE_CFG] ALL keys:', _sk.join(', '));
-    // Try all text fields to find the name
-    var _candidates = _sk.filter(function(k){ var v=String(_sr[k]||''); return v.length>3&&v.length<60&&/^[A-ZÀ-Ú ]+$/i.test(v.trim())&&!/^[0-9]+$/.test(v.trim()); });
-    console.log('[DRE_CFG] text candidates:', _candidates.map(function(k){return k+'='+_sr[k];}).join(' | '));
-    console.log('[DRE_CFG] FOLHA_CFG total=', Object.keys(FOLHA_CFG.classif).length, '| first keys:', Object.keys(FOLHA_CFG.classif).slice(0,3).join(', '));
-  }
+
   var folhaCloserS13    = folhaTotalCanalS13('CLOSER',am);
-  console.log('[DRE_CFG] folhaCloserS13=',folhaCloserS13,'folhaDeveloperS13=',folhaTotalCanalS13('DEVELOPER',am),'folhaFarmerS13=',folhaTotalCanalS13('FARMER',am));
   var folhaDeveloperS13 = folhaTotalCanalS13('DEVELOPER',am);
   var folhaFarmerS13    = folhaTotalCanalS13('FARMER',am);
   var folhaMartinsS13   = folhaTotalCanalS13('MARTINS',am);
