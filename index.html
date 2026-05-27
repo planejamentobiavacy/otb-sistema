@@ -4206,7 +4206,11 @@ async function openDreCfg(){
   var rbDeveloper = rbCanal('DEVELOPER',am), folhaDeveloper = folhaTotalCanal('DEVELOPER',am);
   var rbFarmer    = rbCanal('FARMER',am),    folhaFarmer    = folhaTotalCanal('FARMER',am);
   var rbMartins   = rbCanal('MARTINS',am),   folhaMartins   = folhaTotalCanal('MARTINS',am);
-  var rbRca       = rbCanal('RCA',am),       despRca        = despTotal('COMISSÃO RCA',am)||despTotal('COMISSAO RCA',am)||despTotal('RCA',am);
+  var rbRcaDireto  = rbCanal('RCA',am);
+  var despRca      = despTotal('COMISSÃO RCA',am)||despTotal('COMISSAO RCA',am)||despTotal('RCA',am);
+  // Se não há canal RCA no DRE_RAW, deriva RB a partir da despesa de comissão ÷ % configurado
+  var rbRca = rbRcaDireto > 0 ? rbRcaDireto
+    : (despRca > 0 && getP('rca') > 0 ? Math.round(despRca / getP('rca')) : 0);
   function folhaTotalCanalS13(canal, am){
     var canalUp = canal.toUpperCase();
     var _lkp = (typeof _folhaCanalLookup !== 'undefined' && _folhaCanalLookup) ? _folhaCanalLookup : {};
