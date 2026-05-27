@@ -4217,13 +4217,13 @@ function openDreCfg(){
     +'<div class="dre-cfg-sec-hd">💼 Salários Comerciais (R$ — valor absoluto mensal)</div>'
     +'<div class="dre-cfg-grid">'
     +fieldBrl('Sal. Closer (R$)', 'closer_abs',
-      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].closer_abs!=null)?DRE_CFG_PARAMS[am].closer_abs:(rbCloser>0?Math.round(rbCloser*getP('closer')):0),
+      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].closer_abs!=null)?DRE_CFG_PARAMS[am].closer_abs:(folhaCloserS13||0),
       folhaCloserS13 ? '👥 Verbas Folha (exc. 13º): '+fmt(folhaCloserS13) : '')
     +fieldBrl('Sal. Developer (R$)', 'developer_abs',
-      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].developer_abs!=null)?DRE_CFG_PARAMS[am].developer_abs:(rbDeveloper>0?Math.round(rbDeveloper*getP('developer')):0),
+      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].developer_abs!=null)?DRE_CFG_PARAMS[am].developer_abs:(folhaDeveloperS13||0),
       folhaDeveloperS13 ? '👥 Verbas Folha (exc. 13º): '+fmt(folhaDeveloperS13) : '')
     +fieldBrl('Sal. Farmer (R$)', 'farmer_abs',
-      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].farmer_abs!=null)?DRE_CFG_PARAMS[am].farmer_abs:(rbFarmer>0?Math.round(rbFarmer*getP('farmer')):0),
+      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].farmer_abs!=null)?DRE_CFG_PARAMS[am].farmer_abs:(folhaFarmerS13||0),
       folhaFarmerS13 ? '👥 Verbas Folha (exc. 13º): '+fmt(folhaFarmerS13) : '')
     +'</div></div>'
 
@@ -4232,9 +4232,9 @@ function openDreCfg(){
     +'<div class="dre-cfg-sec-hd">🤝 Comissões (% da Rec. Bruta do Canal)</div>'
     +'<div class="dre-cfg-grid">'
     +fieldPct('% Comissão Martins', 'martins', getP('martins'),
-      (folhaMartinsS13>0?'👥 Verbas Folha (exc. 13º): '+fmt(folhaMartinsS13):'') + (rbMartins>0?' &nbsp;&nbsp; 🏦 RB Canal: '+fmt(rbMartins):''))
+      rbMartins>0 ? '🏦 RB Canal: '+fmt(rbMartins) : '')
     +fieldPct('% Comissão RCA', 'rca', getP('rca'),
-      (folhaRcaS13>0?'👥 Verbas Folha (exc. 13º): '+fmt(folhaRcaS13):'') + (rbRca>0?' &nbsp;&nbsp; 🏦 RB Canal: '+fmt(rbRca):'') + (despRca?' &nbsp;&nbsp; 💸 Desp.: '+fmt(despRca):''))
+      (rbRca>0?'🏦 RB Canal: '+fmt(rbRca):'') + (despRca?' &nbsp;&nbsp; 💸 Desp.: '+fmt(despRca):''))
     +'</div></div>'
 
     // ── MARKETING ──
