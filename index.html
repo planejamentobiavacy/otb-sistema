@@ -4145,7 +4145,7 @@ async function openDreCfg(){
       var nome = _nk ? String(r[_nk]).trim() : '';
       var canalR = _lkp[nome] || '';
       var anomes = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
-      var amRef2 = (typeof _folhaAmRef!=='undefined') ? _folhaAmRef : am;
+      var amRef2 = _folhaAmRef || am;
       return canalR === canalUp && (!amRef2 || anomes===amRef2);
     }).reduce(function(s,r){ return s + (parseFloat(r.valor||r.VALOR)||0); }, 0);
   }
@@ -4220,7 +4220,7 @@ async function openDreCfg(){
   var am = selectedAm;
 
   // ── Meses disponíveis na Folha (calculado com am correto) ──────
-  _folhaMesesDisp = (function(){
+  var _folhaMesesDisp = (function(){
     var s={};
     DRE_FOLHA_RAW.forEach(function(r){
       var p=String(folhaGetPeriodo(r)||'').replace(/[^0-9]/g,'').slice(0,6);
@@ -4256,7 +4256,7 @@ async function openDreCfg(){
       var canalR = _lkp[nome] || '';
       // Use folhaGetPeriodo which handles all column name variants
       var anomes = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
-      var amRef = (typeof _folhaAmRef!=='undefined') ? _folhaAmRef : am;
+      var amRef = _folhaAmRef || am;
       var ok = canalR === canalUp && (!amRef || anomes===amRef);
       if(ok) matched++;
       return ok;
