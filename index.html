@@ -5372,7 +5372,8 @@ function openBudgetCfg(){
   var areaOpts = '<option value="">— Área —</option>'+BUDGET_AREAS.map(function(a){ return '<option value="'+a+'">'+a+'</option>'; }).join('');
   var selStyle = 'padding:4px 7px;border:1.5px solid #d0d8ee;border-radius:5px;font-size:11px;font-family:inherit;color:#0f1a3a;background:#f7f9ff;cursor:pointer;min-width:130px';
   var inpStyle = 'padding:4px 7px;border:1.5px solid #d0d8ee;border-radius:5px;font-size:11px;font-family:inherit;color:#0f1a3a;background:#f7f9ff;width:100%;box-sizing:border-box';
-  var fmtVal = function(v){ return v>=0?'R$ '+Math.round(v).toLocaleString('pt-BR'):'-R$ '+Math.round(Math.abs(v)).toLocaleString('pt-BR'); };
+  window._budgetFmtVal = function(v){ return v>=0?'R$ '+Math.round(v).toLocaleString('pt-BR'):'-R$ '+Math.round(Math.abs(v)).toLocaleString('pt-BR'); };
+  var fmtVal = window._budgetFmtVal;
 
   // Guarda referência global para re-render do filtro
   body._allKeys = allKeys;
@@ -5424,7 +5425,7 @@ function renderBudgetCfgTable(search){
   var areaOpts  = dataEl._areaOpts;
   var selStyle  = dataEl._selStyle;
   var inpStyle  = dataEl._inpStyle;
-  var fmtVal    = dataEl._fmtVal;
+  var fmtVal    = dataEl._fmtVal || window._budgetFmtVal || function(v){ return 'R$ '+Math.round(Math.abs(v||0)).toLocaleString('pt-BR'); };
   var fmtVal    = body._fmtVal;
 
   var searchUC = (search||'').trim().toUpperCase();
