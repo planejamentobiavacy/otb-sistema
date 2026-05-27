@@ -507,6 +507,10 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       <label style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">NOME:</label>
       <div class="fms-wrap" id="fmsWrap_nome"><button class="fms-btn" id="fmsBtn_nome" onclick="fmsToggle('nome')">Todos</button><div class="fms-drop" id="fmsDrop_nome"></div></div>
     </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <label style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.6px">VERBAS:</label>
+      <div class="fms-wrap" id="fmsWrap_verbas"><button class="fms-btn" id="fmsBtn_verbas" onclick="fmsToggle('verbas')" style="min-width:130px">Todas</button><div class="fms-drop" id="fmsDrop_verbas"></div></div>
+    </div>
     <!-- Abas de agrupamento -->
     <div style="margin-left:auto;display:flex;gap:2px;background:#eef1f4;padding:3px;border-radius:6px">
       <button class="fp-tab-pill active" id="fpTabArea"  onclick="folhaSwitchAba('area')">Por Área</button>
@@ -3464,8 +3468,17 @@ var FOLHA_FILTROS={situacao:[],tipo:[],area:[],nome:[],ano:[]}; // [] = todos
 // Configurações de classificação por pessoa (override de área e canal)
 var FOLHA_CFG={ classif:{} }; // { 'NOME_PESSOA': { area:'Comercial', canal:'Closer' } }
 var FOLHA_CANAIS = ['—','Farmer','Developer','Closer','Hava','KA'];
-var FOLHA_AREAS_PADRAO = ['Administrativo','Avacy','Comercial','Compras','E-comm/Mkt','Faturamento','Financeiro','Fiscal','Operações','Planejamento','RH','TI'];
-var FOLHA_VERBAS=['SALARIO_BASE','BONIFICACAO','AJUDA_CUSTO','CURSOS','UTILIDADE','COMISSAO','DSR','GRENDENE','HORAS_EXTRA','DSR_HE','AUX_DOENCA','AUX_SEGURO','AUX_MATERN','VERBAS_RESCIS','S13_PARC'];
+var FOLHA_AREAS_PADRAO = ['Administrativo','Avacy','Comercial','Compras','E-comm/Mkt','Faturamento','Fin/Fat/Fisc','Financeiro','Fiscal','Operações','Planejamento','RH','TI'];
+var FOLHA_VERBAS=[
+  'SALARIO_BASE','BONIFICACAO','AJUDA_CUSTO','CURSOS','UTILIDADE','COMISSAO',
+  'DSR','GRENDENE','HORAS_EXTRA','DSR_HE','AUX_DOENCA','AUX_SEGURO',
+  'AUX_MATERN','VERBAS_RESCIS','S13_PARC',
+  'BH_NEGATIVO','BENEFICIO_VR','BENEFICIO_VT','BENEFICIO_VA',
+  'ASSIST_MED','ASSIST_ODONT','COPART_ASS_ME','DESC_VT',
+  'FGTS','TERCEIROS','INSS','RAT'
+];
+// Verbas selecionadas para soma — [] = todas
+var FOLHA_VERBAS_SEL = [];
 
 function folhaNum(v){if(!v&&v!==0) return 0;if(typeof v==='number') return v;var s=String(v).trim().replace(/\./g,'').replace(',','.');var n=parseFloat(s);return isNaN(n)?0:n;}
 function folhaBrl(v){return Math.round(v).toLocaleString('pt-BR');}
@@ -3487,11 +3500,19 @@ function folhaGetNome(r){return folhaGetField(r,['pessoa','NOME','NOME_FUNCIONAR
 function folhaGetTipo(r){return folhaGetField(r,['TIPO','TIPO_CONTRATO','VINCULO','tipo'])||'';}
 function folhaGetSituacao(r){return folhaGetField(r,['SITUACAO','STATUS','situacao'])||'';}
 function folhaTotal(r){
-  // otb_folha tem coluna direta 'valor' — usa ela primeiro
-  if(r.valor!=null&&r.valor!==0) return folhaNum(r.valor);
-  // Fallback: soma verbas do raw se existir
+  // Se tem coluna 'valor' e não há seleção de verbas específicas, usa diretamente
+  var verbas = FOLHA_VERBAS_SEL.length ? FOLHA_VERBAS_SEL : FOLHA_VERBAS;
+  // Se nenhuma verba selecionada e tem coluna valor direta, usa ela
+  if(!FOLHA_VERBAS_SEL.length && r.valor!=null && r.valor!==0) return folhaNum(r.valor);
+  // Soma verbas selecionadas (ou todas se nenhuma selecionada)
   var t=0;
-  FOLHA_VERBAS.forEach(function(k){var found=Object.keys(r).find(function(rk){return rk.toUpperCase()===k;});if(found) t+=folhaNum(r[found]);});
+  var keys = Object.keys(r);
+  verbas.forEach(function(k){
+    var found=keys.find(function(rk){return rk.toUpperCase()===k;});
+    if(found) t+=folhaNum(r[found]);
+  });
+  // Se soma deu zero e tem 'valor', usa valor como fallback
+  if(t===0 && !FOLHA_VERBAS_SEL.length && r.valor!=null) return folhaNum(r.valor);
   return t;
 }
 
@@ -3596,8 +3617,19 @@ function folhaCfgRender(lista){
 }
 
 function folhaCfgFilter(q){
-  var lista = window._folhaCfgLista || [];
-  var filtered = q.trim() ? lista.filter(function(n){ return n.toUpperCase().includes(q.toUpperCase()); }) : lista;
+  var lista  = window._folhaCfgLista || [];
+  var nomes  = window._folhaCfgNomes || {};
+  var qUp    = q.trim().toUpperCase();
+  var filtered = !qUp ? lista : lista.filter(function(nome){
+    if(nome.toUpperCase().includes(qUp)) return true;
+    var info  = nomes[nome] || {};
+    if((info.cargo||'').toUpperCase().includes(qUp)) return true;
+    if((info.areaBruta||'').toUpperCase().includes(qUp)) return true;
+    var salvo = FOLHA_CFG.classif[nome] || {};
+    if((salvo.area||'').toUpperCase().includes(qUp)) return true;
+    if((salvo.canal||'').toUpperCase().includes(qUp)) return true;
+    return false;
+  });
   folhaCfgRender(filtered);
 }
 
@@ -3675,11 +3707,84 @@ function fmsListHtml(key, vals){
   return h;
 }
 
+// ── Verbas-specific multi-select (uses FOLHA_VERBAS_SEL) ────────────────
+function fmsBuildVerbas(verbas){
+  var drop = document.getElementById('fmsDrop_verbas');
+  if(!drop) return;
+  var labels = window._folhaVerbasLabels || {};
+  var hasSearch = verbas.length > 8;
+  var html = '';
+  if(hasSearch) html += '<input class="fms-search" id="fmsSrch_verbas" placeholder="Buscar verba..." data-key="verbas">';
+  html += '<div id="fmsList_verbas">';
+  html += fmsVerbasList(verbas);
+  html += '</div>';
+  html += '<button class="fms-clear" data-key="verbas">&#x2715; Limpar</button>';
+  drop.innerHTML = html;
+  var srch = drop.querySelector('.fms-search');
+  if(srch) srch.addEventListener('input', function(){
+    var q = this.value.toUpperCase();
+    var all = window._folhaVerbasDisponiveis || [];
+    var labels = window._folhaVerbasLabels || {};
+    var filtered = !q ? all : all.filter(function(k){
+      return k.includes(q) || (labels[k]||'').toUpperCase().includes(q);
+    });
+    var list = document.getElementById('fmsList_verbas');
+    if(list) list.innerHTML = fmsVerbasList(filtered);
+  });
+  var clearBtn = drop.querySelector('.fms-clear[data-key="verbas"]');
+  if(clearBtn) clearBtn.addEventListener('click', function(e){
+    e.stopPropagation();
+    FOLHA_VERBAS_SEL = [];
+    drop.querySelectorAll('input[type=checkbox]').forEach(function(c){ c.checked=false; });
+    var allCb = drop.querySelector('input[data-all]'); if(allCb) allCb.checked=true;
+    fmsVerbaUpdateBtn(); _folhaRenderAll();
+  });
+  fmsVerbaUpdateBtn();
+}
+
+function fmsVerbasList(verbas){
+  var labels = window._folhaVerbasLabels || {};
+  var allChk = FOLHA_VERBAS_SEL.length===0 ? 'checked' : '';
+  var h = '<label class="fms-item all"><input type="checkbox" data-all="verbas" '+allChk+'> Todas</label>';
+  verbas.forEach(function(k){
+    var chk = FOLHA_VERBAS_SEL.includes(k) ? 'checked' : '';
+    h += '<label class="fms-item"><input type="checkbox" data-verba="'+k+'" '+chk+'>&nbsp;'+(labels[k]||k)+'</label>';
+  });
+  return h;
+}
+
+function fmsVerbaUpdateBtn(){
+  var btn = document.getElementById('fmsBtn_verbas');
+  if(!btn) return;
+  if(!FOLHA_VERBAS_SEL.length){ btn.textContent='Todas'; btn.classList.remove('active'); }
+  else if(FOLHA_VERBAS_SEL.length===1){ btn.textContent=(window._folhaVerbasLabels||{})[FOLHA_VERBAS_SEL[0]]||FOLHA_VERBAS_SEL[0]; btn.classList.add('active'); }
+  else { btn.textContent=FOLHA_VERBAS_SEL.length+' verbas'; btn.classList.add('active'); }
+}
+
 // Event delegation for checkboxes inside fms-drop
 document.addEventListener('change', function(e){
   var el = e.target;
   if(!el.matches || !el.closest) return;
   if(!el.closest('.fms-drop')) return;
+
+  // Verbas filter
+  if(el.hasAttribute('data-verba')){
+    var k = el.getAttribute('data-verba');
+    if(el.checked){ if(!FOLHA_VERBAS_SEL.includes(k)) FOLHA_VERBAS_SEL.push(k); }
+    else { FOLHA_VERBAS_SEL = FOLHA_VERBAS_SEL.filter(function(x){ return x!==k; }); }
+    var drop = document.getElementById('fmsDrop_verbas');
+    var allCb = drop ? drop.querySelector('input[data-all]') : null;
+    if(allCb) allCb.checked = FOLHA_VERBAS_SEL.length===0;
+    fmsVerbaUpdateBtn(); _folhaRenderAll(); return;
+  }
+  if(el.hasAttribute('data-all') && el.getAttribute('data-all')==='verbas'){
+    FOLHA_VERBAS_SEL = [];
+    var drop2 = document.getElementById('fmsDrop_verbas');
+    if(drop2) drop2.querySelectorAll('input[data-verba]').forEach(function(c){ c.checked=false; });
+    fmsVerbaUpdateBtn(); _folhaRenderAll(); return;
+  }
+
+  // Standard filters
   var key = el.getAttribute('data-key');
   if(!key) return;
   if(el.getAttribute('data-all')==='1') fmsToggleAll(key, el);
@@ -3757,6 +3862,25 @@ function _folhaPopulateFilters(){
   fmsBuild('nome',     uv(folhaGetNome));
   var anos={};FOLHA_RAW.forEach(function(r){var p=folhaGetPeriodo(r);if(p&&String(p).length>=4)anos[String(p).replace(/\D/g,'').slice(0,4)]=true;});
   fmsBuild('ano', Object.keys(anos).sort());
+  // Verbas: detecta quais colunas existem no raw
+  var verbasDisponiveis = FOLHA_VERBAS.filter(function(k){
+    var sample = FOLHA_RAW[0]; if(!sample) return false;
+    return Object.keys(sample).some(function(rk){ return rk.toUpperCase()===k; });
+  });
+  // Labels legíveis para exibição
+  var verbasLabels = {
+    'SALARIO_BASE':'Salário Base','BONIFICACAO':'Bonificação','AJUDA_CUSTO':'Ajuda de Custo',
+    'CURSOS':'Cursos','UTILIDADE':'Utilidade','COMISSAO':'Comissão','DSR':'DSR',
+    'GRENDENE':'Grendene','HORAS_EXTRA':'Horas Extra','DSR_HE':'DSR HE',
+    'AUX_DOENCA':'Aux. Doença','AUX_SEGURO':'Aux. Seguro','AUX_MATERN':'Aux. Maternidade',
+    'VERBAS_RESCIS':'Verbas Rescis.','S13_PARC':'13º Parc.','BH_NEGATIVO':'BH Negativo',
+    'BENEFICIO_VR':'Benef. VR','BENEFICIO_VT':'Benef. VT','BENEFICIO_VA':'Benef. VA',
+    'ASSIST_MED':'Assist. Médica','ASSIST_ODONT':'Assist. Odonto','COPART_ASS_ME':'Copart. Saúde',
+    'DESC_VT':'Desc. VT','FGTS':'FGTS','TERCEIROS':'Terceiros','INSS':'INSS','RAT':'RAT'
+  };
+  window._folhaVerbasDisponiveis = verbasDisponiveis;
+  window._folhaVerbasLabels = verbasLabels;
+  fmsBuildVerbas(verbasDisponiveis);
 }
 
 function _folhaFiltrar(){
@@ -3810,7 +3934,7 @@ function _folhaRenderBudgetStyle(container, rows){
     var h2='<div class="fh-wrap"><table class="fh-tbl"><thead><tr><th class="fh-ind">INDICADOR</th>';
     meses.forEach(function(am){ h2+='<th>'+_fpMesLabel(am)+'</th>'; });
     h2+='</tr></thead><tbody>';
-    h2+='<tr class="fh-sec"><td class="fh-fix" colspan="'+(n+1)+'">👥 FOLHA POR CANAL</td></tr>';
+    // Seção header canal removida
     canais.forEach(function(canal){
       var cor=CANAL_COLORS[canal]||'#555';
       var ns=Object.keys(byCN[canal]).sort();
@@ -3853,7 +3977,7 @@ function _folhaRenderBudgetStyle(container, rows){
   var h='<div class="fh-wrap"><table class="fh-tbl"><thead><tr><th class="fh-ind">INDICADOR</th>';
   meses.forEach(function(am){ h+='<th>'+_fpMesLabel(am)+'</th>'; });
   h+='</tr></thead><tbody>';
-  h+='<tr class="fh-sec"><td class="fh-fix" colspan="'+(n+1)+'">👥 FOLHA DE PAGAMENTO</td></tr>';
+  // Seção header removida a pedido
 
   areas.forEach(function(area){
     var subs=Object.keys(estrutura[area]).sort();
