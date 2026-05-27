@@ -3175,6 +3175,7 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   // Normaliza para maiúsculo para comparação consistente (snapshot usa minúsculo, raw usa maiúsculo)
   var dimVal = function(r){ return String(r[dimKey]||r[dim]||'').toUpperCase(); };
   var dimsFromData = Array.from(new Set(rows.map(dimVal))).filter(function(d){ return d && d !== 'NULL' && d !== 'UNDEFINED'; });
+  console.log('[dreRenderDim]', dim, '| rows:', rows.length, '| dimsFromData:', dimsFromData, '| sample canal:', rows.slice(0,3).map(function(r){return r.canal||r.CANAL;}));
   // Order: if refRaw defines order, use it; else sort alphabetically
   var dims;
   if(Object.keys(dimLabelMap).length){
