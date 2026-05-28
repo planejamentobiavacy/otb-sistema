@@ -2650,6 +2650,8 @@ async function loadDreFromSupabase(forceRaw){
     }
     if(saved && saved.fixos)  Object.assign(FIXOS_DEF, saved.fixos);
     if(saved && saved.cfgParams){
+      // Normalize pct13ferias: if stored as % (>1) convert to decimal
+      Object.keys(saved.cfgParams).forEach(function(am){ var p=saved.cfgParams[am]; if(p&&p.pct13ferias>1) p.pct13ferias=p.pct13ferias/100; });
       // dre_current é base — não sobrescreve campos já carregados pelo dre_cfg_params (afterLogin)
       Object.keys(saved.cfgParams).forEach(function(am){
         if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
@@ -4467,7 +4469,7 @@ async function openDreCfg(){
     +fieldBrl('Sal. KA (R$)', 'ka_abs',
       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].ka_abs!=null)?DRE_CFG_PARAMS[am].ka_abs:(folhaKaS13||0),
       '👥 Verbas Folha (exc. 13º): '+(folhaKaS13?fmt(folhaKaS13):'R$ 0 — classifique pessoas como KA na Folha'))
-    +'</div>'    +'<div class="dre-cfg-grid" style="margin-top:12px;padding-top:12px;border-top:1px dashed #d0d8ee">'    +fieldPct('% 13º + Férias', 'pct13ferias', (getP('pct13ferias')&&getP('pct13ferias')>0)?pct(getP('pct13ferias')):11,      '📐 Aplicado sobre o total de salários — resultado em 13º + Férias (-)'    )    +'</div></div>'
+    +'</div>'    +'<div class="dre-cfg-grid" style="margin-top:12px;padding-top:12px;border-top:1px dashed #d0d8ee">'    +fieldPct('% 13º + Férias', 'pct13ferias', (function(){ var v=getP('pct13ferias'); if(!v||v<=0) return 11; return v>1?pct(v):pct(v); })(),      '📐 Aplicado sobre o total de salários — resultado em 13º + Férias (-)'    )    +'</div></div>'
 
     // ── COMISSÕES ──
     +'<div class="dre-cfg-sec">'
@@ -4586,7 +4588,9 @@ function applyDreCfg(){
     });
     // Save pct13ferias as decimal
     var pct13val = gv('pct13ferias');
-    DRE_CFG_PARAMS[am]['pct13ferias'] = (pct13val > 0) ? pct13val / 100 : 0.11;
+    // Clamp: if value > 100, it's likely already been corrupted — ignore div/100
+    var pct13stored = pct13val > 100 ? 0.11 : (pct13val > 0 ? pct13val / 100 : 0.11);
+    DRE_CFG_PARAMS[am]['pct13ferias'] = pct13stored;
     // Backfill NÃO roda aqui — só no carregamento inicial (evita sobrescrever valores salvos)
   } else {
     // Sem mês selecionado: atualiza defaults globais E limpa overrides por mês
