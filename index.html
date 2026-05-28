@@ -3212,6 +3212,7 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   var _dimField = dimKey==='transp' ? 'transportadora' : dimKey;
   var dimVal = function(r){ return String(r[_dimField]||r[_dimField.toUpperCase()]||'').toUpperCase(); };
   var dimsFromData = Array.from(new Set(rows.map(dimVal))).filter(function(d){ return d && d !== 'NULL' && d !== 'UNDEFINED'; });
+  console.log('[dreRenderDim]',dim,'rows:',rows.length,'dimsFromData:',dimsFromData.slice(0,6),'sample canal:',rows[0]&&rows[0].canal,'sample dimVal:',rows[0]&&dimVal(rows[0]));
   // Order: if refRaw defines order, use it; else sort alphabetically
   var dims;
   if(Object.keys(dimLabelMap).length){
