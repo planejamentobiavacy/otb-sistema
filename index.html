@@ -3360,7 +3360,8 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
     return rb*getSalPct(key);
   }
   // Quando sem contexto de canal (fornecedor/transportadora): rateia pelo shareRB
-  var _salShare = (!hasCanalData && !canalCtxUC) ? shareRB : 1;
+  // _salShare: apply shareRB when in fornecedor/transportadora/cluster/regiao (shareRB<1 and no canalCtx)
+  var _salShare = (!canalCtxUC && shareRB < 1) ? shareRB : 1;
   // Quando em contexto de canal: só aplica o salário do canal correspondente
   var sv_closer   = (!canalCtxUC || canalCtxUC==='CLOSER')    ? getSalAbs('closer',   rb_closer)   * _salShare : 0;
   var sv_developer= (!canalCtxUC || canalCtxUC==='DEVELOPER')  ? getSalAbs('developer',rb_developer) * _salShare : 0;
@@ -3449,6 +3450,10 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
     // Outros canais (HAVA, KA, MARTINS etc) — sem marketing alocado
     mkt_leads    = 0;
     mkt_branding = 0;
+  } else if(hasCanalData && (!canalCtxUC && shareRB < 1)){
+    // Sub-view (fornecedor/transportadora) com dados de canal: rateia pelo shareRB
+    mkt_leads    = mkt_leads_total  * shareRB;
+    mkt_branding = mkt_brand_total * shareRB;
   } else if(hasCanalData){
     // Total mensal — soma de todos os canais (full allocation)
     mkt_leads    = mkt_leads_total;
