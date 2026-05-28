@@ -970,6 +970,8 @@ async function afterLogin(){
         Object.keys(cfgEarly.cfgParams).forEach(function(am){
           if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
           Object.assign(DRE_CFG_PARAMS[am], cfgEarly.cfgParams[am]);
+          // Normaliza pct13ferias se corrompido (>1 = estava em %, converte para decimal)
+          if(DRE_CFG_PARAMS[am].pct13ferias > 1) DRE_CFG_PARAMS[am].pct13ferias /= 100;
           // Sanitiza NaN e outliers de percentuais
           ['desp_mkt','sal_adm','desp_gerais','cd_mensal','custoGrade'].forEach(function(k){
             if(DRE_CFG_PARAMS[am][k] != null){
@@ -2678,10 +2680,14 @@ async function loadDreFromSupabase(forceRaw){
             if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
             var src = savedCfgOnly.cfgParams[am] || {};
             Object.assign(DRE_CFG_PARAMS[am], src);
-            // Sanitiza desp_mkt — se NaN ou negativo, remove para usar fallback
+            // Sanitiza desp_mkt
             if(DRE_CFG_PARAMS[am].desp_mkt != null){
               var v = parseFloat(DRE_CFG_PARAMS[am].desp_mkt);
               if(isNaN(v) || v < 0) delete DRE_CFG_PARAMS[am].desp_mkt;
+            }
+            // Normaliza pct13ferias: se salvo como % (>1) converte para decimal
+            if(DRE_CFG_PARAMS[am].pct13ferias != null && DRE_CFG_PARAMS[am].pct13ferias > 1){
+              DRE_CFG_PARAMS[am].pct13ferias = DRE_CFG_PARAMS[am].pct13ferias / 100;
             }
           });
         }
@@ -4469,7 +4475,7 @@ async function openDreCfg(){
     +fieldBrl('Sal. KA (R$)', 'ka_abs',
       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].ka_abs!=null)?DRE_CFG_PARAMS[am].ka_abs:(folhaKaS13||0),
       '👥 Verbas Folha (exc. 13º): '+(folhaKaS13?fmt(folhaKaS13):'R$ 0 — classifique pessoas como KA na Folha'))
-    +'</div>'    +'<div class="dre-cfg-grid" style="margin-top:12px;padding-top:12px;border-top:1px dashed #d0d8ee">'    +fieldPct('% 13º + Férias', 'pct13ferias', (function(){ var v=getP('pct13ferias'); if(!v||v<=0) return 11; return v>1?pct(v):pct(v); })(),      '📐 Aplicado sobre o total de salários — resultado em 13º + Férias (-)'    )    +'</div></div>'
+    +'</div>'    +'<div class="dre-cfg-grid" style="margin-top:12px;padding-top:12px;border-top:1px dashed #d0d8ee">'    +fieldPct('% 13º + Férias', 'pct13ferias', (function(){ var v=getP('pct13ferias'); if(!v||v<=0) return 11; if(v>1) return v; return pct(v); })(),      '📐 Aplicado sobre o total de salários — resultado em 13º + Férias (-)'    )    +'</div></div>'
 
     // ── COMISSÕES ──
     +'<div class="dre-cfg-sec">'
@@ -4588,9 +4594,11 @@ function applyDreCfg(){
     });
     // Save pct13ferias as decimal
     var pct13val = gv('pct13ferias');
-    // Clamp: if value > 100, it's likely already been corrupted — ignore div/100
+    // Store pct13ferias: input is in % (0-100), store as decimal
+    // If user somehow typed >100, clamp to 0.11
     var pct13stored = pct13val > 100 ? 0.11 : (pct13val > 0 ? pct13val / 100 : 0.11);
     DRE_CFG_PARAMS[am]['pct13ferias'] = pct13stored;
+    console.log('[pct13ferias] input=',pct13val,'stored=',pct13stored);
     // Backfill NÃO roda aqui — só no carregamento inicial (evita sobrescrever valores salvos)
   } else {
     // Sem mês selecionado: atualiza defaults globais E limpa overrides por mês
