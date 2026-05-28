@@ -3280,6 +3280,7 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
     return isNaN(result) ? (DRE_CONFIG_DEFAULTS[key]||0) : result;
   }
   function getSalPct(key){
+    if(key==='pct13ferias') console.log('[getSalPct] pct13ferias | DRE_CFG_PARAMS sample:', JSON.stringify(Object.keys(DRE_CFG_PARAMS).slice(-3).reduce(function(o,k){o[k]=DRE_CFG_PARAMS[k];return o;},{})));
     if(!a.anomesList.length) return DRE_CONFIG_DEFAULTS[key]||0;
     var sum=0, count=0;
     a.anomesList.forEach(function(am){
@@ -3336,7 +3337,7 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   var com_martins = (!canalCtxUC || canalCtxUC==='MARTINS') ? rb_martins*getSalPct('martins') : 0;
   var com_rca     = (!canalCtxUC || canalCtxUC==='RCA')     ? rb_rca*getSalPct('rca')         : 0;
   var sv=sv_closer+sv_developer+sv_farmer+sv_hava+sv_ka,com=com_martins+com_rca;
-  var mb=rl-cmv-fob-grade; var pct13f=getSalPct('pct13ferias'); var sv13ferias=sv*(isNaN(pct13f)?0.11:pct13f); var mc=mb-sv-com-sv13ferias;
+  var mb=rl-cmv-fob-grade; var pct13f=getSalPct('pct13ferias'); console.log('[DRE calc] pct13f=',pct13f,'sv=',sv,'sv13=',sv*(isNaN(pct13f)?0.11:pct13f)); var sv13ferias=sv*(isNaN(pct13f)?0.11:pct13f); var mc=mb-sv-com-sv13ferias;
   var rf_rec=a.rec_frete,cf=a.custo_frete>0?a.custo_frete:rl*0.031;
   // Marketing: valor fixo do mês (FIXOS_DEF.marketing) * shareRB
   // branding e leads são shares do total (ex: 60% branding, 40% performance)
@@ -4584,7 +4585,9 @@ function applyDreCfg(){
     });
     // Save pct13ferias as decimal
     var pct13val = gv('pct13ferias');
+    console.log('[applyDreCfg] pct13ferias gv=',pct13val,'am=',am);
     if(!isNaN(pct13val)) DRE_CFG_PARAMS[am]['pct13ferias'] = pct13val / 100;
+    console.log('[applyDreCfg] saved pct13ferias=',DRE_CFG_PARAMS[am]['pct13ferias']);
     // Backfill NÃO roda aqui — só no carregamento inicial (evita sobrescrever valores salvos)
   } else {
     // Sem mês selecionado: atualiza defaults globais E limpa overrides por mês
