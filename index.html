@@ -2849,6 +2849,16 @@ function backfillDreConfig(){
 function dreAggregateFull(raw){
   var map = {};
   var nk = function(v){ return dreNum(v)||0; };
+
+  // Constrói lookup cod_vendedor -> nome_vendedor a partir dos próprios dados brutos
+  // (cobre casos onde NOME_VENDEDOR existe na tabela mas DRE_VENDEDOR_LOOKUP ainda não foi populado via otb_canais)
+  var _vLookup = Object.assign({}, DRE_VENDEDOR_LOOKUP);
+  raw.forEach(function(r){
+    var cod  = String(r.COD_VENDEDOR||r.cod_vendedor||'').trim();
+    var nome = String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||'').trim();
+    if(cod && nome && !_vLookup[cod]) _vLookup[cod] = nome;
+  });
+
   raw.forEach(function(r){
     var a  = String(r.ANO||r.ano||'');
     var m  = String(r.MES||r.mes||'').padStart(2,'0');
@@ -2872,10 +2882,9 @@ function dreAggregateFull(raw){
     var f  = String(r.FORNECEDOR||r.fornecedor||'');
     var tr = String(r.TRANSPORTADORA||r.transportadora||'');
     var vd = String(r.COD_VENDEDOR||r.cod_vendedor||r.VENDEDOR||r.vendedor||'').trim();
-    // Resolve nome_vendedor: campo direto na linha ou lookup pelo código
-    var vdNome = String(r.nome_vendedor||r.NOME_VENDEDOR||r.nom_vendedor||r.NOM_VENDEDOR||'').trim();
-    if(!vdNome && vd && DRE_VENDEDOR_LOOKUP[vd]) vdNome = DRE_VENDEDOR_LOOKUP[vd];
-    if(!vdNome && vd) vdNome = vd; // fallback: usa o código se não tiver nome
+    // Resolve nome_vendedor: campo direto na linha > lookup por código > fallback código
+    var vdNome = String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||'').trim();
+    if(!vdNome && vd) vdNome = _vLookup[vd] || vd;
     var key= a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f+'|'+vdNome; // tr not in key — kept as field only
     if(!map[key]) map[key]={a:a,m:m,c:c,cl:cl,rg:rg,f:f,tr:tr,vd:vdNome,fv:0,dv:0,q:0,cu:0,ic:0,co:0,pi:0,fe:0,rf:0,cf:0,qg:0};
     var x=map[key];
@@ -3056,10 +3065,17 @@ async function initDre(){
   var transpList=Array.from(new Set(DRE_RAW.map(function(r){return String(r.transportadora||r.TRANSPORTADORA||'').trim();}))).filter(Boolean).sort();
   var selTransp=function(id){return dreMs(id,'Transportadora',transpList,130);};
   var selForn=function(id){return dreMs(id,'Fornecedor',fornecs,110);};
+  // Constrói lookup local de vendedor para o filtro (mesma lógica do dreAggregateFull)
+  var _vLookupInit = Object.assign({}, DRE_VENDEDOR_LOOKUP);
+  DRE_RAW.forEach(function(r){
+    var cod  = String(r.COD_VENDEDOR||r.cod_vendedor||'').trim();
+    var nome = String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||'').trim();
+    if(cod && nome && !_vLookupInit[cod]) _vLookupInit[cod] = nome;
+  });
   var vendedorList=Array.from(new Set(DRE_RAW.map(function(r){
-    var vd=String(r.vendedor||r.VENDEDOR||r.vd||'').trim();
-    if(!vd){var cod=String(r.COD_VENDEDOR||r.cod_vendedor||'').trim(); vd=DRE_VENDEDOR_LOOKUP[cod]||cod;}
-    return vd;
+    var nome=String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||'').trim();
+    if(!nome){var cod=String(r.COD_VENDEDOR||r.cod_vendedor||'').trim(); nome=_vLookupInit[cod]||cod;}
+    return nome;
   }))).filter(Boolean).sort();
   var selVend=function(id){return dreMs(id,'Vendedor',vendedorList,130);};
   var fBar=function(ids){return '<div style="display:flex;align-items:flex-end;gap:10px;padding:10px 0 14px;flex-wrap:wrap">'+ids.join('')+'</div>';};
