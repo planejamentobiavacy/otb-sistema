@@ -2871,7 +2871,7 @@ function dreAggregateFull(raw){
     var rg = String(r.REGIAO||r.regiao||'');
     var f  = String(r.FORNECEDOR||r.fornecedor||'');
     var tr = String(r.TRANSPORTADORA||r.transportadora||'');
-    var key= a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f+'|'+tr;
+    var key= a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f; // tr not in key — kept as field only
     if(!map[key]) map[key]={a,m,c,cl,rg,f,tr,fv:0,dv:0,q:0,cu:0,ic:0,co:0,pi:0,fe:0,rf:0,cf:0,qg:0};
     var x=map[key];
     x.fv += nk(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO);
@@ -3040,11 +3040,11 @@ async function initDre(){
   var selForn=function(id){return dreMs(id,'Fornecedor',fornecs,110);};
   var fBar=function(ids){return '<div style="display:flex;align-items:flex-end;gap:10px;padding:10px 0 14px;flex-wrap:wrap">'+ids.join('')+'</div>';};
   document.getElementById('drePanels').innerHTML=
-    '<div id="drePanel-mensal">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-mensal'),selQ('dre-q-mensal'),selMes('dre-mes-mensal'),selCanal('dre-canal-mensal'),selCluster('dre-cluster-mensal'),selRegiao('dre-reg-mensal'),selForn('dre-forn-mensal')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-mensal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-mensal"></div></div>'+
-    '<div id="drePanel-canal" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-canal'),selQ('dre-q-canal'),selMes('dre-mes-canal'),selCluster('dre-cluster-canal'),selRegiao('dre-reg-canal'),selForn('dre-forn-canal')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-canal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-canal"></div></div>'+
-    '<div id="drePanel-cluster" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-cluster'),selQ('dre-q-cluster'),selMes('dre-mes-cluster'),selCanal('dre-canal-cluster'),selRegiao('dre-reg-cluster'),selForn('dre-forn-cluster')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-cluster" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-cluster"></div></div>'+
-    '<div id="drePanel-regiao" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-regiao'),selQ('dre-q-regiao'),selMes('dre-mes-regiao'),selCanal('dre-canal-regiao'),selCluster('dre-cluster-regiao'),selForn('dre-forn-regiao')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-regiao" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-regiao"></div></div>'+
-    '<div id="drePanel-fornecedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-forn'),selQ('dre-q-forn'),selMes('dre-mes-forn'),selCanal('dre-canal-forn'),selCluster('dre-cluster-forn'),selRegiao('dre-reg-forn')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-forn" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-forn"></div></div>'+
+    '<div id="drePanel-mensal">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-mensal'),selQ('dre-q-mensal'),selMes('dre-mes-mensal'),selCanal('dre-canal-mensal'),selCluster('dre-cluster-mensal'),selRegiao('dre-reg-mensal'),selForn('dre-forn-mensal'),selTransp('dre-transp-mensal')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-mensal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-mensal"></div></div>'+
+    '<div id="drePanel-canal" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-canal'),selQ('dre-q-canal'),selMes('dre-mes-canal'),selCluster('dre-cluster-canal'),selRegiao('dre-reg-canal'),selForn('dre-forn-canal'),selTransp('dre-transp-canal')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-canal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-canal"></div></div>'+
+    '<div id="drePanel-cluster" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-cluster'),selQ('dre-q-cluster'),selMes('dre-mes-cluster'),selCanal('dre-canal-cluster'),selRegiao('dre-reg-cluster'),selForn('dre-forn-cluster'),selTransp('dre-transp-cluster')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-cluster" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-cluster"></div></div>'+
+    '<div id="drePanel-regiao" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-regiao'),selQ('dre-q-regiao'),selMes('dre-mes-regiao'),selCanal('dre-canal-regiao'),selCluster('dre-cluster-regiao'),selForn('dre-forn-regiao'),selTransp('dre-transp-regiao')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-regiao" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-regiao"></div></div>'+
+    '<div id="drePanel-fornecedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-forn'),selQ('dre-q-forn'),selMes('dre-mes-forn'),selCanal('dre-canal-forn'),selCluster('dre-cluster-forn'),selRegiao('dre-reg-forn'),selTransp('dre-transp-forn')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-forn" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-forn"></div></div>'+
     '<div id="drePanel-transportadora" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-transp'),selQ('dre-q-transp'),selMes('dre-mes-transp'),selCanal('dre-canal-transp'),selCluster('dre-cluster-transp'),selRegiao('dre-reg-transp'),selForn('dre-forn-transp')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-transp" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-transp"></div></div>';
   dreSwitchTab('mensal');
 }
@@ -3136,7 +3136,7 @@ function dreGv(id){
 }
 
 function dreQuarterMeses(q){if(!q||q==='TODOS') return null;return{T1:['01','02','03'],T2:['04','05','06'],T3:['07','08','09'],T4:['10','11','12']}[q]||null;}
-function dreFilt(ano,mes,canal,q,cluster,regiao,forn){
+function dreFilt(ano,mes,canal,q,cluster,regiao,forn,transp){
   var r=DRE_RAW;
 
   if(ano&&ano!=='TODOS'){
@@ -3156,6 +3156,7 @@ function dreFilt(ano,mes,canal,q,cluster,regiao,forn){
   if(cluster&&cluster!=='TODOS'){var _cluster=Array.isArray(cluster)?cluster:[cluster]; r=r.filter(function(x){return _cluster.map(function(c){return c.toUpperCase();}).includes(String(x.cluster||x.CLUSTER||'').toUpperCase());});}
   if(regiao&&regiao!=='TODOS'){var _regiao=Array.isArray(regiao)?regiao:[regiao]; r=r.filter(function(x){return _regiao.includes(x.regiao||x.REGIAO||'');});}
   if(forn&&forn!=='TODOS'){var _forn=Array.isArray(forn)?forn:[forn]; r=r.filter(function(x){return _forn.includes(x.fornecedor||x.FORNECEDOR||'');});}
+  if(transp&&transp!=='TODOS'){var _transp=Array.isArray(transp)?transp:[transp]; r=r.filter(function(x){return _transp.includes(x.transportadora||x.TRANSPORTADORA||'');});}
   return r;
 }
 function dreRender(){
@@ -3175,8 +3176,8 @@ function dreRender(){
 }
 function dreRenderMensal(){
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
-  var ano=dreGv('dre-ano-mensal'),q=dreGv('dre-q-mensal'),mes=dreGv('dre-mes-mensal'),canal=dreGv('dre-canal-mensal'),cluster=dreGv('dre-cluster-mensal'),regiao=dreGv('dre-reg-mensal'),forn=dreGv('dre-forn-mensal');
-  var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn);
+  var ano=dreGv('dre-ano-mensal'),q=dreGv('dre-q-mensal'),mes=dreGv('dre-mes-mensal'),canal=dreGv('dre-canal-mensal'),cluster=dreGv('dre-cluster-mensal'),regiao=dreGv('dre-reg-mensal'),forn=dreGv('dre-forn-mensal'),transp=dreGv('dre-transp-mensal');
+  var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn,transp);
   var meses=Array.from(new Set(rows.map(function(r){return String(r.mes||r.MES||'').padStart(2,'0');}))).filter(function(m){return m!=='00';}).sort();
   // Passa o canal filtrado como canalCtx — necessário para rateio correto de marketing
   var canalCtxMensal = (canal && canal !== 'TODOS' && canal !== 'null' && !Array.isArray(canal)) ? String(canal).toUpperCase() : null;
@@ -3191,8 +3192,8 @@ function dreRenderMensal(){
 }
 function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   var ano=dreGv(anoId),mes=dreGv(mesId),canal=canalId?dreGv(canalId):null;
-  var q=dreGv('dre-q-'+suffix),cluster=dreGv('dre-cluster-'+suffix),regiao=dreGv('dre-reg-'+suffix),forn=dreGv('dre-forn-'+suffix);
-  var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn);
+  var q=dreGv('dre-q-'+suffix),cluster=dreGv('dre-cluster-'+suffix),regiao=dreGv('dre-reg-'+suffix),forn=dreGv('dre-forn-'+suffix),transp=dreGv('dre-transp-'+suffix);
+  var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn,transp);
 
   var dimKey=dim.toLowerCase();
 
