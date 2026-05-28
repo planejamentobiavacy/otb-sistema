@@ -2870,8 +2870,9 @@ function dreAggregateFull(raw){
     }
     var rg = String(r.REGIAO||r.regiao||'');
     var f  = String(r.FORNECEDOR||r.fornecedor||'');
-    var key= a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f;
-    if(!map[key]) map[key]={a,m,c,cl,rg,f,fv:0,dv:0,q:0,cu:0,ic:0,co:0,pi:0,fe:0,rf:0,cf:0,qg:0};
+    var tr = String(r.TRANSPORTADORA||r.transportadora||'');
+    var key= a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f+'|'+tr;
+    if(!map[key]) map[key]={a,m,c,cl,rg,f,tr,fv:0,dv:0,q:0,cu:0,ic:0,co:0,pi:0,fe:0,rf:0,cf:0,qg:0};
     var x=map[key];
     x.fv += nk(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO);
     x.dv += nk(r.devolucao_venda  ||r.DEVOLUCAO_VENDA);
@@ -2893,8 +2894,8 @@ function dreExpandSnapshot(snap){
   return snap.map(function(x){
     if(x.ano !== undefined) return x;
     return {
-      ano:x.a, mes:x.m, canal:x.c, cluster:x.cl, regiao:x.rg, fornecedor:x.f,
-      faturamento_venda:x.fv, devolucao_venda:x.dv, qtd:x.q, custo:x.cu,
+      ano:x.a, mes:x.m, canal:x.c, cluster:x.cl, regiao:x.rg, fornecedor:x.f, transportadora:x.tr,
+      faturamento_venda:x.fv, devolucao_venda:x.dv, qtd:x.q, custo:x.cu, transportadora:x.tr||'',
       icms:x.ic, cofins:x.co, pis:x.pi, fecpst:x.fe,
       rec_frete:x.rf, custo_frete:x.cf, qtd_grade_hava:x.qg
     };
@@ -3018,7 +3019,7 @@ async function initDre(){
   var snapBadge=DRE_SNAPSHOT?'<span style="background:#e8f0fe;color:#1a56c4;font-size:10px;padding:2px 7px;border-radius:10px;margin-left:8px;font-weight:600">⚡ snapshot</span>':'<span style="background:#fff3cd;color:#856404;font-size:10px;padding:2px 7px;border-radius:10px;margin-left:8px;font-weight:600">🔴 dados brutos</span>';
   document.getElementById('dreHeaderMeta').innerHTML='<strong>'+DRE_RAW.length.toLocaleString('pt-BR')+' registros</strong> · DRE carregado'+snapBadge;
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
-  var tabsDefs=[{id:'mensal',label:'📅 Todos os Meses'},{id:'canal',label:'📡 Canal'},{id:'cluster',label:'🗂 Cluster'},{id:'regiao',label:'📍 Região'},{id:'fornecedor',label:'🏭 Fornecedor'}];
+  var tabsDefs=[{id:'mensal',label:'📅 Todos os Meses'},{id:'canal',label:'📡 Canal'},{id:'cluster',label:'🗂 Cluster'},{id:'regiao',label:'📍 Região'},{id:'fornecedor',label:'🏭 Fornecedor'},{id:'transportadora',label:'🚚 Transportadora'}];
   var bar=document.getElementById('dreTabsBar'); bar.innerHTML='';
   tabsDefs.forEach(function(t){
     var btn=document.createElement('button'); btn.className='dre-tab-btn'; btn.setAttribute('data-tab',t.id); btn.textContent=t.label;
@@ -3034,6 +3035,8 @@ async function initDre(){
   var selQ=function(id){return dreMs(id,'Quarter',[{val:'TODOS',lbl:'Todos'},{val:'T1',lbl:'T1'},{val:'T2',lbl:'T2'},{val:'T3',lbl:'T3'},{val:'T4',lbl:'T4'}],80);};
   var selCluster=function(id){return dreMs(id,'Cluster',clusters,100);};
   var selRegiao=function(id){return dreMs(id,'Região',regioes,90);};
+  var transpList=Array.from(new Set(DRE_RAW.map(function(r){return String(r.transportadora||r.TRANSPORTADORA||'').trim();}))).filter(Boolean).sort();
+  var selTransp=function(id){return dreMs(id,'Transportadora',transpList,130);};
   var selForn=function(id){return dreMs(id,'Fornecedor',fornecs,110);};
   var fBar=function(ids){return '<div style="display:flex;align-items:flex-end;gap:10px;padding:10px 0 14px;flex-wrap:wrap">'+ids.join('')+'</div>';};
   document.getElementById('drePanels').innerHTML=
@@ -3041,7 +3044,8 @@ async function initDre(){
     '<div id="drePanel-canal" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-canal'),selQ('dre-q-canal'),selMes('dre-mes-canal'),selCluster('dre-cluster-canal'),selRegiao('dre-reg-canal'),selForn('dre-forn-canal')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-canal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-canal"></div></div>'+
     '<div id="drePanel-cluster" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-cluster'),selQ('dre-q-cluster'),selMes('dre-mes-cluster'),selCanal('dre-canal-cluster'),selRegiao('dre-reg-cluster'),selForn('dre-forn-cluster')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-cluster" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-cluster"></div></div>'+
     '<div id="drePanel-regiao" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-regiao'),selQ('dre-q-regiao'),selMes('dre-mes-regiao'),selCanal('dre-canal-regiao'),selCluster('dre-cluster-regiao'),selForn('dre-forn-regiao')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-regiao" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-regiao"></div></div>'+
-    '<div id="drePanel-fornecedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-forn'),selQ('dre-q-forn'),selMes('dre-mes-forn'),selCanal('dre-canal-forn'),selCluster('dre-cluster-forn'),selRegiao('dre-reg-forn')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-forn" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-forn"></div></div>';
+    '<div id="drePanel-fornecedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-forn'),selQ('dre-q-forn'),selMes('dre-mes-forn'),selCanal('dre-canal-forn'),selCluster('dre-cluster-forn'),selRegiao('dre-reg-forn')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-forn" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-forn"></div></div>'+
+    '<div id="drePanel-transportadora" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-transp'),selQ('dre-q-transp'),selMes('dre-mes-transp'),selCanal('dre-canal-transp'),selCluster('dre-cluster-transp'),selRegiao('dre-reg-transp'),selForn('dre-forn-transp')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-transp" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-transp"></div></div>';
   dreSwitchTab('mensal');
 }
 
@@ -3162,6 +3166,7 @@ function dreRender(){
     else if(DRE_TAB==='cluster')    dreRenderDim('CLUSTER','dre-ano-cluster','dre-mes-cluster','dre-canal-cluster','cluster');
     else if(DRE_TAB==='regiao')     dreRenderDim('REGIAO','dre-ano-regiao','dre-mes-regiao','dre-canal-regiao','regiao');
     else if(DRE_TAB==='fornecedor') dreRenderDim('FORNECEDOR','dre-ano-forn','dre-mes-forn','dre-canal-forn','forn');
+    else if(DRE_TAB==='transportadora') dreRenderDim('TRANSPORTADORA','dre-ano-transp','dre-mes-transp','dre-canal-transp','transp');
   } catch(e){
     console.error('[dreRender] ERRO:', e.message, e.stack);
     var panel = document.getElementById('drePanel-'+DRE_TAB);
@@ -3203,7 +3208,8 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   }
 
   // Normaliza para maiúsculo para comparação consistente (snapshot usa minúsculo, raw usa maiúsculo)
-  var dimVal = function(r){ return String(r[dimKey]||r[dim]||'').toUpperCase(); };
+  var _dimField = dimKey==='transp' ? 'transportadora' : dimKey;
+  var dimVal = function(r){ return String(r[_dimField]||r[_dimField.toUpperCase()]||'').toUpperCase(); };
   var dimsFromData = Array.from(new Set(rows.map(dimVal))).filter(function(d){ return d && d !== 'NULL' && d !== 'UNDEFINED'; });
   // Order: if refRaw defines order, use it; else sort alphabetically
   var dims;
