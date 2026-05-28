@@ -3237,6 +3237,10 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
     var sliceRows = rows.filter(function(r){return dimVal(r)===d;});
     return{label:label,d:dreCalcShare(sliceRows,rows,canalCtx)};
   });
+  // Sort columns by descending Receita Bruta s/ Dev (except canal — already ordered by otb_canais)
+  if(dimKey !== 'canal'){
+    cols.sort(function(a,b){ return (b.d.rb||0)-(a.d.rb||0); });
+  }
   if(cols.length>1) cols=cols.concat([{label:'<strong>Total</strong>',d:dreCalc(dreAgg(rows),1,1),isTotal:true}]);
   var anos=Array.from(new Set(rows.map(function(r){return r.ano||r.ANO;})));
   var anosLY=anos.map(function(a){return String(+a-1);}),rowsLY=DRE_RAW.filter(function(r){return anosLY.includes(String(r.ano||r.ANO));});
@@ -3366,10 +3370,13 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   var sv_hava  = (!canalCtxUC || canalCtxUC==='HAVA') ? getSalAbs('hava', rb_hava) * _salShare : 0;
   var sv_ka    = (!canalCtxUC || canalCtxUC==='KA')   ? getSalAbs('ka',   rb_ka)   * _salShare : 0;
   // Comissões: só aplica ao canal correspondente
+  // Em contexto sem canal (fornecedor/transportadora): já está em shareRB via rb_martins/rca
   var com_martins = (!canalCtxUC || canalCtxUC==='MARTINS') ? rb_martins*getSalPct('martins') : 0;
   var com_rca     = (!canalCtxUC || canalCtxUC==='RCA')     ? rb_rca*getSalPct('rca')         : 0;
+  // Apply shareRB to sv13ferias when not in canal context
+  var sv13ferias_share = _salShare;
   var sv=sv_closer+sv_developer+sv_farmer+sv_hava+sv_ka,com=com_martins+com_rca;
-  var mb=rl-cmv-fob-grade; var pct13f=getSalPct('pct13ferias'); var sv13ferias=sv*(pct13f>0?pct13f:0.11); var mc=mb-sv-com-sv13ferias;
+  var mb=rl-cmv-fob-grade; var pct13f=getSalPct('pct13ferias'); var sv13ferias=sv*(pct13f>0?pct13f:0.11); // sv already has _salShare applied var mc=mb-sv-com-sv13ferias;
   var rf_rec=a.rec_frete,cf=a.custo_frete>0?a.custo_frete:rl*0.031;
   // Marketing: valor fixo do mês (FIXOS_DEF.marketing) * shareRB
   // branding e leads são shares do total (ex: 60% branding, 40% performance)
