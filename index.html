@@ -517,6 +517,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       <button class="fp-tab-pill"        id="fpTabCargo" onclick="folhaSwitchAba('cargo')">Por Cargo</button>
       <button class="fp-tab-pill"        id="fpTabNome"  onclick="folhaSwitchAba('nome')">Por Nome</button>
       <button class="fp-tab-pill"        id="fpTabCanal" onclick="folhaSwitchAba('canal')">Por Canal</button>
+      <button class="fp-tab-pill"        id="fpTabVerba"  onclick="folhaSwitchAba('verba')">Por Verba</button>
     </div>
   </div>
   <div id="folhaTablesArea" style="flex:1;overflow:auto;background:#f4f5f7"><div id="fpTblPrincipal"></div></div>
@@ -3716,7 +3717,7 @@ function initFolha(){
 }
 function folhaSwitchAba(aba){
   FOLHA_ABA=aba;
-  ['area','cargo','nome','canal'].forEach(function(a){
+  ['area','cargo','nome','canal','verba'].forEach(function(a){
     var id='fpTab'+a.charAt(0).toUpperCase()+a.slice(1),btn=document.getElementById(id);
     if(btn) btn.className='fp-tab-pill'+(a===aba?' active':'');
   });
@@ -4044,6 +4045,67 @@ function _folhaRenderBudgetStyle(container, rows){
     container.innerHTML=h2; return;
   }
 
+  // ── Aba Por Verba: área → verba ───────────────────────
+  if(FOLHA_ABA==='verba'){
+    var CANAL_COLORS2 = CANAL_COLORS;
+    var verbasLabels2 = window._folhaVerbasLabels || {};
+    // Detect available verba columns
+    var verbasDisp = FOLHA_RAW && FOLHA_RAW.length ? FOLHA_VERBAS.filter(function(k){
+      var keys=Object.keys(FOLHA_RAW[0]);
+      return keys.some(function(rk){return rk.toUpperCase()===k;});
+    }) : FOLHA_VERBAS;
+
+    // Agrupa: area → verba → { am: val }
+    var byAreaVerba = {}; var totAreaV = {}; var totVerbaV = {}; var totGeralV = {};
+    rows.forEach(function(r){
+      var area = folhaGetArea(r);
+      var am   = String(folhaGetPeriodo(r)||'').replace(/[^0-9]/g,'').slice(0,6);
+      if(am.length!==6) return;
+      var am_ym = am.slice(0,4)+'-'+am.slice(4,6);
+      if(!byAreaVerba[area]) byAreaVerba[area]={};
+      if(!totAreaV[area]) totAreaV[area]={};
+      var keys=Object.keys(r);
+      verbasDisp.forEach(function(k){
+        var found=keys.find(function(rk){return rk.toUpperCase()===k;});
+        var val=found?folhaNum(r[found]):0; if(!val) return;
+        if(!byAreaVerba[area][k]) byAreaVerba[area][k]={};
+        byAreaVerba[area][k][am_ym]=(byAreaVerba[area][k][am_ym]||0)+val;
+        totAreaV[area][am_ym]=(totAreaV[area][am_ym]||0)+val;
+        if(!totVerbaV[k]) totVerbaV[k]={};
+        totVerbaV[k][am_ym]=(totVerbaV[k][am_ym]||0)+val;
+        totGeralV[am_ym]=(totGeralV[am_ym]||0)+val;
+      });
+    });
+
+    var areasV=Object.keys(byAreaVerba).sort();
+    var h='<div class="fh-wrap"><table class="fh-tbl"><thead><tr><th class="fh-ind">ÁREA / VERBA</th>';
+    meses.forEach(function(am){h+='<th>'+_fpMesLabel(am)+'</th>';});
+    h+='</tr></thead><tbody>';
+
+    areasV.forEach(function(area){
+      // Linha da área — total de verbas
+      h+='<tr class="fh-area"><td class="fh-fix">'+area+'</td>';
+      meses.forEach(function(am){var v=totAreaV[area][am]||0; h+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'—')+'</td>';});
+      h+='</tr>';
+      // Sub-linhas por verba
+      verbasDisp.forEach(function(k){
+        var vData=byAreaVerba[area][k];
+        if(!vData) return;
+        var hasData=meses.some(function(am){return (vData[am]||0)>0;});
+        if(!hasData) return;
+        h+='<tr class="fh-sub"><td class="fh-fix">↳ '+(verbasLabels2[k]||k)+'</td>';
+        meses.forEach(function(am){var v=(vData[am]||0); h+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'—')+'</td>';});
+        h+='</tr>';
+      });
+    });
+
+    // Total geral
+    h+='<tr class="fh-tot"><td class="fh-fix">TOTAL GERAL</td>';
+    meses.forEach(function(am){var v=totGeralV[am]||0; h+='<td class="fh-val">'+(v?brl(v):'—')+'</td>';});
+    h+='</tr></tbody></table></div>';
+    container.innerHTML=h; return;
+  }
+
   // ── Agrupamento padrão: área → sub ──────────────────
   var estrutura = {};
   var totArea   = {};
@@ -4093,7 +4155,7 @@ function _folhaRenderAll(){
   var meta=document.getElementById('folhaHeaderMeta');
   if(meta) meta.innerHTML='<strong>'+rows.length.toLocaleString('pt-BR')+' registros</strong>';
   // Atualiza pill tabs
-  ['area','cargo','nome','canal'].forEach(function(a){
+  ['area','cargo','nome','canal','verba'].forEach(function(a){
     var id='fpTab'+a.charAt(0).toUpperCase()+a.slice(1);
     var btn=document.getElementById(id);
     if(btn) btn.className='fp-tab-pill'+(a===FOLHA_ABA?' active':'');
