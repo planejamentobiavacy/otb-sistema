@@ -2764,7 +2764,7 @@ async function loadDreFromSupabase(forceRaw){
 // ── Backfill DRE_CONFIG: meses sem parâmetro próprio herdam a MEDIANA dos valores salvos ──
 // Usar mediana evita que um valor outlier (ex: 0.065 salvo por engano) contamine todos os meses
 function backfillDreConfig(){
-  var PCT_KEYS = ['fob','closer','developer','farmer','martins','rca','branding','leads'];
+  var PCT_KEYS = ['fob','closer','developer','farmer','martins','rca','branding','leads','pct13ferias'];
   var monthSet = {};
   (DRE_RAW||[]).forEach(function(r){
     var a=String(r.ano||r.ANO||''), m=String(r.mes||r.MES||'').padStart(2,'0');
@@ -3336,7 +3336,7 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   var com_martins = (!canalCtxUC || canalCtxUC==='MARTINS') ? rb_martins*getSalPct('martins') : 0;
   var com_rca     = (!canalCtxUC || canalCtxUC==='RCA')     ? rb_rca*getSalPct('rca')         : 0;
   var sv=sv_closer+sv_developer+sv_farmer+sv_hava+sv_ka,com=com_martins+com_rca;
-  var mb=rl-cmv-fob-grade; var sv13ferias=sv*0.11; var mc=mb-sv-com-sv13ferias;
+  var mb=rl-cmv-fob-grade; var pct13f=getSalPct('pct13ferias'); var sv13ferias=sv*(isNaN(pct13f)?0.11:pct13f); var mc=mb-sv-com-sv13ferias;
   var rf_rec=a.rec_frete,cf=a.custo_frete>0?a.custo_frete:rl*0.031;
   // Marketing: valor fixo do mês (FIXOS_DEF.marketing) * shareRB
   // branding e leads são shares do total (ex: 60% branding, 40% performance)
@@ -4463,7 +4463,7 @@ async function openDreCfg(){
     +fieldBrl('Sal. KA (R$)', 'ka_abs',
       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].ka_abs!=null)?DRE_CFG_PARAMS[am].ka_abs:(folhaKaS13||0),
       '👥 Verbas Folha (exc. 13º): '+(folhaKaS13?fmt(folhaKaS13):'R$ 0 — classifique pessoas como KA na Folha'))
-    +'</div></div>'
+    +'</div>'    +'<div class="dre-cfg-grid" style="margin-top:12px;padding-top:12px;border-top:1px dashed #d0d8ee">'    +fieldPct('% 13º + Férias', 'pct13ferias', getP('pct13ferias')!==undefined?pct(getP('pct13ferias')):11,      '📐 Aplicado sobre o total de salários — resultado em 13º + Férias (-)'    )    +'</div></div>'
 
     // ── COMISSÕES ──
     +'<div class="dre-cfg-sec">'
