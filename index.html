@@ -119,8 +119,8 @@ body{font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;background:var(--b
 .table-wrap{padding:0}
 table.otb{border-collapse:separate;border-spacing:0;font-size:12px;font-variant-numeric:tabular-nums;width:auto}
 table.otb th,table.otb td{border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:0;text-align:center;white-space:nowrap}
-table.otb thead tr:first-child th{background:var(--blue);color:#fff;font-weight:600;padding:8px 10px;font-size:11px;letter-spacing:.5px;position:sticky;top:0;z-index:6;min-width:72px}
-table.otb thead tr:last-child th{background:var(--blue);color:#fff;font-weight:600;padding:8px 10px;font-size:11px;letter-spacing:.5px;position:sticky;top:29px;z-index:3;min-width:92px}
+table.otb thead tr:first-child th{background:var(--blue);color:#fff;font-weight:600;padding:8px 10px;font-size:11px;letter-spacing:.5px;position:sticky;top:0;z-index:20;min-width:72px}
+table.otb thead tr:last-child th{background:var(--blue);color:#fff;font-weight:600;padding:8px 10px;font-size:11px;letter-spacing:.5px;position:sticky;top:29px;z-index:20;min-width:92px}
 table.otb thead th.year-cell{background:var(--navy);font-size:11px;padding:5px 8px;font-weight:500;top:0}
 table.otb thead th.year-cell .yr-toggle{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:10px;margin-right:5px;color:#cfd6e8;user-select:none;width:14px;height:14px;border-radius:2px;background:rgba(255,255,255,.08)}
 table.otb thead th.yr-toggle:hover{color:#fff;background:rgba(255,255,255,.2)}
@@ -2615,7 +2615,7 @@ function renderTable(){
 // ═══════════════════════════════════════════════════════
 var DRE_RAW=[], DRE_LOADED=false, DRE_TAB='mensal', DRE_SNAPSHOT=false;
 var DRE_FOLHA_RAW=[], DRE_DESP_RAW=[], DRE_CFG_PARAMS={}, DRE_CANAIS_RAW=[], DRE_CLUSTER_RAW=[]; // params por ano_mes
-var DRE_CANAL_LOOKUP={}, DRE_CLUSTER_LOOKUP={}, DRE_HAS_CLUSTER_LOOKUP=false;
+var DRE_CANAL_LOOKUP={}, DRE_CLUSTER_LOOKUP={}, DRE_HAS_CLUSTER_LOOKUP=false, DRE_VENDEDOR_LOOKUP={};
 var FIXOS_DEF={sal_vend:191500,sal_adm:409000,marketing:79800,desp_gerais:579000,cd_mensal:270000};
 var DRE_CONFIG={freteMetodo:'qtd',fob:{},closer:{},developer:{},farmer:{},martins:{},rca:{},branding:{},leads:{},grade:{},custoGrade:{},canaisBranding:{},canaisLeads:{}};
 var DRE_CONFIG_DEFAULTS={fob:0.006,closer:0.008,developer:0.006,farmer:0.006,martins:0.003,rca:0.005,branding:0.025,leads:0.015,grade:0,custoGrade:0};
@@ -2854,11 +2854,9 @@ function dreAggregateFull(raw){
     var m  = String(r.MES||r.mes||'').padStart(2,'0');
     // Canal: usa campo direto ou lookup por ano_mes+cod_vendedor
     var c  = String(r.CANAL||r.canal||'');
-    var _cod = String(r.COD_VENDEDOR||r.cod_vendedor||r.VENDEDOR||r.vendedor||'').trim();
     if(!c && Object.keys(DRE_CANAL_LOOKUP).length){
-      c = DRE_CANAL_LOOKUP[a+m+'|'+_cod] || 'RCA';
-    } else if(!c && _cod) {
-      c = 'RCA'; // vendedor sem mapeamento em otb_canais
+      var _cod = String(r.COD_VENDEDOR||r.cod_vendedor||r.VENDEDOR||r.vendedor||'').trim();
+      c = DRE_CANAL_LOOKUP[a+m+'|'+_cod] || '';
     }
     // Cluster: usa campo direto ou lookup por cod_cliente; sem match -> "Demais"
     var cl = String(r.CLUSTER||r.cluster||'');
@@ -2873,8 +2871,13 @@ function dreAggregateFull(raw){
     var rg = String(r.REGIAO||r.regiao||'');
     var f  = String(r.FORNECEDOR||r.fornecedor||'');
     var tr = String(r.TRANSPORTADORA||r.transportadora||'');
-    var key= a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f; // tr not in key — kept as field only
-    if(!map[key]) map[key]={a,m,c,cl,rg,f,tr,vd:_cod,fv:0,dv:0,q:0,cu:0,ic:0,co:0,pi:0,fe:0,rf:0,cf:0,qg:0};
+    var vd = String(r.COD_VENDEDOR||r.cod_vendedor||r.VENDEDOR||r.vendedor||'').trim();
+    // Resolve nome_vendedor: campo direto na linha ou lookup pelo código
+    var vdNome = String(r.nome_vendedor||r.NOME_VENDEDOR||r.nom_vendedor||r.NOM_VENDEDOR||'').trim();
+    if(!vdNome && vd && DRE_VENDEDOR_LOOKUP[vd]) vdNome = DRE_VENDEDOR_LOOKUP[vd];
+    if(!vdNome && vd) vdNome = vd; // fallback: usa o código se não tiver nome
+    var key= a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f+'|'+vdNome; // tr not in key — kept as field only
+    if(!map[key]) map[key]={a:a,m:m,c:c,cl:cl,rg:rg,f:f,tr:tr,vd:vdNome,fv:0,dv:0,q:0,cu:0,ic:0,co:0,pi:0,fe:0,rf:0,cf:0,qg:0};
     var x=map[key];
     x.fv += nk(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO);
     x.dv += nk(r.devolucao_venda  ||r.DEVOLUCAO_VENDA);
@@ -2896,8 +2899,8 @@ function dreExpandSnapshot(snap){
   return snap.map(function(x){
     if(x.ano !== undefined) return x;
     return {
-      ano:x.a, mes:x.m, canal:x.c, cluster:x.cl, regiao:x.rg, fornecedor:x.f, transportadora:x.tr, vendedor:x.vd,
-      faturamento_venda:x.fv, devolucao_venda:x.dv, qtd:x.q, custo:x.cu, transportadora:x.tr||'',
+      ano:x.a, mes:x.m, canal:x.c, cluster:x.cl, regiao:x.rg, fornecedor:x.f, transportadora:x.tr, vendedor:x.vd||'',
+      faturamento_venda:x.fv, devolucao_venda:x.dv, qtd:x.q, custo:x.cu,
       icms:x.ic, cofins:x.co, pis:x.pi, fecpst:x.fe,
       rec_frete:x.rf, custo_frete:x.cf, qtd_grade_hava:x.qg
     };
@@ -2908,12 +2911,19 @@ function dreExpandSnapshot(snap){
 function dreEnrichWithCanais(raw, canaisRaw, clusterRaw){
   // ── Canal lookup: YYYYMM|cod_vendedor -> canal ──────────────
   var canalLookup = {};
+  // ── Vendedor lookup: cod_vendedor -> nome_vendedor ──────────
+  var vendedorLookup = {};
   if(canaisRaw && canaisRaw.length){
     canaisRaw.forEach(function(c){
       var am  = String(c.ano_mes||c.ANO_MES||'').replace(/\D/g,'').slice(0,6);
       var cod = String(c.cod_vendedor||c.COD_VENDEDOR||c.vendedor||c.VENDEDOR||'').trim();
       var canal = String(c.canal||c.CANAL||'').trim();
       if(am && cod && canal) canalLookup[am+'|'+cod] = canal;
+      // nome_vendedor: tenta vários campos comuns
+      if(cod){
+        var nome = String(c.nome_vendedor||c.NOME_VENDEDOR||c.nom_vendedor||c.NOM_VENDEDOR||c.nome||c.NOME||'').trim();
+        if(nome && !vendedorLookup[cod]) vendedorLookup[cod] = nome;
+      }
     });
   }
 
@@ -2936,6 +2946,7 @@ function dreEnrichWithCanais(raw, canaisRaw, clusterRaw){
   DRE_CANAL_LOOKUP   = canalLookup;
   DRE_CLUSTER_LOOKUP = clusterLookup;
   DRE_HAS_CLUSTER_LOOKUP = hasClusterLookup;
+  DRE_VENDEDOR_LOOKUP = vendedorLookup;
   return raw; // raw unchanged — join happens in dreAggregateFull
 }
 
@@ -3026,7 +3037,7 @@ async function initDre(){
   var snapBadge=DRE_SNAPSHOT?'<span style="background:#e8f0fe;color:#1a56c4;font-size:10px;padding:2px 7px;border-radius:10px;margin-left:8px;font-weight:600">⚡ snapshot</span>':'<span style="background:#fff3cd;color:#856404;font-size:10px;padding:2px 7px;border-radius:10px;margin-left:8px;font-weight:600">🔴 dados brutos</span>';
   document.getElementById('dreHeaderMeta').innerHTML='<strong>'+DRE_RAW.length.toLocaleString('pt-BR')+' registros</strong> · DRE carregado'+snapBadge;
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
-  var tabsDefs=[{id:'mensal',label:'📅 Todos os Meses'},{id:'canal',label:'📡 Canal'},{id:'cluster',label:'🗂 Cluster'},{id:'regiao',label:'📍 Região'},{id:'fornecedor',label:'🏭 Fornecedor'},{id:'transportadora',label:'🚚 Transportadora'},{id:'vendedores',label:'👤 Vendedores'}];
+  var tabsDefs=[{id:'mensal',label:'📅 Todos os Meses'},{id:'canal',label:'📡 Canal'},{id:'cluster',label:'🗂 Cluster'},{id:'regiao',label:'📍 Região'},{id:'fornecedor',label:'🏭 Fornecedor'},{id:'transportadora',label:'🚚 Transportadora'},{id:'vendedor',label:'🧑‍💼 Vendedor'}];
   var bar=document.getElementById('dreTabsBar'); bar.innerHTML='';
   tabsDefs.forEach(function(t){
     var btn=document.createElement('button'); btn.className='dre-tab-btn'; btn.setAttribute('data-tab',t.id); btn.textContent=t.label;
@@ -3045,6 +3056,12 @@ async function initDre(){
   var transpList=Array.from(new Set(DRE_RAW.map(function(r){return String(r.transportadora||r.TRANSPORTADORA||'').trim();}))).filter(Boolean).sort();
   var selTransp=function(id){return dreMs(id,'Transportadora',transpList,130);};
   var selForn=function(id){return dreMs(id,'Fornecedor',fornecs,110);};
+  var vendedorList=Array.from(new Set(DRE_RAW.map(function(r){
+    var vd=String(r.vendedor||r.VENDEDOR||r.vd||'').trim();
+    if(!vd){var cod=String(r.COD_VENDEDOR||r.cod_vendedor||'').trim(); vd=DRE_VENDEDOR_LOOKUP[cod]||cod;}
+    return vd;
+  }))).filter(Boolean).sort();
+  var selVend=function(id){return dreMs(id,'Vendedor',vendedorList,130);};
   var fBar=function(ids){return '<div style="display:flex;align-items:flex-end;gap:10px;padding:10px 0 14px;flex-wrap:wrap">'+ids.join('')+'</div>';};
   document.getElementById('drePanels').innerHTML=
     '<div id="drePanel-mensal">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-mensal'),selQ('dre-q-mensal'),selMes('dre-mes-mensal'),selCanal('dre-canal-mensal'),selCluster('dre-cluster-mensal'),selRegiao('dre-reg-mensal'),selForn('dre-forn-mensal'),selTransp('dre-transp-mensal')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-mensal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-mensal"></div></div>'+
@@ -3052,8 +3069,8 @@ async function initDre(){
     '<div id="drePanel-cluster" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-cluster'),selQ('dre-q-cluster'),selMes('dre-mes-cluster'),selCanal('dre-canal-cluster'),selRegiao('dre-reg-cluster'),selForn('dre-forn-cluster'),selTransp('dre-transp-cluster')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-cluster" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-cluster"></div></div>'+
     '<div id="drePanel-regiao" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-regiao'),selQ('dre-q-regiao'),selMes('dre-mes-regiao'),selCanal('dre-canal-regiao'),selCluster('dre-cluster-regiao'),selForn('dre-forn-regiao'),selTransp('dre-transp-regiao')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-regiao" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-regiao"></div></div>'+
     '<div id="drePanel-fornecedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-forn'),selQ('dre-q-forn'),selMes('dre-mes-forn'),selCanal('dre-canal-forn'),selCluster('dre-cluster-forn'),selRegiao('dre-reg-forn'),selTransp('dre-transp-forn')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-forn" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-forn"></div></div>'+
-    '<div id="drePanel-vendedores" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-vend'),selQ('dre-q-vend'),selMes('dre-mes-vend'),selCanal('dre-canal-vend'),selCluster('dre-cluster-vend'),selRegiao('dre-reg-vend'),selForn('dre-forn-vend'),selTransp('dre-transp-vend')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-vend" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-vend"></div></div>'+
-    '<div id="drePanel-transportadora" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-transp'),selQ('dre-q-transp'),selMes('dre-mes-transp'),selCanal('dre-canal-transp'),selCluster('dre-cluster-transp'),selRegiao('dre-reg-transp'),selForn('dre-forn-transp')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-transp" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-transp"></div></div>';
+    '<div id="drePanel-transportadora" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-transp'),selQ('dre-q-transp'),selMes('dre-mes-transp'),selCanal('dre-canal-transp'),selCluster('dre-cluster-transp'),selRegiao('dre-reg-transp'),selForn('dre-forn-transp')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-transp" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-transp"></div></div>'+
+    '<div id="drePanel-vendedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-vend'),selQ('dre-q-vend'),selMes('dre-mes-vend'),selCanal('dre-canal-vend'),selCluster('dre-cluster-vend'),selRegiao('dre-reg-vend'),selForn('dre-forn-vend'),selTransp('dre-transp-vend')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-vend" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-vend"></div></div>';
   dreSwitchTab('mensal');
 }
 
@@ -3144,7 +3161,7 @@ function dreGv(id){
 }
 
 function dreQuarterMeses(q){if(!q||q==='TODOS') return null;return{T1:['01','02','03'],T2:['04','05','06'],T3:['07','08','09'],T4:['10','11','12']}[q]||null;}
-function dreFilt(ano,mes,canal,q,cluster,regiao,forn,transp){
+function dreFilt(ano,mes,canal,q,cluster,regiao,forn,transp,vendedor){
   var r=DRE_RAW;
 
   if(ano&&ano!=='TODOS'){
@@ -3165,6 +3182,7 @@ function dreFilt(ano,mes,canal,q,cluster,regiao,forn,transp){
   if(regiao&&regiao!=='TODOS'){var _regiao=Array.isArray(regiao)?regiao:[regiao]; r=r.filter(function(x){return _regiao.includes(x.regiao||x.REGIAO||'');});}
   if(forn&&forn!=='TODOS'){var _forn=Array.isArray(forn)?forn:[forn]; r=r.filter(function(x){return _forn.includes(x.fornecedor||x.FORNECEDOR||'');});}
   if(transp&&transp!=='TODOS'){var _transp=Array.isArray(transp)?transp:[transp]; r=r.filter(function(x){return _transp.includes(x.transportadora||x.TRANSPORTADORA||'');});}
+  if(vendedor&&vendedor!=='TODOS'){var _vend=Array.isArray(vendedor)?vendedor:[vendedor]; r=r.filter(function(x){return _vend.includes(x.vendedor||x.VENDEDOR||x.vd||'');});}
   return r;
 }
 function dreRender(){
@@ -3176,7 +3194,7 @@ function dreRender(){
     else if(DRE_TAB==='regiao')     dreRenderDim('REGIAO','dre-ano-regiao','dre-mes-regiao','dre-canal-regiao','regiao');
     else if(DRE_TAB==='fornecedor') dreRenderDim('FORNECEDOR','dre-ano-forn','dre-mes-forn','dre-canal-forn','forn');
     else if(DRE_TAB==='transportadora') dreRenderDim('TRANSPORTADORA','dre-ano-transp','dre-mes-transp','dre-canal-transp','transp');
-    else if(DRE_TAB==='vendedores')     dreRenderDim('VENDEDORES','dre-ano-vend','dre-mes-vend','dre-canal-vend','vend');
+    else if(DRE_TAB==='vendedor')       dreRenderDim('VENDEDOR','dre-ano-vend','dre-mes-vend','dre-canal-vend','vend');
   } catch(e){
     console.error('[dreRender] ERRO:', e.message, e.stack);
     var panel = document.getElementById('drePanel-'+DRE_TAB);
@@ -3202,7 +3220,8 @@ function dreRenderMensal(){
 function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   var ano=dreGv(anoId),mes=dreGv(mesId),canal=canalId?dreGv(canalId):null;
   var q=dreGv('dre-q-'+suffix),cluster=dreGv('dre-cluster-'+suffix),regiao=dreGv('dre-reg-'+suffix),forn=dreGv('dre-forn-'+suffix),transp=dreGv('dre-transp-'+suffix);
-  var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn,transp);
+  var vendedorF = document.getElementById('dre-vend-'+suffix+'-drop') ? dreGv('dre-vend-'+suffix) : 'TODOS';
+  var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn,transp,vendedorF);
 
   var dimKey=dim.toLowerCase();
 
@@ -3218,7 +3237,7 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   }
 
   // Normaliza para maiúsculo para comparação consistente (snapshot usa minúsculo, raw usa maiúsculo)
-  var _dimField = dimKey==='transp' ? 'transportadora' : (dimKey==='vendedores' ? 'vendedor' : dimKey);
+  var _dimField = dimKey==='transp' ? 'transportadora' : (dimKey==='vendedor' ? 'vd' : dimKey);
   var dimVal = function(r){ return String(r[_dimField]||r[_dimField.toUpperCase()]||'').toUpperCase(); };
   var dimsFromData = Array.from(new Set(rows.map(dimVal))).filter(function(d){ return d && d !== 'NULL' && d !== 'UNDEFINED'; });
   // Order: if refRaw defines order, use it; else sort alphabetically
