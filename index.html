@@ -4478,7 +4478,7 @@ async function openDreCfg(){
     +fieldBrl('Sal. KA (R$)', 'ka_abs',
       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].ka_abs!=null)?DRE_CFG_PARAMS[am].ka_abs:(folhaKaS13||0),
       '👥 Verbas Folha (exc. 13º): '+(folhaKaS13?fmt(folhaKaS13):'R$ 0 — classifique pessoas como KA na Folha'))
-    +'</div>'    +'<div class="dre-cfg-grid" style="margin-top:12px;padding-top:12px;border-top:1px dashed #d0d8ee">'    +fieldPct('% 13º + Férias', 'pct13ferias', (function(){ var v=getP('pct13ferias'); if(!v||v<=0) return 11; if(v>1) return v; return pct(v); })(),      '📐 Aplicado sobre o total de salários — resultado em 13º + Férias (-)'    )    +'</div></div>'
+    +'</div>'    +'<div class="dre-cfg-grid" style="margin-top:12px;padding-top:12px;border-top:1px dashed #d0d8ee">'    +fieldPct('% 13º + Férias', 'pct13ferias', (function(){ var v=getP('pct13ferias'); var display=(!v||v<=0)?11:(v>1?v:pct(v)); console.log('[fieldPct pct13] getP=',v,'display=',display); return display; })(),      '📐 Aplicado sobre o total de salários — resultado em 13º + Férias (-)'    )    +'</div></div>'
 
     // ── COMISSÕES ──
     +'<div class="dre-cfg-sec">'
