@@ -2693,6 +2693,8 @@ async function loadDreFromSupabase(forceRaw){
         }
                   }
     } catch(e){ console.error('[DRE] dre_cfg_params LOAD FAILED:', e.message); }
+    // DEBUG pct13ferias
+    console.log('[pct13 DEBUG] after all loads, 202604.pct13ferias =', DRE_CFG_PARAMS['202604']&&DRE_CFG_PARAMS['202604'].pct13ferias, '| raw supabase val =', (savedCfgOnly&&savedCfgOnly.cfgParams&&savedCfgOnly.cfgParams['202604'])?savedCfgOnly.cfgParams['202604'].pct13ferias:'N/A');
 
     // Usa snapshot agregado se existir e não for forceRaw
     // Tenta snapshot se disponível
@@ -4329,6 +4331,7 @@ async function openDreCfg(){
   }
 
   var am = selectedAm;
+  console.log('[openDreCfg] am=',am,'getP(pct13ferias)=',getP('pct13ferias'),'DRE_CFG_PARAMS[am]=',DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].pct13ferias);
 
   // ── Meses disponíveis na Folha (calculado com am correto) ──────
   var _folhaMesesDisp = (function(){
