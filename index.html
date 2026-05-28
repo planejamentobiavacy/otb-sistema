@@ -3294,8 +3294,15 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
     if(!a.anomesList.length) return defaultVal;
     var sum=0, count=0;
     a.anomesList.forEach(function(am){
-      var v = getPct(key, am);
-      sum += (isNaN(v) ? (DRE_CONFIG_DEFAULTS[key]||0) : v);
+      // pct13ferias is stored in DRE_CFG_PARAMS[am], not DRE_CONFIG
+      var v;
+      if(key==='pct13ferias'){
+        var p = DRE_CFG_PARAMS[am];
+        v = (p && p.pct13ferias != null) ? p.pct13ferias : defaultVal;
+      } else {
+        v = getPct(key, am);
+      }
+      sum += (isNaN(v) ? defaultVal : v);
       count++;
     });
     var _def = key==='pct13ferias' ? 0.11 : (DRE_CONFIG_DEFAULTS[key]||0);
