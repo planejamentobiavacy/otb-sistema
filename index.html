@@ -119,8 +119,8 @@ body{font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;background:var(--b
 .table-wrap{padding:0}
 table.otb{border-collapse:separate;border-spacing:0;font-size:12px;font-variant-numeric:tabular-nums;width:auto}
 table.otb th,table.otb td{border-right:1px solid var(--border);border-bottom:1px solid var(--border);padding:0;text-align:center;white-space:nowrap}
-table.otb thead tr:first-child th{background:var(--blue);color:#fff;font-weight:600;padding:8px 10px;font-size:11px;letter-spacing:.5px;position:sticky;top:0;z-index:20;min-width:72px}
-table.otb thead tr:last-child th{background:var(--blue);color:#fff;font-weight:600;padding:8px 10px;font-size:11px;letter-spacing:.5px;position:sticky;top:29px;z-index:20;min-width:92px}
+table.otb thead tr:first-child th{background:var(--blue);color:#fff;font-weight:600;padding:8px 10px;font-size:11px;letter-spacing:.5px;position:sticky;top:0;z-index:6;min-width:72px}
+table.otb thead tr:last-child th{background:var(--blue);color:#fff;font-weight:600;padding:8px 10px;font-size:11px;letter-spacing:.5px;position:sticky;top:29px;z-index:3;min-width:92px}
 table.otb thead th.year-cell{background:var(--navy);font-size:11px;padding:5px 8px;font-weight:500;top:0}
 table.otb thead th.year-cell .yr-toggle{display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:10px;margin-right:5px;color:#cfd6e8;user-select:none;width:14px;height:14px;border-radius:2px;background:rgba(255,255,255,.08)}
 table.otb thead th.yr-toggle:hover{color:#fff;background:rgba(255,255,255,.2)}
@@ -2854,9 +2854,11 @@ function dreAggregateFull(raw){
     var m  = String(r.MES||r.mes||'').padStart(2,'0');
     // Canal: usa campo direto ou lookup por ano_mes+cod_vendedor
     var c  = String(r.CANAL||r.canal||'');
+    var _cod = String(r.COD_VENDEDOR||r.cod_vendedor||r.VENDEDOR||r.vendedor||'').trim();
     if(!c && Object.keys(DRE_CANAL_LOOKUP).length){
-      var _cod = String(r.COD_VENDEDOR||r.cod_vendedor||r.VENDEDOR||r.vendedor||'').trim();
-      c = DRE_CANAL_LOOKUP[a+m+'|'+_cod] || '';
+      c = DRE_CANAL_LOOKUP[a+m+'|'+_cod] || 'RCA';
+    } else if(!c && _cod) {
+      c = 'RCA'; // vendedor sem mapeamento em otb_canais
     }
     // Cluster: usa campo direto ou lookup por cod_cliente; sem match -> "Demais"
     var cl = String(r.CLUSTER||r.cluster||'');
@@ -2872,7 +2874,7 @@ function dreAggregateFull(raw){
     var f  = String(r.FORNECEDOR||r.fornecedor||'');
     var tr = String(r.TRANSPORTADORA||r.transportadora||'');
     var key= a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f; // tr not in key — kept as field only
-    if(!map[key]) map[key]={a,m,c,cl,rg,f,tr,fv:0,dv:0,q:0,cu:0,ic:0,co:0,pi:0,fe:0,rf:0,cf:0,qg:0};
+    if(!map[key]) map[key]={a,m,c,cl,rg,f,tr,vd:_cod,fv:0,dv:0,q:0,cu:0,ic:0,co:0,pi:0,fe:0,rf:0,cf:0,qg:0};
     var x=map[key];
     x.fv += nk(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO);
     x.dv += nk(r.devolucao_venda  ||r.DEVOLUCAO_VENDA);
@@ -2894,7 +2896,7 @@ function dreExpandSnapshot(snap){
   return snap.map(function(x){
     if(x.ano !== undefined) return x;
     return {
-      ano:x.a, mes:x.m, canal:x.c, cluster:x.cl, regiao:x.rg, fornecedor:x.f, transportadora:x.tr,
+      ano:x.a, mes:x.m, canal:x.c, cluster:x.cl, regiao:x.rg, fornecedor:x.f, transportadora:x.tr, vendedor:x.vd,
       faturamento_venda:x.fv, devolucao_venda:x.dv, qtd:x.q, custo:x.cu, transportadora:x.tr||'',
       icms:x.ic, cofins:x.co, pis:x.pi, fecpst:x.fe,
       rec_frete:x.rf, custo_frete:x.cf, qtd_grade_hava:x.qg
@@ -3024,7 +3026,7 @@ async function initDre(){
   var snapBadge=DRE_SNAPSHOT?'<span style="background:#e8f0fe;color:#1a56c4;font-size:10px;padding:2px 7px;border-radius:10px;margin-left:8px;font-weight:600">⚡ snapshot</span>':'<span style="background:#fff3cd;color:#856404;font-size:10px;padding:2px 7px;border-radius:10px;margin-left:8px;font-weight:600">🔴 dados brutos</span>';
   document.getElementById('dreHeaderMeta').innerHTML='<strong>'+DRE_RAW.length.toLocaleString('pt-BR')+' registros</strong> · DRE carregado'+snapBadge;
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
-  var tabsDefs=[{id:'mensal',label:'📅 Todos os Meses'},{id:'canal',label:'📡 Canal'},{id:'cluster',label:'🗂 Cluster'},{id:'regiao',label:'📍 Região'},{id:'fornecedor',label:'🏭 Fornecedor'},{id:'transportadora',label:'🚚 Transportadora'}];
+  var tabsDefs=[{id:'mensal',label:'📅 Todos os Meses'},{id:'canal',label:'📡 Canal'},{id:'cluster',label:'🗂 Cluster'},{id:'regiao',label:'📍 Região'},{id:'fornecedor',label:'🏭 Fornecedor'},{id:'transportadora',label:'🚚 Transportadora'},{id:'vendedores',label:'👤 Vendedores'}];
   var bar=document.getElementById('dreTabsBar'); bar.innerHTML='';
   tabsDefs.forEach(function(t){
     var btn=document.createElement('button'); btn.className='dre-tab-btn'; btn.setAttribute('data-tab',t.id); btn.textContent=t.label;
@@ -3050,6 +3052,7 @@ async function initDre(){
     '<div id="drePanel-cluster" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-cluster'),selQ('dre-q-cluster'),selMes('dre-mes-cluster'),selCanal('dre-canal-cluster'),selRegiao('dre-reg-cluster'),selForn('dre-forn-cluster'),selTransp('dre-transp-cluster')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-cluster" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-cluster"></div></div>'+
     '<div id="drePanel-regiao" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-regiao'),selQ('dre-q-regiao'),selMes('dre-mes-regiao'),selCanal('dre-canal-regiao'),selCluster('dre-cluster-regiao'),selForn('dre-forn-regiao'),selTransp('dre-transp-regiao')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-regiao" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-regiao"></div></div>'+
     '<div id="drePanel-fornecedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-forn'),selQ('dre-q-forn'),selMes('dre-mes-forn'),selCanal('dre-canal-forn'),selCluster('dre-cluster-forn'),selRegiao('dre-reg-forn'),selTransp('dre-transp-forn')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-forn" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-forn"></div></div>'+
+    '<div id="drePanel-vendedores" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-vend'),selQ('dre-q-vend'),selMes('dre-mes-vend'),selCanal('dre-canal-vend'),selCluster('dre-cluster-vend'),selRegiao('dre-reg-vend'),selForn('dre-forn-vend'),selTransp('dre-transp-vend')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-vend" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-vend"></div></div>'+
     '<div id="drePanel-transportadora" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-transp'),selQ('dre-q-transp'),selMes('dre-mes-transp'),selCanal('dre-canal-transp'),selCluster('dre-cluster-transp'),selRegiao('dre-reg-transp'),selForn('dre-forn-transp')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-transp" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-transp"></div></div>';
   dreSwitchTab('mensal');
 }
@@ -3173,6 +3176,7 @@ function dreRender(){
     else if(DRE_TAB==='regiao')     dreRenderDim('REGIAO','dre-ano-regiao','dre-mes-regiao','dre-canal-regiao','regiao');
     else if(DRE_TAB==='fornecedor') dreRenderDim('FORNECEDOR','dre-ano-forn','dre-mes-forn','dre-canal-forn','forn');
     else if(DRE_TAB==='transportadora') dreRenderDim('TRANSPORTADORA','dre-ano-transp','dre-mes-transp','dre-canal-transp','transp');
+    else if(DRE_TAB==='vendedores')     dreRenderDim('VENDEDORES','dre-ano-vend','dre-mes-vend','dre-canal-vend','vend');
   } catch(e){
     console.error('[dreRender] ERRO:', e.message, e.stack);
     var panel = document.getElementById('drePanel-'+DRE_TAB);
@@ -3214,7 +3218,7 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   }
 
   // Normaliza para maiúsculo para comparação consistente (snapshot usa minúsculo, raw usa maiúsculo)
-  var _dimField = dimKey==='transp' ? 'transportadora' : dimKey;
+  var _dimField = dimKey==='transp' ? 'transportadora' : (dimKey==='vendedores' ? 'vendedor' : dimKey);
   var dimVal = function(r){ return String(r[_dimField]||r[_dimField.toUpperCase()]||'').toUpperCase(); };
   var dimsFromData = Array.from(new Set(rows.map(dimVal))).filter(function(d){ return d && d !== 'NULL' && d !== 'UNDEFINED'; });
   // Order: if refRaw defines order, use it; else sort alphabetically
