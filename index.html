@@ -966,6 +966,9 @@ async function afterLogin(){
     if(cfgEarly){
       if(cfgEarly.config) DRE_CONFIG = Object.assign(DRE_CONFIG, cfgEarly.config);
       if(cfgEarly.fixos) Object.assign(FIXOS_DEF, cfgEarly.fixos);
+      if(cfgEarly.vendedorMap && Object.keys(cfgEarly.vendedorMap).length){
+        DRE_VENDEDOR_LOOKUP = Object.assign({}, cfgEarly.vendedorMap);
+      }
       if(cfgEarly.cfgParams){
         Object.keys(cfgEarly.cfgParams).forEach(function(am){
           if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
@@ -2675,6 +2678,9 @@ async function loadDreFromSupabase(forceRaw){
           if(savedCfgOnly){
                           if(savedCfgOnly.config)    DRE_CONFIG = Object.assign(DRE_CONFIG, savedCfgOnly.config);
         if(savedCfgOnly.fixos)     Object.assign(FIXOS_DEF, savedCfgOnly.fixos);
+        if(savedCfgOnly.vendedorMap && Object.keys(savedCfgOnly.vendedorMap).length){
+          DRE_VENDEDOR_LOOKUP = Object.assign({}, savedCfgOnly.vendedorMap);
+        }
         if(savedCfgOnly.cfgParams){
           Object.keys(savedCfgOnly.cfgParams).forEach(function(am){
             if(!DRE_CFG_PARAMS[am]) DRE_CFG_PARAMS[am] = {};
@@ -2907,8 +2913,11 @@ function dreAggregateFull(raw){
 function dreExpandSnapshot(snap){
   return snap.map(function(x){
     if(x.ano !== undefined) return x;
+    // vd pode estar ausente em snapshots salvos antes da feature de Vendedor
+    var vdVal = x.vd || '';
+    if(!vdVal && x.c){ /* sem cod no snapshot compacto — não há como resolver */ }
     return {
-      ano:x.a, mes:x.m, canal:x.c, cluster:x.cl, regiao:x.rg, fornecedor:x.f, transportadora:x.tr, vendedor:x.vd||'',
+      ano:x.a, mes:x.m, canal:x.c, cluster:x.cl, regiao:x.rg, fornecedor:x.f, transportadora:x.tr, vd:vdVal, vendedor:vdVal,
       faturamento_venda:x.fv, devolucao_venda:x.dv, qtd:x.q, custo:x.cu,
       icms:x.ic, cofins:x.co, pis:x.pi, fecpst:x.fe,
       rec_frete:x.rf, custo_frete:x.cf, qtd_grade_hava:x.qg
@@ -2966,6 +2975,13 @@ async function handleSaveDre(btn){
   try{
     btn.textContent = '⏳ Agregando...';
     var snapshot = DRE_RAW.length ? dreAggregateFull(DRE_RAW) : null;
+    // Extrai mapa cod->nome dos dados brutos (antes de entrar em snapshot)
+    var vendedorMap = {};
+    DRE_RAW.forEach(function(r){
+      var cod  = String(r.COD_VENDEDOR||r.cod_vendedor||'').trim();
+      var nome = String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||'').trim();
+      if(cod && nome && !vendedorMap[cod]) vendedorMap[cod] = nome;
+    });
     console.log('[DRE save] raw:', DRE_RAW.length, 'snap:', snapshot ? snapshot.length : 0);
     var meta = {
       config: DRE_CONFIG, fixos: FIXOS_DEF, cfgParams: DRE_CFG_PARAMS,
@@ -2977,6 +2993,7 @@ async function handleSaveDre(btn){
     // Sempre salva params em chave separada (independente do snapshot)
     await supaSave(TBLS.save_dre, 'dre_cfg_params', {
       config: DRE_CONFIG, fixos: FIXOS_DEF, cfgParams: DRE_CFG_PARAMS,
+      vendedorMap: vendedorMap,
       savedAt: new Date().toISOString()
     });
 
@@ -3210,7 +3227,21 @@ function dreRender(){
     else if(DRE_TAB==='regiao')     dreRenderDim('REGIAO','dre-ano-regiao','dre-mes-regiao','dre-canal-regiao','regiao');
     else if(DRE_TAB==='fornecedor') dreRenderDim('FORNECEDOR','dre-ano-forn','dre-mes-forn','dre-canal-forn','forn');
     else if(DRE_TAB==='transportadora') dreRenderDim('TRANSPORTADORA','dre-ano-transp','dre-mes-transp','dre-canal-transp','transp');
-    else if(DRE_TAB==='vendedor')       dreRenderDim('VENDEDOR','dre-ano-vend','dre-mes-vend','dre-canal-vend','vend');
+    else if(DRE_TAB==='vendedor'){
+      // Snapshot antigo pode não ter vd — detecta e avisa
+      if(DRE_SNAPSHOT){
+        var hasVd = DRE_RAW.some(function(r){ return !!(r.vd||r.vendedor); });
+        if(!hasVd){
+          document.getElementById('dreTable-vend').innerHTML='<div style="text-align:center;padding:40px;color:#7a8ab0;font-size:13px">'+
+            '⚠️ O snapshot atual foi salvo antes da aba Vendedor ser criada.<br><br>'+
+            '<button onclick="document.getElementById(\'btnSaveDre\').click()" style="background:#1a2a6c;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px">🔄 Re-salvar DRE agora</button>'+
+            '<br><small style="color:#aaa;margin-top:8px;display:block">Isso vai re-agregar os dados e habilitar a aba Vendedor.</small></div>';
+          document.getElementById('dreKpi-vend').innerHTML='';
+          return;
+        }
+      }
+      dreRenderDim('VENDEDOR','dre-ano-vend','dre-mes-vend','dre-canal-vend','vend');
+    }
   } catch(e){
     console.error('[dreRender] ERRO:', e.message, e.stack);
     var panel = document.getElementById('drePanel-'+DRE_TAB);
