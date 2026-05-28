@@ -4049,11 +4049,13 @@ function _folhaRenderBudgetStyle(container, rows){
   if(FOLHA_ABA==='verba'){
     var CANAL_COLORS2 = CANAL_COLORS;
     var verbasLabels2 = window._folhaVerbasLabels || {};
-    // Detect available verba columns
-    var verbasDisp = FOLHA_RAW && FOLHA_RAW.length ? FOLHA_VERBAS.filter(function(k){
-      var keys=Object.keys(FOLHA_RAW[0]);
+    // Detect available verba columns from first row with data
+    var _sampleRow = rows.length ? rows[0] : (FOLHA_RAW && FOLHA_RAW.length ? FOLHA_RAW[0] : null);
+    var verbasDisp = _sampleRow ? FOLHA_VERBAS.filter(function(k){
+      var keys=Object.keys(_sampleRow);
       return keys.some(function(rk){return rk.toUpperCase()===k;});
     }) : FOLHA_VERBAS;
+    console.log('[Folha Verba] rows:', rows.length, '| verbasDisp:', verbasDisp.length, '| sample keys:', _sampleRow?Object.keys(_sampleRow).slice(0,8):[]);
 
     // Agrupa: area → verba → { am: val }
     var byAreaVerba = {}; var totAreaV = {}; var totVerbaV = {}; var totGeralV = {};
@@ -4580,6 +4582,9 @@ function applyDreCfg(){
       var val = gv(k);
       DRE_CFG_PARAMS[am][k] = val > 0 ? val : null;
     });
+    // Save pct13ferias as decimal
+    var pct13val = gv('pct13ferias');
+    if(!isNaN(pct13val)) DRE_CFG_PARAMS[am]['pct13ferias'] = pct13val / 100;
     // Backfill NÃO roda aqui — só no carregamento inicial (evita sobrescrever valores salvos)
   } else {
     // Sem mês selecionado: atualiza defaults globais E limpa overrides por mês
