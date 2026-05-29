@@ -3724,8 +3724,13 @@ function dreRenderMensal(){
   var canalCtxMensal = (canal && canal !== 'TODOS' && canal !== 'null' && !Array.isArray(canal)) ? String(canal).toUpperCase() : null;
   var cols=meses.map(function(m){return{label:ml(m)+(ano!=='TODOS'?'/'+String(ano).slice(-2):''),d:dreCalc(dreAgg(rows.filter(function(r){return String(r.mes||r.MES||'').padStart(2,'0')===m;})),1,1,canalCtxMensal)};});
   if(cols.length>1) cols=cols.concat([{label:'<strong>Total</strong>',d:dreCalc(dreAgg(rows),1,1,canalCtxMensal),isTotal:true}]);
-  var lastMes=meses[meses.length-1],anoLY=ano==='TODOS'?null:String(+ano-1);
-  var rowsLY=anoLY?DRE_RAW.filter(function(r){return String(r.ano||r.ANO)===anoLY&&String(r.mes||r.MES||'').padStart(2,'0')===lastMes;}):[];
+  var anoLY=ano==='TODOS'?null:(Array.isArray(ano)?String(+ano[0]-1):String(+ano-1));
+  // LY deve filtrar pelo MESMO período: ano-1 + mesmos meses selecionados
+  var rowsLY=anoLY?DRE_RAW.filter(function(r){
+    if(String(r.ano||r.ANO)!==anoLY) return false;
+    var rMes=String(r.mes||r.MES||'').padStart(2,'0');
+    return meses.indexOf(rMes)>=0;
+  }):[];
   var dLY=rowsLY.length?dreCalc(dreAgg(rowsLY),1,1):null;
   var kpiData=cols.filter(function(c){return c.isTotal;});if(!kpiData.length) kpiData=cols;
   document.getElementById('dreKpi-mensal').innerHTML=kpiData.length?dreKpis(kpiData.map(function(c){return c.d;}),dLY):'';
