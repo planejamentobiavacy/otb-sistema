@@ -675,7 +675,7 @@ async function supaFetch(path, opts){
 async function fetchAll(table, extraFilter, tableKey, onProgress){
   var PAGE = 1000;
   // Tabelas grandes ou com problemas de RLS/timeout: fetch sequencial (evita 500 por sobrecarga paralela)
-  var SEQUENTIAL_TABLES = ['dw_otb_stk','dw_otb_venda']; // dw_otb_venda_dre removida: paralelo é mais rápido
+  var SEQUENTIAL_TABLES = ['dw_otb_stk','dw_otb_venda','dw_otb_venda_dre'];
   var forceSeq = SEQUENTIAL_TABLES.indexOf(table) > -1;
   var sel = tableKey ? buildSelect(tableKey) : 'select=*';
 
@@ -753,8 +753,8 @@ async function fetchAll(table, extraFilter, tableKey, onProgress){
     console.log('[fetchAll]', table, '— total final (seq):', out.length);
     return out;
   }
-  // Busca em lotes de 5 páginas para evitar timeout por sobrecarga
-  var BATCH = 5;
+  // Busca em lotes de 3 páginas para evitar timeout por sobrecarga
+  var BATCH = 3;
   for(var batchStart = 1; batchStart < numPages; batchStart += BATCH){
     var batchEnd = Math.min(batchStart + BATCH, numPages);
     var batchPromises = [];
