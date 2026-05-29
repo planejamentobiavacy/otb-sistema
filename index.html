@@ -995,6 +995,12 @@ async function afterLogin(){
               if(isNaN(_v)||_v<0) delete DRE_CFG_PARAMS[am][k];
             }
           });
+          // ajuste_cmv: permite valores negativos (para subtrair do CMV)
+          if(DRE_CFG_PARAMS[am].ajuste_cmv != null){
+            var _ac = parseFloat(DRE_CFG_PARAMS[am].ajuste_cmv);
+            if(isNaN(_ac)) delete DRE_CFG_PARAMS[am].ajuste_cmv;
+            else DRE_CFG_PARAMS[am].ajuste_cmv = _ac;
+          }
           // Sanitiza percentuais: se valor > 1 (ex: 6.5 em vez de 0.065), converte
           ['fob','closer','developer','farmer','martins','rca','branding','leads'].forEach(function(k){
             if(DRE_CFG_PARAMS[am][k] != null){
@@ -3835,7 +3841,18 @@ function dreAgg(rows){
 function dreCalc(a,shareRB,shareQTD,canalCtx){
   shareRB=shareRB||1;shareQTD=shareQTD||1;
   var isCloser = canalCtx ? String(canalCtx).toUpperCase()==='CLOSER' : null; // null = unknown (mensal total)
-  var rb_dev=a.fat_v,dev=a.dev,rb_gross=rb_dev+dev,rb=rb_dev,rl_base=rb,imp=a.icms+a.cofins+a.pis+a.fecpst,rl=rb-imp,cmv=a.custo;
+  // Ajuste CMV: soma o valor configurado por mês (DRE_CFG_PARAMS[am].ajuste_cmv) para todos os meses da fatia atual
+  var ajusteCmv = 0;
+  if(a.anomesList && a.anomesList.length){
+    a.anomesList.forEach(function(am){
+      var amS = String(am);
+      var p = DRE_CFG_PARAMS[amS];
+      if(p && p.ajuste_cmv != null) ajusteCmv += (parseFloat(p.ajuste_cmv)||0);
+    });
+  }
+  // Aplica shareRB para fatias parciais (ex: filtrar por canal) para proporcionalizar ajuste
+  ajusteCmv = ajusteCmv * shareRB;
+  var rb_dev=a.fat_v,dev=a.dev,rb_gross=rb_dev+dev,rb=rb_dev,rl_base=rb,imp=a.icms+a.cofins+a.pis+a.fecpst,rl=rb-imp,cmv_base=a.custo,cmv=cmv_base+ajusteCmv;
   var cmv_b=cmv>0?cmv/0.79:0,mkp=cmv_b>0?(rb/cmv_b-1):0,mg_prod=rl>0?(1-cmv/rl):0;
   // Para cada mês usa o parâmetro salvo; se não tiver, usa o default global
   // Para múltiplos meses (ex: total ano) pondera pelo número de meses
@@ -4029,7 +4046,7 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   var cd_unit = getFixo('cd_mensal', FIXOS_DEF.cd_mensal);
   var mcon=mc+rf_rec-cf-mkt,sa=sa_unit*shareRB,dg=dg_unit*shareRB,cd=cd_unit*shareQTD;
   var ebt=mcon-sa-dg-cd;
-  return{rb_dev,dev,rb_gross,rb,imp,icms:a.icms,pc:a.cofins+a.pis+a.fecpst,rl,qtd:a.qtd,cmv_b,cmv,mkp,mg_prod,fob,mb,sv,sv_closer,sv_developer,sv_farmer,sv_hava,sv_ka,sv13ferias,com,com_martins,com_rca,mc,rf:rf_rec,cf,mkt,mkt_branding,mkt_leads,mcon,grade,sa,dg,cd,ebt};
+  return{rb_dev,dev,rb_gross,rb,imp,icms:a.icms,pc:a.cofins+a.pis+a.fecpst,rl,qtd:a.qtd,cmv_b,cmv,cmv_base,ajuste_cmv:ajusteCmv,mkp,mg_prod,fob,mb,sv,sv_closer,sv_developer,sv_farmer,sv_hava,sv_ka,sv13ferias,com,com_martins,com_rca,mc,rf:rf_rec,cf,mkt,mkt_branding,mkt_leads,mcon,grade,sa,dg,cd,ebt};
 }
 var dreBrl=function(v){var n=Math.round(v);return n<0?'<span style="color:#c0181a;font-weight:700">-R$ '+Math.abs(n).toLocaleString('pt-BR')+'</span>':'R$ '+n.toLocaleString('pt-BR');};
 var dreBrlp=function(v){return'R$ '+Math.round(v).toLocaleString('pt-BR');};
@@ -4091,7 +4108,7 @@ function dreTabela(cols){
   +sec('📊 RECEITA')+row('Receita Bruta',function(d){return dreBrl(d.rb_gross);})+row('Devolução (-)',function(d){return dreBrl(d.dev);},'row-sub')+rowP('% Devolução',function(d){return drePct(d.dev,d.rb_gross);})+rowT('Receita Bruta s/ Dev',function(d){return dreBrl(d.rb_dev);})
   +sp()+row('Impostos (-)',function(d){return dreBrl(d.imp);},'row-sub')+row('&nbsp;&nbsp;ICMS',function(d){return dreBrl(d.icms);},'row-sub')+rowP('&nbsp;&nbsp;% ICMS',function(d){return drePct(d.icms,d.rb);})+row('&nbsp;&nbsp;PIS/COFINS',function(d){return dreBrl(d.pc);},'row-sub')+rowP('&nbsp;&nbsp;% PIS/COFINS',function(d){return drePct(d.pc,d.rb);})+rowT('Receita Líquida',function(d){return dreBrl(d.rl);})
   +sp()+sec('📦 VOLUME')+row('Pares',function(d){return dreNum2(d.qtd);})+row('Preço Médio',function(d){return d.qtd>0?'R$ '+(d.rb/d.qtd).toFixed(1):'-';})
-  +sp()+sec('💲 CMV')+rowT('CMV (-)',function(d){return dreBrl(d.cmv);})+rowP('% CMV',function(d){return drePct(d.cmv,d.rl);})+rowP('CMV Bruto',function(d){return d.cmv_b>0?dreBrlp(d.cmv_b):'-';})+rowP('MKP %',function(d){return d.cmv_b>0?drePctD(d.mkp):'-';})+rowP('Margem Produto %',function(d){return drePctD(d.mg_prod);})
+  +sp()+sec('💲 CMV')+rowT('CMV (-)',function(d){return dreBrl(d.cmv_base!=null?d.cmv_base:d.cmv);})+row('Ajuste CMV (-)',function(d){return dreBrl(d.ajuste_cmv||0);},'row-sub')+rowT('CMV Total (-)',function(d){return dreBrl(d.cmv);})+rowP('% CMV',function(d){return drePct(d.cmv,d.rl);})+rowP('CMV Bruto',function(d){return d.cmv_b>0?dreBrlp(d.cmv_b):'-';})+rowP('MKP %',function(d){return d.cmv_b>0?drePctD(d.mkp):'-';})+rowP('Margem Produto %',function(d){return drePctD(d.mg_prod);})
   +sp()+row('FOB (-)',function(d){return dreBrl(d.fob);},'row-sub')+rowP('% FOB',function(d){return drePct(d.fob,d.rl);})+row('Montagem Grade (-)',function(d){return dreBrl(d.grade||0);},'row-sub')+rowP('% Montagem Grade',function(d){return drePct(d.grade||0,d.rl);})+sp()+rowT('Margem Bruta',function(d){return dreBrl(d.mb);})+rowP('Margem Bruta %',function(d){return drePct(d.mb,d.rl);})
   +sp()+sec('🏷 DESPESAS COMERCIAIS')+row('Salários (-)',function(d){return dreBrl(d.sv||0);},'row-sub')+row('Comissão (-)',function(d){return dreBrl((d.com||0));},'row-sub')+row('13º + Férias (-)',function(d){return dreBrl(d.sv13ferias||0);},'row-sub')+rowT('Total Comercial',function(d){return dreBrl((d.sv||0)+(d.com||0)+(d.sv13ferias||0));})+rowP('% Total Comercial',function(d){return drePct((d.sv||0)+(d.com||0)+(d.sv13ferias||0),d.rl);})
   +sp()+sec('🚚 FRETE')+row('Receita Frete (+)',function(d){return dreBrl(d.rf);},'row-sub')+row('Custo Frete (-)',function(d){return dreBrl(d.cf);},'row-sub')+rowP('% Frete / Rec Líq',function(d){return drePct(d.cf,d.rl);})+rowP('Frete / Par',function(d){return d.qtd>0?'R$ '+(d.cf/d.qtd).toFixed(2):'-';})
@@ -4663,7 +4680,16 @@ function _folhaRenderBudgetStyle(container, rows){
       var keys=Object.keys(_sampleRow);
       return keys.some(function(rk){return rk.toUpperCase()===k;});
     }) : FOLHA_VERBAS;
-    console.log('[Folha Verba] rows:', rows.length, '| verbasDisp:', verbasDisp.length, '| sample keys:', _sampleRow?Object.keys(_sampleRow).slice(0,8):[]);
+    // Detecta formato LONGO (uma verba por linha + valor)
+    var _smpKeys2 = _sampleRow ? Object.keys(_sampleRow) : [];
+    var _vCandidates2 = ['verba','evento','tipo_verba','rubrica','descricao','desc','nome_verba','categoria'];
+    var verbaFieldVerba = null;
+    for(var iv=0; iv<_vCandidates2.length; iv++){
+      var ck = _vCandidates2[iv];
+      var matchV = _smpKeys2.find(function(k){ return k.toLowerCase()===ck.toLowerCase(); });
+      if(matchV){ verbaFieldVerba = matchV; break; }
+    }
+    console.log('[Folha Verba] rows:', rows.length, '| verbasDisp:', verbasDisp.length, '| verbaField (longo):', verbaFieldVerba, '| sample keys:', _smpKeys2.slice(0,8));
 
     // Agrupa: area → verba → { am: val }
     var byAreaVerba = {}; var totAreaV = {}; var totVerbaV = {}; var totGeralV = {};
@@ -4675,6 +4701,8 @@ function _folhaRenderBudgetStyle(container, rows){
       if(!byAreaVerba[area]) byAreaVerba[area]={};
       if(!totAreaV[area]) totAreaV[area]={};
       var keys=Object.keys(r);
+      var addedAny = false;
+      // 1) Formato LARGO: colunas separadas por verba
       verbasDisp.forEach(function(k){
         var found=keys.find(function(rk){return rk.toUpperCase()===k;});
         var val=found?folhaNum(r[found]):0; if(!val) return;
@@ -4684,8 +4712,32 @@ function _folhaRenderBudgetStyle(container, rows){
         if(!totVerbaV[k]) totVerbaV[k]={};
         totVerbaV[k][am_ym]=(totVerbaV[k][am_ym]||0)+val;
         totGeralV[am_ym]=(totGeralV[am_ym]||0)+val;
+        addedAny = true;
       });
+      // 2) Formato LONGO: 1 linha = 1 verba; usa campo categorizador + r.valor
+      if(!addedAny && verbaFieldVerba){
+        var verbaNomeLg = String(r[verbaFieldVerba]||'').trim().toUpperCase().replace(/\s+/g,'_');
+        var valorLg = folhaNum(r.valor||r.VALOR);
+        if(verbaNomeLg && valorLg){
+          if(!byAreaVerba[area][verbaNomeLg]) byAreaVerba[area][verbaNomeLg]={};
+          byAreaVerba[area][verbaNomeLg][am_ym]=(byAreaVerba[area][verbaNomeLg][am_ym]||0)+valorLg;
+          totAreaV[area][am_ym]=(totAreaV[area][am_ym]||0)+valorLg;
+          if(!totVerbaV[verbaNomeLg]) totVerbaV[verbaNomeLg]={};
+          totVerbaV[verbaNomeLg][am_ym]=(totVerbaV[verbaNomeLg][am_ym]||0)+valorLg;
+          totGeralV[am_ym]=(totGeralV[am_ym]||0)+valorLg;
+        }
+      }
     });
+    // Em modo LONGO, verbasDisp original (lista de colunas LARGAS) está vazia
+    // Substitui por TODAS as verbas que apareceram durante a agregação
+    if(verbaFieldVerba){
+      var _verbasEncontradas = {};
+      Object.keys(byAreaVerba).forEach(function(ar){
+        Object.keys(byAreaVerba[ar]).forEach(function(vk){ _verbasEncontradas[vk]=1; });
+      });
+      verbasDisp = Object.keys(_verbasEncontradas).sort();
+      console.log('[Folha Verba] modo LONGO — verbas detectadas:', verbasDisp.length, verbasDisp);
+    }
 
     var areasV=Object.keys(byAreaVerba).sort();
     var h='<div class="fh-wrap"><table class="fh-tbl"><thead><tr><th class="fh-ind">ÁREA / VERBA</th>';
@@ -5081,9 +5133,12 @@ async function openDreCfg(){
 
     // ── FOB ──
     +'<div class="dre-cfg-sec">'
-    +'<div class="dre-cfg-sec-hd">📦 FOB</div>'
+    +'<div class="dre-cfg-sec-hd">📦 FOB & Ajustes</div>'
     +'<div class="dre-cfg-grid">'
     +fieldPct('FOB (% Custo Líquido)', 'fob', getP('fob'))
+    +fieldBrl('Ajuste CMV (R$)', 'ajuste_cmv',
+      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].ajuste_cmv!=null)?DRE_CFG_PARAMS[am].ajuste_cmv:0,
+      'Valor que será adicionado ao CMV (-) do DRE neste mês')
     +'</div></div>'
 
     // ── SALÁRIOS COMERCIAIS ──
@@ -5246,6 +5301,7 @@ function applyDreCfg(){
     DRE_CFG_PARAMS[am].desp_gerais= gv('desp_gerais');
     DRE_CFG_PARAMS[am].cd_mensal  = gv('cd_mensal');
     DRE_CFG_PARAMS[am].custoGrade = gv('custoGrade');
+    DRE_CFG_PARAMS[am].ajuste_cmv = gv('ajuste_cmv');
   } else {
     // Sem mês: atualiza defaults globais
     FIXOS_DEF.marketing   = gv('desp_mkt');
