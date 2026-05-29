@@ -1188,6 +1188,7 @@ function closeConfig(){ document.getElementById('cfgOverlay').style.display = 'n
 async function gcAtualizar(key, dateCol, btn){
   var orig = btn.textContent; btn.disabled = true; btn.textContent = '⏳';
   var st = document.getElementById('cfg_status_'+key);
+  gcShowLoadingBanner('Atualizando '+TBLS[key]+'...');
   try{
     var rows = state[key] || [];
     state[key] = await fetchNew(TBLS[key], rows, dateCol, key);
@@ -1195,6 +1196,7 @@ async function gcAtualizar(key, dateCol, btn){
     toast('[OK] ' + key + ' atualizado: ' + state[key].length + ' linhas');
     processAll(); renderTabs(); renderTable();
   } catch(e){ toast('Erro ao atualizar ' + key + ': ' + e.message, 'err'); if(st) st.textContent = 'Erro'; }
+  gcHideLoadingBanner();
   btn.disabled = false; btn.textContent = orig;
 }
 
@@ -1362,13 +1364,22 @@ async function gcTestTable(btn){
 async function gcRecarregar(key, btn){
   var orig = btn.textContent; btn.disabled = true; btn.textContent = '⏳';
   var st = document.getElementById('cfg_status_'+key);
+  // Banner global de progresso
+  gcShowLoadingBanner('Carregando '+TBLS[key]+'...');
   try{
     // Para folha: força select=* pois os nomes das colunas variam por tabela
     var tKey = (key === 'folha') ? null : key;
-    state[key] = await fetchAll(TBLS[key], null, tKey);
+    state[key] = await fetchAll(TBLS[key], null, tKey, function(loaded, total){
+      var pct = total ? Math.round(loaded/total*100) : 0;
+      var msg = loaded.toLocaleString('pt-BR') + ' / ' + total.toLocaleString('pt-BR') + ' (' + pct + '%)';
+      if(st) st.textContent = '⏳ ' + msg;
+      gcUpdateLoadingBanner(TBLS[key], loaded, total);
+      btn.textContent = '⏳ ' + pct + '%';
+    });
     toast('[OK] ' + TBLS[key] + ' recarregado: ' + state[key].length + ' linhas');
     if(st) st.textContent = state[key].length + ' linhas (' + TBLS[key] + ')';
-    if(key === 'venda_dre' || key === 'frete_dre'){ DRE_RAW = state[key]; DRE_LOADED = DRE_RAW.length>0; initDre(); }
+    if(key === 'venda_dre'){ DRE_RAW = state[key]; DRE_LOADED = DRE_RAW.length>0; dreBuildFreteLookup(); initDre(); }
+    else if(key === 'frete_dre'){ DRE_FRETE_RAW = state[key]; dreBuildFreteLookup(); if(DRE_LOADED) initDre(); toast('↺ Frete atualizado — recalculando rateio...'); }
     else if(key === 'folha'){ FOLHA_RAW = state[key]; FOLHA_LOADED = true; if(document.getElementById('screenFolha').classList.contains('screen-active')) initFolha(); }
     else if(key === 'despesa'){ DRE_DESP_RAW = state[key]; BUDGET_DESP_RAW = state[key]; BUDGET_LOADED = true; }
     else if(key === 'canais'){
@@ -1383,7 +1394,44 @@ async function gcRecarregar(key, btn){
     }
     else { processAll(); renderTabs(); renderTable(); }
   } catch(e){ toast('Erro ao recarregar ' + TBLS[key] + ': ' + e.message, 'err'); if(st) st.textContent = 'Erro: '+TBLS[key]; }
+  gcHideLoadingBanner();
   btn.disabled = false; btn.textContent = orig;
+}
+
+// ── Banner global de carregamento ──────────────────────────────
+function gcShowLoadingBanner(text){
+  var b = document.getElementById('gcLoadingBanner');
+  if(!b){
+    b = document.createElement('div');
+    b.id = 'gcLoadingBanner';
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(90deg,#1a2a6c 0%,#2352c8 100%);color:#fff;padding:14px 24px;box-shadow:0 4px 12px rgba(0,0,0,.25);display:flex;align-items:center;gap:16px;font-family:inherit';
+    b.innerHTML = '<div style="font-size:22px;animation:gcSpin 1s linear infinite">⏳</div>'+
+      '<div style="flex:1"><div id="gcLoadingTitle" style="font-size:14px;font-weight:600;margin-bottom:6px">'+text+'</div>'+
+      '<div style="background:rgba(255,255,255,.2);height:6px;border-radius:3px;overflow:hidden"><div id="gcLoadingBar" style="background:#7be37b;height:100%;width:0%;transition:width .3s"></div></div>'+
+      '<div id="gcLoadingDetail" style="font-size:11px;margin-top:4px;opacity:.85">Aguarde, isso pode levar alguns minutos para tabelas grandes...</div></div>';
+    document.body.appendChild(b);
+    if(!document.getElementById('gcSpinStyle')){
+      var s = document.createElement('style');
+      s.id = 'gcSpinStyle';
+      s.textContent = '@keyframes gcSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}';
+      document.head.appendChild(s);
+    }
+  } else {
+    document.getElementById('gcLoadingTitle').textContent = text;
+    document.getElementById('gcLoadingBar').style.width = '0%';
+    document.getElementById('gcLoadingDetail').textContent = 'Aguarde, isso pode levar alguns minutos para tabelas grandes...';
+    b.style.display = 'flex';
+  }
+}
+function gcUpdateLoadingBanner(tableName, loaded, total){
+  var bar = document.getElementById('gcLoadingBar');
+  var det = document.getElementById('gcLoadingDetail');
+  if(bar && total){ bar.style.width = Math.round(loaded/total*100) + '%'; }
+  if(det){ det.textContent = tableName + ' — ' + loaded.toLocaleString('pt-BR') + ' / ' + total.toLocaleString('pt-BR') + ' linhas (' + Math.round(loaded/total*100) + '%)'; }
+}
+function gcHideLoadingBanner(){
+  var b = document.getElementById('gcLoadingBanner');
+  if(b) b.style.display = 'none';
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1714,21 +1762,27 @@ async function handleSaveOtb(btn){
 
 async function handleReloadAll(btn){
   var orig = btn.textContent; btn.disabled = true;
+  gcShowLoadingBanner('Recarregando todas as tabelas...');
+  var _onProg = function(tableName){ return function(loaded,total){ gcUpdateLoadingBanner(tableName,loaded,total); }; };
   var steps = [
-    {label:'Recarregando Produtos...', fn: async function(){ state.prod = await fetchAll(TBLS.produto, null, 'produto'); var s=document.getElementById('cfg_status_produto'); if(s) s.textContent=state.prod.length+' linhas'; }},
-    {label:'Recarregando Estoque...', fn: async function(){ state.stk = await fetchAll(TBLS.stk, null, 'stk'); var s=document.getElementById('cfg_status_stk'); if(s) s.textContent=state.stk.length+' linhas'; }},
-    {label:'Recarregando Vendas...', fn: async function(){ state.venda = await fetchAll(TBLS.venda, null, 'venda'); var s=document.getElementById('cfg_status_venda'); if(s) s.textContent=state.venda.length+' linhas'; }},
-    {label:'Recarregando Carteira...', fn: async function(){ state.cart = await fetchAll(TBLS.carteira, null, 'carteira'); var s=document.getElementById('cfg_status_carteira'); if(s) s.textContent=state.cart.length+' linhas'; }},
-    {label:'Recarregando DRE...', fn: async function(){ DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre'); DRE_LOADED = DRE_RAW.length > 0; }},
-    {label:'Recarregando Folha...', fn: async function(){ FOLHA_RAW = await fetchAll(TBLS.folha, null, null); FOLHA_LOADED = FOLHA_RAW.length > 0; }},
+    {label:'Recarregando Produtos...', fn: async function(){ state.prod = await fetchAll(TBLS.produto, null, 'produto', _onProg(TBLS.produto)); var s=document.getElementById('cfg_status_produto'); if(s) s.textContent=state.prod.length+' linhas'; }},
+    {label:'Recarregando Estoque...', fn: async function(){ state.stk = await fetchAll(TBLS.stk, null, 'stk', _onProg(TBLS.stk)); var s=document.getElementById('cfg_status_stk'); if(s) s.textContent=state.stk.length+' linhas'; }},
+    {label:'Recarregando Vendas...', fn: async function(){ state.venda = await fetchAll(TBLS.venda, null, 'venda', _onProg(TBLS.venda)); var s=document.getElementById('cfg_status_venda'); if(s) s.textContent=state.venda.length+' linhas'; }},
+    {label:'Recarregando Carteira...', fn: async function(){ state.cart = await fetchAll(TBLS.carteira, null, 'carteira', _onProg(TBLS.carteira)); var s=document.getElementById('cfg_status_carteira'); if(s) s.textContent=state.cart.length+' linhas'; }},
+    {label:'Recarregando DRE...', fn: async function(){ DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre', _onProg(TBLS.venda_dre)); DRE_LOADED = DRE_RAW.length > 0; }},
+    {label:'Recarregando Folha...', fn: async function(){ FOLHA_RAW = await fetchAll(TBLS.folha, null, null, _onProg(TBLS.folha)); FOLHA_LOADED = FOLHA_RAW.length > 0; }},
   ];
   var erros = [];
   for(var i = 0; i < steps.length; i++){
     btn.textContent = '⏳ ' + steps[i].label;
+    var tit = document.getElementById('gcLoadingTitle');
+    if(tit) tit.textContent = steps[i].label + ' ('+(i+1)+'/'+steps.length+')';
     try{ await steps[i].fn(); }
     catch(e){ erros.push(steps[i].label + ': ' + e.message); }
   }
   btn.textContent = '⏳ Processando OTB...';
+  var tit = document.getElementById('gcLoadingTitle');
+  if(tit) tit.textContent = 'Processando dados...';
   try{
     var otbMain2 = document.getElementById('otbMain');
     if(otbMain2 && !document.getElementById('tableWrap')){
@@ -1737,6 +1791,7 @@ async function handleReloadAll(btn){
     processAll(); updateOtbStatus(); renderTabs(); renderTable();
   }
   catch(e){ erros.push('processAll: ' + e.message); }
+  gcHideLoadingBanner();
   if(erros.length > 0){
     toast('⚠️ ' + erros.join(' | '), 'err', 8000);
   } else {
@@ -2631,8 +2686,10 @@ function renderTable(){
 //  DRE DATA + CALC (mantido exatamente do original)
 // ═══════════════════════════════════════════════════════
 var DRE_RAW=[], DRE_LOADED=false, DRE_TAB='mensal', DRE_SNAPSHOT=false;
-var DRE_FOLHA_RAW=[], DRE_DESP_RAW=[], DRE_CFG_PARAMS={}, DRE_CANAIS_RAW=[], DRE_CLUSTER_RAW=[]; // params por ano_mes
+var DRE_FOLHA_RAW=[], DRE_DESP_RAW=[], DRE_CFG_PARAMS={}, DRE_CANAIS_RAW=[], DRE_CLUSTER_RAW=[], DRE_FRETE_RAW=[]; // params por ano_mes
 var DRE_CANAL_LOOKUP={}, DRE_CLUSTER_LOOKUP={}, DRE_HAS_CLUSTER_LOOKUP=false, DRE_VENDEDOR_LOOKUP={};
+var DRE_FRETE_LOOKUP={}; // filial_nf_serie -> custo_frete_total_da_nota
+var DRE_NF_RECEITA={};   // filial_nf_serie -> receita_bruta_total_da_nota (para cálculo de rateio)
 var FIXOS_DEF={sal_vend:191500,sal_adm:409000,marketing:79800,desp_gerais:579000,cd_mensal:270000};
 var DRE_CONFIG={freteMetodo:'qtd',fob:{},closer:{},developer:{},farmer:{},martins:{},rca:{},branding:{},leads:{},grade:{},custoGrade:{},canaisBranding:{},canaisLeads:{}};
 var DRE_CONFIG_DEFAULTS={fob:0.006,closer:0.008,developer:0.006,farmer:0.006,martins:0.003,rca:0.005,branding:0.025,leads:0.015,grade:0,custoGrade:0};
@@ -2644,6 +2701,55 @@ function dreShowProgress(loaded, total){
   var pct = total > 0 ? Math.min(100, Math.round(loaded/total*100)) : 0;
   if(bar) bar.style.width = pct + '%';
   if(lbl) lbl.textContent = loaded.toLocaleString('pt-BR') + ' de ' + total.toLocaleString('pt-BR') + ' registros (' + pct + '%)';
+}
+
+// ── Frete: rateio do custo de frete por nota fiscal ──────────────
+// Custo do frete vem de dw_otb_frete_dre (1 linha por NF).
+// O custo é rateado entre os itens da NF em dw_otb_venda_dre proporcionalmente à receita bruta.
+// custo_frete_item = custo_frete_nf * (receita_bruta_item / receita_bruta_total_nf)
+function dreBuildFreteLookup(){
+  DRE_FRETE_LOOKUP = {};
+  DRE_NF_RECEITA = {};
+  if(!DRE_RAW || !DRE_RAW.length){ console.log('[frete] DRE_RAW vazio, skipping'); return; }
+
+  // 1) Soma custo de frete por filial_nf_serie (tabela dw_otb_frete_dre)
+  var freteRows = DRE_FRETE_RAW || [];
+  freteRows.forEach(function(r){
+    var nf = String(r.filial_nf_serie||r.FILIAL_NF_SERIE||'').trim();
+    if(!nf) return;
+    var cf = parseFloat(r.custo_frete||r.CUSTO_FRETE||r.valor_frete||r.VALOR_FRETE||r.valor||r.VALOR||0)||0;
+    DRE_FRETE_LOOKUP[nf] = (DRE_FRETE_LOOKUP[nf]||0) + cf;
+  });
+
+  // 2) Soma receita bruta por filial_nf_serie (em DRE_RAW)
+  DRE_RAW.forEach(function(r){
+    var nf = String(r.filial_nf_serie||r.FILIAL_NF_SERIE||'').trim();
+    if(!nf) return;
+    var rb = parseFloat(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO||0)||0;
+    if(rb > 0) DRE_NF_RECEITA[nf] = (DRE_NF_RECEITA[nf]||0) + rb;
+  });
+
+  // 3) Estatística de cobertura: quantas notas do venda_dre têm match no frete_dre
+  var nfVenda = Object.keys(DRE_NF_RECEITA);
+  var nfFrete = Object.keys(DRE_FRETE_LOOKUP);
+  var matched = nfVenda.filter(function(nf){ return DRE_FRETE_LOOKUP[nf]>0; }).length;
+  var totalFrete = nfFrete.reduce(function(s,nf){ return s+DRE_FRETE_LOOKUP[nf]; },0);
+  console.log('[frete] notas venda:', nfVenda.length, '| notas frete:', nfFrete.length,
+              '| match:', matched, '('+(nfVenda.length?Math.round(matched/nfVenda.length*100):0)+'%)',
+              '| total custo frete: R$', totalFrete.toLocaleString('pt-BR',{maximumFractionDigits:2}));
+}
+
+// Calcula o custo de frete rateado para uma linha (item de NF)
+function dreFreteRateadoLinha(r){
+  var nf = String(r.filial_nf_serie||r.FILIAL_NF_SERIE||'').trim();
+  if(!nf) return 0;
+  var freteTotal = DRE_FRETE_LOOKUP[nf];
+  if(!freteTotal) return 0;
+  var receitaTotalNf = DRE_NF_RECEITA[nf];
+  if(!receitaTotalNf || receitaTotalNf<=0) return 0;
+  var receitaItem = parseFloat(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO||0)||0;
+  if(receitaItem<=0) return 0;
+  return freteTotal * (receitaItem / receitaTotalNf);
 }
 async function loadDreFromSupabase(forceRaw){
   try{
@@ -2734,19 +2840,22 @@ async function loadDreFromSupabase(forceRaw){
     var snapOk = snapRows && snapRows.length > 0;
     if(!forceRaw && snapOk){
       DRE_RAW = snapRows;
-      // Carrega folha, despesa, canais e cluster em paralelo (não bloqueia renderização)
+      // Carrega folha, despesa, canais, cluster e frete em paralelo (não bloqueia renderização)
       Promise.all([
         fetchAll(TBLS.folha,   null, null).catch(function(){ return []; }),
         fetchAll(TBLS.despesa, null, 'despesa').catch(function(){ return []; }),
         fetchAll(TBLS.canais).catch(function(){ return []; }),
-        fetchAll(TBLS.cluster).catch(function(){ return []; })
+        fetchAll(TBLS.cluster).catch(function(){ return []; }),
+        fetchAll(TBLS.frete_dre).catch(function(){ return []; })
       ]).then(function(res){
         DRE_FOLHA_RAW   = res[0];
         DRE_DESP_RAW    = res[1];
         DRE_CANAIS_RAW  = res[2];
         DRE_CLUSTER_RAW = res[3];
+        DRE_FRETE_RAW   = res[4];
         dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
-        dreRender(); // re-renderiza com canal e folha enriquecidos
+        dreBuildFreteLookup();
+        dreRender(); // re-renderiza com canal, folha e frete enriquecidos
       });
       dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
       DRE_SNAPSHOT = true;
@@ -2765,14 +2874,17 @@ async function loadDreFromSupabase(forceRaw){
         fetchAll(TBLS.folha,   null, null).catch(function(){ return []; }),
         fetchAll(TBLS.despesa, null, 'despesa').catch(function(){ return []; }),
         fetchAll(TBLS.canais).catch(function(){ return []; }),
-        fetchAll(TBLS.cluster).catch(function(){ return []; })
+        fetchAll(TBLS.cluster).catch(function(){ return []; }),
+        fetchAll(TBLS.frete_dre).catch(function(){ return []; })
       ]);
       DRE_FOLHA_RAW   = aux[0];
       DRE_DESP_RAW    = aux[1];
       DRE_CANAIS_RAW  = aux[2];
       DRE_CLUSTER_RAW = aux[3];
-      // Constrói lookups para join canal/cluster
+      DRE_FRETE_RAW   = aux[4];
+      // Constrói lookups para join canal/cluster + rateio frete
       dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
+      dreBuildFreteLookup();
       // Auto-salva snapshot após 5s (dá tempo de renderizar primeiro)
       setTimeout(function(){ var b=document.getElementById('btnSaveDre'); if(b&&!b.disabled) b.click(); }, 5000);
     }
@@ -2936,7 +3048,9 @@ function dreAggregateFull(raw){
     x.pi += nk(r.pis              ||r.PIS);
     x.fe += nk(r.fecpst           ||r.FECPST);
     x.rf += nk(r.rec_frete        ||r.REC_FRETE);
-    x.cf += nk(r.custo_frete      ||r.CUSTO_FRETE);
+    // custo_frete: prioriza rateio via DRE_FRETE_LOOKUP (join filial_nf_serie); fallback para campo direto
+    var cfRateado = dreFreteRateadoLinha(r);
+    x.cf += cfRateado > 0 ? cfRateado : nk(r.custo_frete||r.CUSTO_FRETE);
     x.qg += nk(r.qtd_grade_hava   ||r.QTD_GRADE_HAVA);
   });
   return Object.values(map);
@@ -3402,7 +3516,9 @@ function dreAgg(rows){
     pis    += dreNum(r.pis               || r.PIS               || 0);
     fecpst += dreNum(r.fecpst            || r.FECPST            || 0);
     rf     += dreNum(r.rec_frete         || r.REC_FRETE         || 0);
-    cf     += dreNum(r.custo_frete       || r.CUSTO_FRETE       || 0);
+    // custo_frete: rateio via filial_nf_serie quando lookup disponível
+    var _cfR = dreFreteRateadoLinha(r);
+    cf     += _cfR > 0 ? _cfR : dreNum(r.custo_frete || r.CUSTO_FRETE || 0);
     qtdGradeHava += dreNum(r.qtd_grade_hava || r.QTD_GRADE_HAVA || 0);
   });
   var _aSet={};
