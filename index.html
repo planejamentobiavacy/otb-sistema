@@ -1380,8 +1380,39 @@ async function gcRecarregar(key, btn){
     if(st) st.textContent = state[key].length + ' linhas (' + TBLS[key] + ')';
     if(key === 'venda_dre'){ DRE_RAW = state[key]; DRE_LOADED = DRE_RAW.length>0; DRE_SNAPSHOT = false; dreBuildFreteLookup(); initDre(); }
     else if(key === 'frete_dre'){ DRE_FRETE_RAW = state[key]; dreBuildFreteLookup(); if(DRE_LOADED) initDre(); toast('↺ Frete atualizado — recalculando rateio...'); }
-    else if(key === 'folha'){ FOLHA_RAW = state[key]; FOLHA_LOADED = true; if(document.getElementById('screenFolha').classList.contains('screen-active')) initFolha(); }
-    else if(key === 'despesa'){ DRE_DESP_RAW = state[key]; BUDGET_DESP_RAW = state[key]; BUDGET_LOADED = true; }
+    else if(key === 'folha'){
+      FOLHA_RAW = state[key]; FOLHA_LOADED = true;
+      // Diagnóstico: lista os períodos encontrados
+      var _pc = {};
+      FOLHA_RAW.forEach(function(r){
+        var p = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
+        if(p.length===6) _pc[p] = (_pc[p]||0) + 1;
+      });
+      var _pks = Object.keys(_pc).sort();
+      console.log('[folha] '+FOLHA_RAW.length+' linhas | períodos:', _pks.map(function(p){ return p+' ('+_pc[p]+')'; }).join(', '));
+      if(_pks.length){
+        // Detecta também valor bruto do periodo para investigar parsing
+        var _samples = {};
+        FOLHA_RAW.forEach(function(r){
+          var raw = String(folhaGetPeriodo(r)||'');
+          if(!_samples[raw]) _samples[raw] = 0;
+          _samples[raw]++;
+        });
+        console.log('[folha] valores brutos do campo periodo:', _samples);
+      }
+      if(document.getElementById('screenFolha').classList.contains('screen-active')) initFolha();
+    }
+    else if(key === 'despesa'){
+      DRE_DESP_RAW = state[key]; BUDGET_DESP_RAW = state[key]; BUDGET_LOADED = true;
+      // Diagnóstico: lista os períodos encontrados
+      var _pcD = {};
+      state[key].forEach(function(r){
+        var p = String(r.ano_mes_venc||r.ano_mes_emissao||r.ano_mes_baixa||r.ANO_MES_VENC||r.ANO_MES_EMISSAO||r.ANO_MES_BAIXA||r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
+        if(p.length===6) _pcD[p] = (_pcD[p]||0) + 1;
+      });
+      var _pksD = Object.keys(_pcD).sort();
+      console.log('[despesa] '+state[key].length+' linhas | períodos:', _pksD.map(function(p){ return p+' ('+_pcD[p]+')'; }).join(', '));
+    }
     else if(key === 'canais'){
       DRE_CANAIS_RAW = state[key];
       if(DRE_RAW.length){ dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW); dreRender(); }
