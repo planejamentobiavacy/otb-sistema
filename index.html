@@ -1390,15 +1390,20 @@ async function gcRecarregar(key, btn){
       });
       var _pks = Object.keys(_pc).sort();
       console.log('[folha] '+FOLHA_RAW.length+' linhas | períodos:', _pks.map(function(p){ return p+' ('+_pc[p]+')'; }).join(', '));
-      if(_pks.length){
-        // Detecta também valor bruto do periodo para investigar parsing
-        var _samples = {};
-        FOLHA_RAW.forEach(function(r){
-          var raw = String(folhaGetPeriodo(r)||'');
-          if(!_samples[raw]) _samples[raw] = 0;
-          _samples[raw]++;
+      // Detalha o último período (para identificar dados parciais)
+      var ultPeriod = _pks[_pks.length-1];
+      if(ultPeriod){
+        var ultRows = FOLHA_RAW.filter(function(r){ return String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6)===ultPeriod; });
+        var ultAreas = {};
+        ultRows.forEach(function(r){
+          var nome = folhaGetNome(r);
+          var cfg  = FOLHA_CFG.classif[nome];
+          var area = (cfg&&cfg.area ? cfg.area : folhaGetArea(r)).toUpperCase();
+          ultAreas[area] = (ultAreas[area]||0)+1;
         });
-        console.log('[folha] valores brutos do campo periodo:', _samples);
+        console.log('[folha] último período '+ultPeriod+' — áreas:', ultAreas);
+        console.log('[folha] último período '+ultPeriod+' — amostra (até 5):',
+          ultRows.slice(0,5).map(function(r){ return {nome:folhaGetNome(r), area:folhaGetArea(r), periodo:folhaGetPeriodo(r)}; }));
       }
       if(document.getElementById('screenFolha').classList.contains('screen-active')) initFolha();
     }
@@ -1412,6 +1417,13 @@ async function gcRecarregar(key, btn){
       });
       var _pksD = Object.keys(_pcD).sort();
       console.log('[despesa] '+state[key].length+' linhas | períodos:', _pksD.map(function(p){ return p+' ('+_pcD[p]+')'; }).join(', '));
+      // Se Budget está aberto, força refresh do snapshot e re-renderiza
+      if(document.getElementById('screenBudget') && document.getElementById('screenBudget').classList.contains('screen-active')){
+        console.log('[despesa] Budget está aberto — re-renderizando com dados brutos');
+        if(typeof renderBudget === 'function') renderBudget();
+        else if(typeof initBudget === 'function') initBudget();
+        toast('↺ Budget atualizado — dados brutos recarregados');
+      }
     }
     else if(key === 'canais'){
       DRE_CANAIS_RAW = state[key];
