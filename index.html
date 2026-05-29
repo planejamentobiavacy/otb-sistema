@@ -2966,6 +2966,7 @@ async function loadDreFromSupabase(forceRaw){
       ]).then(function(res){
         DRE_FOLHA_RAW   = res[0];
         DRE_DESP_RAW    = res[1];
+        BUDGET_DESP_RAW = res[1]; // sincroniza para que "Base" no DRE Config funcione sem abrir Budget
         DRE_CANAIS_RAW  = res[2];
         DRE_CLUSTER_RAW = res[3];
         DRE_FRETE_RAW   = res[4];
@@ -2995,6 +2996,7 @@ async function loadDreFromSupabase(forceRaw){
       ]);
       DRE_FOLHA_RAW   = aux[0];
       DRE_DESP_RAW    = aux[1];
+      BUDGET_DESP_RAW = aux[1]; // sincroniza para que "Base" no DRE Config funcione sem abrir Budget
       DRE_CANAIS_RAW  = aux[2];
       DRE_CLUSTER_RAW = aux[3];
       DRE_FRETE_RAW   = aux[4];
@@ -5112,19 +5114,22 @@ async function openDreCfg(){
   // Despesas Gerais: se tiposDespGerais configurado, soma do Budget; senão usa despTotal
   var despGerais = (function(){
     var tipos = Object.keys(BUDGET_CFG.tiposDespGerais||{}).filter(function(k){ return BUDGET_CFG.tiposDespGerais[k]; });
+    console.log('[DRE Cfg] despGerais — tipos flagados:', tipos, '| BUDGET_DESP_RAW:', (BUDGET_DESP_RAW||[]).length, '| classif entries:', Object.keys(BUDGET_CFG.classif||{}).length);
     if(tipos.length && BUDGET_DESP_RAW && BUDGET_DESP_RAW.length){
-      var total=0;
+      var total=0; var matchedClassif=0, matchedTipo=0, matchedAm=0;
       BUDGET_DESP_RAW.forEach(function(r){
         var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
         var hist=String(r.e2_hist||r.E2_HIST||'').trim();
         var k=nomfor+'|'+hist;
         var classif=BUDGET_CFG.classif[k]||BUDGET_CFG.classif[nomfor]||{};
-        if(!classif.tipo || !tipos.includes(classif.tipo)) return;
+        if(!classif.tipo) return; matchedClassif++;
+        if(!tipos.includes(classif.tipo)) return; matchedTipo++;
         if(classif.desconsiderar==='sim') return;
         var rAm=budgetDespAm(r);
-        if(rAm!==am) return;
+        if(rAm!==am) return; matchedAm++;
         total+=parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0);
       });
+      console.log('[DRE Cfg] despGerais — am='+am+' | linhas com classif:', matchedClassif, '| com tipo flagado:', matchedTipo, '| do mês:', matchedAm, '| total: R$', total.toLocaleString('pt-BR',{maximumFractionDigits:2}));
       return total;
     }
     return despTotal('DESPESA GERAL',am)||despTotal('DESP GERAL',am)||despTotal('GERAL',am);
@@ -5132,19 +5137,22 @@ async function openDreCfg(){
   // CD: se tiposCD configurado, soma do Budget; senão usa despTotal por nome
   var despCd = (function(){
     var tipos = Object.keys(BUDGET_CFG.tiposCD||{}).filter(function(k){ return BUDGET_CFG.tiposCD[k]; });
+    console.log('[DRE Cfg] despCd — tipos flagados:', tipos, '| BUDGET_DESP_RAW:', (BUDGET_DESP_RAW||[]).length);
     if(tipos.length && BUDGET_DESP_RAW && BUDGET_DESP_RAW.length){
-      var total=0;
+      var total=0; var matchedClassif=0, matchedTipo=0, matchedAm=0;
       BUDGET_DESP_RAW.forEach(function(r){
         var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
         var hist=String(r.e2_hist||r.E2_HIST||'').trim();
         var k=nomfor+'|'+hist;
         var classif=BUDGET_CFG.classif[k]||BUDGET_CFG.classif[nomfor]||{};
-        if(!classif.tipo || !tipos.includes(classif.tipo)) return;
+        if(!classif.tipo) return; matchedClassif++;
+        if(!tipos.includes(classif.tipo)) return; matchedTipo++;
         if(classif.desconsiderar==='sim') return;
         var rAm=budgetDespAm(r);
-        if(rAm!==am) return;
+        if(rAm!==am) return; matchedAm++;
         total+=parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0);
       });
+      console.log('[DRE Cfg] despCd — am='+am+' | linhas com classif:', matchedClassif, '| com tipo flagado:', matchedTipo, '| do mês:', matchedAm, '| total: R$', total.toLocaleString('pt-BR',{maximumFractionDigits:2}));
       return total;
     }
     return despTotal('CD',am)||despTotal('CENTRO DE DISTRIBUIÇÃO',am)||despTotal('DISTRIBUICAO',am);
