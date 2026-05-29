@@ -4042,16 +4042,20 @@ function dreTabela(cols){
   var rowBig=function(l,fn,fs){fs=fs||16;return'<tr class="row-ebitda" style="background:rgba(10,90,10,.08);border-top:3px solid #0a7c4e;border-bottom:3px solid #0a7c4e"><td style="'+_stickyBase+'background:'+_solidGreen+';text-align:left;padding:10px 14px;font-size:'+fs+'px;font-weight:800;color:#084d2b">'+l+'</td>'+cols.map(function(c){var v=fn(c.d);return'<td style="text-align:center;padding:10px 14px;font-size:'+fs+'px;font-weight:800;color:#084d2b">'+v+'</td>';}).join('')+'</tr>';};
   var rowBigP=function(l,fn,fs){fs=fs||14;return'<tr class="row-ebitda" style="background:rgba(10,90,10,.08);border-bottom:3px solid #0a7c4e"><td style="'+_stickyBase+'background:'+_solidGreen+';text-align:left;padding:10px 14px;font-size:'+fs+'px;font-weight:800;color:#084d2b">'+l+'</td>'+cols.map(function(c){return'<td style="text-align:center;padding:10px 14px;font-size:'+fs+'px;font-weight:800;color:#084d2b">'+fn(c.d)+'</td>';}).join('')+'</tr>';};
   var _secGrad = 'linear-gradient(90deg,#1a2a6c 0%,#2352c8 100%)';
+  var _secStart = '#1a2a6c'; // cor sólida que combina com o início do gradiente (para a célula sticky)
   var sec=function(t){
+    // Gradiente no <tr> = aparência contínua, sem segmentação por células
+    // Primeira célula (sticky) usa cor sólida igual à origem do gradiente; demais transparentes
     return '<tr style="background:'+_secGrad+'">'
-      + '<td style="'+_stickyBase+'background:'+_secGrad+';color:#fff;font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:2px;padding:9px 14px;text-align:left">'+t+'</td>'
-      + cols.map(function(){return '<td style="background:'+_secGrad+';padding:9px 14px"></td>';}).join('')
+      + '<td style="position:sticky;left:0;z-index:12;background:'+_secStart+';color:#fff;font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:2px;padding:9px 14px;text-align:left;min-width:270px;border-right:2px solid rgba(255,255,255,.15)">'+t+'</td>'
+      + cols.map(function(){return '<td style="background:transparent;padding:9px 14px"></td>';}).join('')
       + '</tr>';
   };
   var secBig=function(t){
-    return '<tr style="background:rgba(10,90,10,.08);border-top:3px solid #0a7c4e">'
-      + '<td style="'+_stickyBase+'background:'+_solidGreen+';color:#084d2b;font-size:16px;font-weight:800;padding:10px 14px;letter-spacing:.3px;text-align:left">'+t+'</td>'
-      + cols.map(function(){return '<td style="background:'+_solidGreen+';padding:10px 14px"></td>';}).join('')
+    // Mesma estratégia: cor sólida no <tr>, transparente nas células
+    return '<tr style="background:'+_solidGreen+';border-top:3px solid #0a7c4e">'
+      + '<td style="position:sticky;left:0;z-index:12;background:'+_solidGreen+';color:#084d2b;font-size:16px;font-weight:800;padding:10px 14px;letter-spacing:.3px;text-align:left;min-width:270px;border-right:2px solid #d0d8ee">'+t+'</td>'
+      + cols.map(function(){return '<td style="background:transparent;padding:10px 14px"></td>';}).join('')
       + '</tr>';
   };
   var sp=function(){return'<tr><td colspan="'+(n+1)+'" style="height:6px;background:#f0f3fa"></td></tr>';};
