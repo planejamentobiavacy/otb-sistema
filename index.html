@@ -746,9 +746,12 @@ async function fetchAll(table, extraFilter, tableKey, onProgress){
   var out = first.rows.slice();
   // Sequencial para tabelas grandes — evita 500 por excesso de conexões simultâneas
   if(forceSeq){
+    console.log('[fetchAll]', table, '— modo sequencial,', numPages, 'páginas (~', Math.round(numPages*0.7), 's)');
     for(var sq=1; sq<numPages; sq++){
-      try{ var sqr=await fetchPage(sq*PAGE,true); out=out.concat(sqr.rows||[]); }catch(e){ break; }
+      try{ var sqr=await fetchPage(sq*PAGE,true); out=out.concat(sqr.rows||[]); }catch(e){ console.warn('[fetchAll] página',sq,'falhou:',e.message); break; }
       if(onProgress) onProgress(out.length, total);
+      // Log a cada 20 páginas (~20k linhas) para mostrar progresso
+      if(sq % 20 === 0) console.log('[fetchAll]', table, '— progresso:', out.length+'/'+total, '('+Math.round(out.length/total*100)+'%)');
     }
     console.log('[fetchAll]', table, '— total final (seq):', out.length);
     return out;
