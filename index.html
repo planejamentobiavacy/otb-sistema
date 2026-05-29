@@ -2740,6 +2740,8 @@ function dreBuildFreteLookup(){
 }
 
 // Calcula o custo de frete rateado para uma linha (item de NF)
+// Regra: dw_otb_frete_dre é a ÚNICA fonte de custo de frete.
+// Se a NF não existe nessa tabela, o custo é zero (ex: Retira na Loja, Entrega em Ônibus, Ebazar.com.br).
 function dreFreteRateadoLinha(r){
   var nf = String(r.filial_nf_serie||r.FILIAL_NF_SERIE||'').trim();
   if(!nf) return 0;
@@ -2750,6 +2752,17 @@ function dreFreteRateadoLinha(r){
   var receitaItem = parseFloat(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO||0)||0;
   if(receitaItem<=0) return 0;
   return freteTotal * (receitaItem / receitaTotalNf);
+}
+
+// Função central: retorna o custo de frete final de uma linha
+//   - Linha bruta (tem filial_nf_serie): join com dw_otb_frete_dre + rateio. Sem match = 0.
+//   - Linha agregada (snapshot): usa o cf já calculado durante a agregação inicial.
+function dreCalcCustoFrete(r){
+  var isRaw = !!(r.filial_nf_serie || r.FILIAL_NF_SERIE);
+  if(isRaw){
+    return dreFreteRateadoLinha(r);
+  }
+  return parseFloat(r.custo_frete||r.CUSTO_FRETE||r.cf||0)||0;
 }
 async function loadDreFromSupabase(forceRaw){
   try{
@@ -3048,9 +3061,8 @@ function dreAggregateFull(raw){
     x.pi += nk(r.pis              ||r.PIS);
     x.fe += nk(r.fecpst           ||r.FECPST);
     x.rf += nk(r.rec_frete        ||r.REC_FRETE);
-    // custo_frete: prioriza rateio via DRE_FRETE_LOOKUP (join filial_nf_serie); fallback para campo direto
-    var cfRateado = dreFreteRateadoLinha(r);
-    x.cf += cfRateado > 0 ? cfRateado : nk(r.custo_frete||r.CUSTO_FRETE);
+    // custo_frete: helper aplica zero-transp + rateio via filial_nf_serie + fallback
+    x.cf += dreCalcCustoFrete(r);
     x.qg += nk(r.qtd_grade_hava   ||r.QTD_GRADE_HAVA);
   });
   return Object.values(map);
@@ -3516,9 +3528,8 @@ function dreAgg(rows){
     pis    += dreNum(r.pis               || r.PIS               || 0);
     fecpst += dreNum(r.fecpst            || r.FECPST            || 0);
     rf     += dreNum(r.rec_frete         || r.REC_FRETE         || 0);
-    // custo_frete: rateio via filial_nf_serie quando lookup disponível
-    var _cfR = dreFreteRateadoLinha(r);
-    cf     += _cfR > 0 ? _cfR : dreNum(r.custo_frete || r.CUSTO_FRETE || 0);
+    // custo_frete: helper aplica zero-transp + rateio via filial_nf_serie + fallback
+    cf     += dreCalcCustoFrete(r);
     qtdGradeHava += dreNum(r.qtd_grade_hava || r.QTD_GRADE_HAVA || 0);
   });
   var _aSet={};
