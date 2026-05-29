@@ -3979,6 +3979,16 @@ async function loadFolhaFromSupabase(){
     } catch(e){}
     FOLHA_RAW=await fetchAll(TBLS.folha, null, null);
     FOLHA_LOADED=FOLHA_RAW.length>0;
+    // Diagnóstico: lista os períodos encontrados
+    if(FOLHA_LOADED){
+      var periodCount = {};
+      FOLHA_RAW.forEach(function(r){
+        var p = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
+        if(p.length===6) periodCount[p] = (periodCount[p]||0) + 1;
+      });
+      var periods = Object.keys(periodCount).sort();
+      console.log('[folha] '+FOLHA_RAW.length+' linhas | períodos:', periods.map(function(p){ return p+' ('+periodCount[p]+')'; }).join(', '));
+    }
     if(FOLHA_LOADED) initFolha();
     else document.getElementById('folhaHeaderMeta').textContent='Sem dados de folha';
   }catch(e){console.warn('Erro Folha:',e.message);}
@@ -5106,6 +5116,18 @@ async function loadBudget(forceRaw){
     // Full load from Supabase
     try{ BUDGET_DESP_RAW = await fetchAll(TBLS.despesa, null, 'despesa'); } catch(e){ BUDGET_DESP_RAW=[]; }
     if(meta) meta.textContent = BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' lançamentos 🔴 dados brutos';
+  }
+  // Diagnóstico: lista os períodos encontrados em BUDGET_DESP_RAW
+  if(BUDGET_DESP_RAW && BUDGET_DESP_RAW.length){
+    var periodCountB = {};
+    BUDGET_DESP_RAW.forEach(function(r){
+      // Tenta vários campos de período comuns em despesas
+      var p = String(r.ano_mes_venc||r.ano_mes_emissao||r.ano_mes_baixa||r.ANO_MES_VENC||r.ANO_MES_EMISSAO||r.ANO_MES_BAIXA||r.ano_mes||r.ANO_MES||'').replace(/\D/g,'').slice(0,6);
+      if(p.length===6) periodCountB[p] = (periodCountB[p]||0) + 1;
+    });
+    var pds = Object.keys(periodCountB).sort();
+    var src = (!forceRaw && saved && saved.snapshot && saved.snapshot.length) ? 'SNAPSHOT' : 'BRUTO';
+    console.log('[Budget] '+src+' — '+BUDGET_DESP_RAW.length+' linhas | períodos:', pds.map(function(p){ return p+' ('+periodCountB[p]+')'; }).join(', '));
   }
   // DRE data: try snapshot first, skip full raw fetch (too slow for Budget)
   if(!DRE_LOADED){
