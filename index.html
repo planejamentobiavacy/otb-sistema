@@ -4676,12 +4676,11 @@ function _folhaRenderBudgetStyle(container, rows){
     var verbasLabels2 = window._folhaVerbasLabels || {};
     // Detect available verba columns from first row with data
     var _sampleRow = rows.length ? rows[0] : (FOLHA_RAW && FOLHA_RAW.length ? FOLHA_RAW[0] : null);
+    var _smpKeys2 = _sampleRow ? Object.keys(_sampleRow) : [];
     var verbasDisp = _sampleRow ? FOLHA_VERBAS.filter(function(k){
-      var keys=Object.keys(_sampleRow);
-      return keys.some(function(rk){return rk.toUpperCase()===k;});
+      return _smpKeys2.some(function(rk){return rk.toUpperCase()===k;});
     }) : FOLHA_VERBAS;
     // Detecta formato LONGO (uma verba por linha + valor)
-    var _smpKeys2 = _sampleRow ? Object.keys(_sampleRow) : [];
     var _vCandidates2 = ['verba','evento','tipo_verba','rubrica','descricao','desc','nome_verba','categoria'];
     var verbaFieldVerba = null;
     for(var iv=0; iv<_vCandidates2.length; iv++){
@@ -4689,7 +4688,33 @@ function _folhaRenderBudgetStyle(container, rows){
       var matchV = _smpKeys2.find(function(k){ return k.toLowerCase()===ck.toLowerCase(); });
       if(matchV){ verbaFieldVerba = matchV; break; }
     }
-    console.log('[Folha Verba] rows:', rows.length, '| verbasDisp:', verbasDisp.length, '| verbaField (longo):', verbaFieldVerba, '| sample keys:', _smpKeys2.slice(0,8));
+    console.log('[Folha Verba] rows:', rows.length, '| total keys do sample:', _smpKeys2.length, '| verbasDisp matched:', verbasDisp.length, '| verbaField longo:', verbaFieldVerba);
+    console.log('[Folha Verba] TODAS as keys da 1ª linha:', _smpKeys2);
+    if(_sampleRow){
+      // Mostra os valores das colunas verba detectadas
+      var _sampleVerbaVals = {};
+      verbasDisp.forEach(function(k){
+        var found = _smpKeys2.find(function(rk){return rk.toUpperCase()===k;});
+        if(found) _sampleVerbaVals[k] = _sampleRow[found];
+      });
+      console.log('[Folha Verba] valores das verbas LARGAS na 1ª linha:', _sampleVerbaVals);
+      // Se tem campo de verba longa, mostra também
+      if(verbaFieldVerba){
+        console.log('[Folha Verba] valor LONGO 1ª linha — '+verbaFieldVerba+'=', _sampleRow[verbaFieldVerba], '| valor=', _sampleRow.valor || _sampleRow.VALOR);
+      }
+      // Conta quantas linhas têm pelo menos 1 verba LARGA com valor > 0
+      var withWideData = 0, withLongData = 0;
+      rows.forEach(function(r){
+        var keys=Object.keys(r);
+        var hasWide = verbasDisp.some(function(k){
+          var found=keys.find(function(rk){return rk.toUpperCase()===k;});
+          return found && folhaNum(r[found]) > 0;
+        });
+        if(hasWide) withWideData++;
+        if(verbaFieldVerba && r[verbaFieldVerba] && folhaNum(r.valor||r.VALOR)>0) withLongData++;
+      });
+      console.log('[Folha Verba] linhas com dado LARGO:', withWideData, '| linhas com dado LONGO:', withLongData, '| total:', rows.length);
+    }
 
     // Agrupa: area → verba → { am: val }
     var byAreaVerba = {}; var totAreaV = {}; var totVerbaV = {}; var totGeralV = {};
