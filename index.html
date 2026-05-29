@@ -173,7 +173,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
 .dre-header-bar{background:#fff;border-bottom:2px solid #dde3f0;flex-shrink:0;display:flex;align-items:center;padding:0 20px}
 .dre-tab-btn{font-size:13px;font-weight:600;color:#7a8ab0;background:none;border:none;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;font-family:inherit;transition:all .15s;border-radius:6px 6px 0 0}
 .dre-tab-btn.active{color:#fff!important;background:#1a2a6c!important;border-bottom:3px solid #e63946!important;font-weight:700!important;box-shadow:0 2px 8px rgba(26,42,108,.3)!important}
-.dre-panels{flex:1;overflow:auto;padding:0 0 20px 0;background:#f4f6fb}
+.dre-panels{flex:1;overflow-y:auto;overflow-x:hidden;padding:0 0 20px 0;background:#f4f6fb}
 .dre-fbar-wrap{padding:12px 20px 0}
 .dre-kpi-wrap{padding:0 20px 12px}
 .dre-empty{flex:1;display:flex;align-items:center;justify-content:center;font-size:14px;color:#7a8ab0}
@@ -256,6 +256,14 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
 ::-webkit-scrollbar-track{background:#eef1f4}
 ::-webkit-scrollbar-thumb{background:#b8bfc9;border:2px solid #eef1f4;border-radius:6px}
 ::-webkit-scrollbar-thumb:hover{background:#8a92a0}
+
+/* ── DRE Table ──────────────────────────────────── */
+.dre-tbl-wrap{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.dre-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;background:#fff;font-family:inherit}
+.dre-tbl td,.dre-tbl th{white-space:nowrap}
+.dre-tbl td{text-align:center;padding:8px 14px;font-size:12px;font-weight:500;color:#3a4a7a;border-bottom:1px solid #d0d8ee}
+.dre-tbl thead th{position:sticky;top:0;z-index:14!important;background:#1a2a6c}
+.dre-tbl thead th:first-child{position:sticky;top:0;left:0;z-index:16!important}
 </style>
 </head>
 <body>
@@ -3603,25 +3611,20 @@ function dreTabela(cols){
   var th=cols.map(function(c){var bg=c.isTotal?'linear-gradient(180deg,#0a3d0a 0%,#0d5c0d 100%)':'linear-gradient(180deg,#1e3fa8 0%,#1a2a6c 100%)';return'<th style="background:'+bg+';font-size:13px;text-transform:uppercase;letter-spacing:1px;font-weight:700;color:#fff;padding:12px 14px;text-align:center;white-space:nowrap;border-left:1px solid rgba(255,255,255,.1)">'+(c.isTotal?'TOTAL':c.label)+'</th>';}).join('');
   var td=function(fn){return cols.map(function(c){var s=c.isTotal?'background:rgba(10,100,10,.08)!important;font-weight:800;border-left:2px solid rgba(10,100,10,.25)':'';return'<td'+(s?' style="'+s+'"':'')+'>'+fn(c.d)+'</td>';}).join('');};;
   var _stickyBase='position:sticky;left:0;z-index:12;background:#fff;min-width:270px;border-right:2px solid #d0d8ee;';
+  // Cores sólidas equivalentes aos rgba transparentes (para sticky cells, evita ver dados atrás)
+  var _solidBlue='#eaeff9';  // ~ rgba(35,82,200,.07) sobre #fff
+  var _solidGreen='#ebf2eb'; // ~ rgba(10,90,10,.08) sobre #fff
   var row=function(l,fn,cls){return'<tr'+(cls?' class="'+cls+'"':'')+'><td style="'+_stickyBase+'text-align:left;padding:8px 14px;font-size:13px;font-weight:600;color:#0f1a3a;border-bottom:1px solid #d0d8ee">'+l+'</td>'+td(fn)+'</tr>';};
   var rowP=function(l,fn){return'<tr><td style="'+_stickyBase+'text-align:left;padding:5px 14px 5px 28px;font-size:11px;font-weight:500;color:#7a8ab0;border-bottom:1px dashed rgba(208,216,238,.5)">'+l+'</td>'+cols.map(function(c){return'<td style="text-align:center;padding:5px 14px;font-size:11px;color:#7a8ab0;border-bottom:1px dashed rgba(208,216,238,.5)">'+fn(c.d)+'</td>';}).join('')+'</tr>';};
-  var rowT=function(l,fn){return'<tr style="background:rgba(35,82,200,.07);border-top:2px solid #2352c8;border-bottom:2px solid #2352c8"><td style="'+_stickyBase+'background:rgba(35,82,200,.07);text-align:left;padding:8px 14px;font-size:13px;font-weight:700;color:#1a2a6c">'+l+'</td>'+cols.map(function(c){return'<td style="text-align:center;padding:8px 14px;font-size:13px;font-weight:700;color:#1a2a6c">'+fn(c.d)+'</td>';}).join('')+'</tr>';};
-  var rowBig=function(l,fn,fs){fs=fs||16;return'<tr class="row-ebitda" style="background:rgba(10,90,10,.08);border-top:3px solid #0a7c4e;border-bottom:3px solid #0a7c4e"><td style="'+_stickyBase+'background:rgba(10,90,10,.08);text-align:left;padding:10px 14px;font-size:'+fs+'px;font-weight:800;color:#084d2b">'+l+'</td>'+cols.map(function(c){var v=fn(c.d);return'<td style="text-align:center;padding:10px 14px;font-size:'+fs+'px;font-weight:800;color:#084d2b">'+v+'</td>';}).join('')+'</tr>';};
-  var rowBigP=function(l,fn,fs){fs=fs||14;return'<tr class="row-ebitda" style="background:rgba(10,90,10,.08);border-bottom:3px solid #0a7c4e"><td style="'+_stickyBase+'background:rgba(10,90,10,.08);text-align:left;padding:10px 14px;font-size:'+fs+'px;font-weight:800;color:#084d2b">'+l+'</td>'+cols.map(function(c){return'<td style="text-align:center;padding:10px 14px;font-size:'+fs+'px;font-weight:800;color:#084d2b">'+fn(c.d)+'</td>';}).join('')+'</tr>';};
+  var rowT=function(l,fn){return'<tr style="background:rgba(35,82,200,.07);border-top:2px solid #2352c8;border-bottom:2px solid #2352c8"><td style="'+_stickyBase+'background:'+_solidBlue+';text-align:left;padding:8px 14px;font-size:13px;font-weight:700;color:#1a2a6c">'+l+'</td>'+cols.map(function(c){return'<td style="text-align:center;padding:8px 14px;font-size:13px;font-weight:700;color:#1a2a6c">'+fn(c.d)+'</td>';}).join('')+'</tr>';};
+  var rowBig=function(l,fn,fs){fs=fs||16;return'<tr class="row-ebitda" style="background:rgba(10,90,10,.08);border-top:3px solid #0a7c4e;border-bottom:3px solid #0a7c4e"><td style="'+_stickyBase+'background:'+_solidGreen+';text-align:left;padding:10px 14px;font-size:'+fs+'px;font-weight:800;color:#084d2b">'+l+'</td>'+cols.map(function(c){var v=fn(c.d);return'<td style="text-align:center;padding:10px 14px;font-size:'+fs+'px;font-weight:800;color:#084d2b">'+v+'</td>';}).join('')+'</tr>';};
+  var rowBigP=function(l,fn,fs){fs=fs||14;return'<tr class="row-ebitda" style="background:rgba(10,90,10,.08);border-bottom:3px solid #0a7c4e"><td style="'+_stickyBase+'background:'+_solidGreen+';text-align:left;padding:10px 14px;font-size:'+fs+'px;font-weight:800;color:#084d2b">'+l+'</td>'+cols.map(function(c){return'<td style="text-align:center;padding:10px 14px;font-size:'+fs+'px;font-weight:800;color:#084d2b">'+fn(c.d)+'</td>';}).join('')+'</tr>';};
   var sec=function(t){return'<tr style="background:linear-gradient(90deg,#1a2a6c 0%,#2352c8 100%)"><td colspan="'+(n+1)+'" style="position:sticky;left:0;z-index:12;color:#fff;font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:2px;padding:9px 14px;background:linear-gradient(90deg,#1a2a6c 0%,#2352c8 100%)">'+t+'</td></tr>';};
-  var secBig=function(t){return'<tr style="background:rgba(10,90,10,.08);border-top:3px solid #0a7c4e"><td colspan="'+(n+1)+'" style="position:sticky;left:0;z-index:12;color:#084d2b;font-size:16px;font-weight:800;padding:10px 14px;background:rgba(10,90,10,.08);letter-spacing:.3px">'+t+'</td></tr>';};
+  var secBig=function(t){return'<tr style="background:rgba(10,90,10,.08);border-top:3px solid #0a7c4e"><td colspan="'+(n+1)+'" style="position:sticky;left:0;z-index:12;color:#084d2b;font-size:16px;font-weight:800;padding:10px 14px;background:'+_solidGreen+';letter-spacing:.3px">'+t+'</td></tr>';};
   var sp=function(){return'<tr><td colspan="'+(n+1)+'" style="height:6px;background:#f0f3fa"></td></tr>';};
-  var ebitdaRow='<tr class="row-ebitda" style="font-weight:800;font-size:16px;background:rgba(10,90,10,.08);border-top:3px solid #0a7c4e;border-bottom:3px solid #0a7c4e"><td style="'+_stickyBase+'background:rgba(10,90,10,.08);padding:10px 14px;color:#084d2b;font-size:16px;font-weight:800">EBITDA</td>'+cols.map(function(c){var v=c.d.ebt;var cl=v<0?'color:#c0181a':'color:#084d2b';return'<td style="text-align:center;padding:10px 14px;font-size:16px;font-weight:800;color:'+cl.split(':')[1]+'">'+dreBrl(v)+'</td>';}).join('')+'</tr>';
-  var ebitdaPct='<tr class="row-ebitda" style="font-size:16px;font-weight:800;background:rgba(10,90,10,.08);border-bottom:3px solid #0a7c4e"><td style="'+_stickyBase+'background:rgba(10,90,10,.08);padding:10px 14px;color:#084d2b;font-size:16px;font-weight:800">EBITDA %</td>'+cols.map(function(c){var p=c.d.rl>0?(c.d.ebt/c.d.rl*100).toFixed(1)+'%':'-';var cl=c.d.ebt<0?'color:#c0181a':'color:#084d2b';return'<td style="text-align:center;padding:10px 14px;font-size:16px"><span style="'+cl+';font-weight:800;font-size:16px">'+p+'</span></td>';}).join('')+'</tr>';
-  return'<style>'+
-  '.dre-tbl-wrap{width:100%;overflow-x:auto}'+
-  '.dre-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;background:#fff;font-family:inherit}'+
-  '.dre-tbl td,.dre-tbl th{white-space:nowrap}'+
-  '.dre-tbl td{text-align:center;padding:8px 14px;font-size:12px;font-weight:500;color:#3a4a7a;border-bottom:1px solid #d0d8ee}'+
-  '.dre-tbl thead th{position:sticky;top:0;z-index:14;background:#1a2a6c}'+
-  '.dre-tbl thead th:first-child{position:sticky;top:0;left:0;z-index:16}'+
-  '</style>'+
-  '<div class="dre-tbl-wrap">'+
+  var ebitdaRow='<tr class="row-ebitda" style="font-weight:800;font-size:16px;background:rgba(10,90,10,.08);border-top:3px solid #0a7c4e;border-bottom:3px solid #0a7c4e"><td style="'+_stickyBase+'background:'+_solidGreen+';text-align:left;padding:10px 14px;color:#084d2b;font-size:16px;font-weight:800">EBITDA</td>'+cols.map(function(c){var v=c.d.ebt;var cl=v<0?'color:#c0181a':'color:#084d2b';return'<td style="text-align:center;padding:10px 14px;font-size:16px;font-weight:800;color:'+cl.split(':')[1]+'">'+dreBrl(v)+'</td>';}).join('')+'</tr>';
+  var ebitdaPct='<tr class="row-ebitda" style="font-size:16px;font-weight:800;background:rgba(10,90,10,.08);border-bottom:3px solid #0a7c4e"><td style="'+_stickyBase+'background:'+_solidGreen+';text-align:left;padding:10px 14px;color:#084d2b;font-size:16px;font-weight:800">EBITDA %</td>'+cols.map(function(c){var p=c.d.rl>0?(c.d.ebt/c.d.rl*100).toFixed(1)+'%':'-';var cl=c.d.ebt<0?'color:#c0181a':'color:#084d2b';return'<td style="text-align:center;padding:10px 14px;font-size:16px"><span style="'+cl+';font-weight:800;font-size:16px">'+p+'</span></td>';}).join('')+'</tr>';
+  return'<div class="dre-tbl-wrap">'+
   '<table class="dre-tbl">'+
   '<thead><tr>'+
   '<th style="font-size:14px;text-transform:uppercase;letter-spacing:1px;font-weight:700;color:#fff;padding:12px 14px;text-align:left;min-width:270px;background:linear-gradient(90deg,#1a2a6c 80%,#2352c8);border-right:2px solid rgba(255,255,255,.2)">Indicador</th>'+th+
