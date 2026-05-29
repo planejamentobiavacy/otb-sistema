@@ -5368,17 +5368,23 @@ function openFolhaDetail(area, ano){
   nomes.forEach(function(nome,i){
     var row=map[nome]; var bg=i%2===0?'#fff':'#f7f9ff';
     var uid='fdet_'+i;
-    // Main row with expand button
+    // Compute allVerbas first to decide whether to show the expand button
+    var allVerbas = {};
+    months.forEach(function(ym){ Object.keys(row.verbas[ym]||{}).forEach(function(k){ allVerbas[k]=1; }); });
+    var hasVerbas = Object.keys(allVerbas).length > 0;
+    // Main row with expand button (only show triangle if there ARE verbas)
     h += '<tr style="background:'+bg+'">';
     h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;font-weight:600;color:#0f1a3a;position:sticky;left:0;background:'+bg+';z-index:1">';
-    h += '<button data-uid="'+uid+'" class="folha-expand-btn" style="background:none;border:none;cursor:pointer;font-size:11px;color:#7b2d8b;margin-right:4px;padding:0">&#9654;</button>';
+    if(hasVerbas){
+      h += '<button data-uid="'+uid+'" class="folha-expand-btn" style="background:none;border:none;cursor:pointer;font-size:11px;color:#7b2d8b;margin-right:4px;padding:0">&#9654;</button>';
+    } else {
+      h += '<span style="display:inline-block;width:14px;margin-right:4px"></span>';
+    }
     h += escHtml(nome)+'</td>';
     months.forEach(function(ym){ h += '<td style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center">'+fmtV(row.byMonth[ym])+'</td>'; });
     h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;text-align:center;font-weight:700;color:#1a2547;background:#f0f3fa">'+fmtV(row.total)+'</td>';
     h += '</tr>';
-    // Verba sub-rows (hidden by default) — use class+data-attr para evitar tbody aninhado (HTML inválido)
-    var allVerbas = {};
-    months.forEach(function(ym){ Object.keys(row.verbas[ym]||{}).forEach(function(k){ allVerbas[k]=1; }); });
+    // Verba sub-rows (hidden by default) — uses tr+class so html stays valid
     Object.keys(allVerbas).forEach(function(k){
       h += '<tr class="folha-sub-row" data-parent-uid="'+uid+'" style="display:none;background:#f9f5ff">';
       h += '<td style="padding:4px 10px 4px 28px;border-bottom:1px solid #f0ecfc;color:#7b2d8b;font-size:11px;position:sticky;left:0;background:#f9f5ff;z-index:1">↳ '+(verbasLabels[k]||k)+'</td>';
@@ -5387,6 +5393,10 @@ function openFolhaDetail(area, ano){
       h += '</tr>';
     });
   });
+  // Debug: mostra quantos colaboradores têm verbas detalhadas vs apenas total
+  var _withVerbas=0,_total=0;
+  nomes.forEach(function(n){_total++;var av={};months.forEach(function(ym){Object.keys(map[n].verbas[ym]||{}).forEach(function(k){av[k]=1;});});if(Object.keys(av).length)_withVerbas++;});
+  console.log('[openFolhaDetail]',areaUp,ano||'all','— colaboradores:',_total,'| com verbas detalhadas:',_withVerbas);
 
   // Total row
   h += '<tr style="background:#1a2547;color:#fff;font-weight:700">';
