@@ -3070,7 +3070,7 @@ function dreAggregateFull(raw){
     // Resolve nome_vendedor: campo direto na linha > lookup por código > fallback código
     var vdNome = String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||'').trim();
     if(!vdNome && vd) vdNome = _vLookup[vd] || vd;
-    var key= a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f+'|'+vdNome; // tr not in key — kept as field only
+    var key= a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f+'|'+vdNome+'|'+tr; // tr agora na chave — necessário para custo_frete correto por transportadora
     if(!map[key]) map[key]={a:a,m:m,c:c,cl:cl,rg:rg,f:f,tr:tr,vd:vdNome,fv:0,dv:0,q:0,cu:0,ic:0,co:0,pi:0,fe:0,rf:0,cf:0,qg:0};
     var x=map[key];
     x.fv += nk(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO);
