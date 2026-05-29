@@ -3453,12 +3453,12 @@ async function initDre(){
   var selVend=function(id){return dreMs(id,'Vendedor',vendedorList,130);};
   var fBar=function(ids){return '<div style="display:flex;align-items:flex-end;gap:10px;padding:10px 0 14px;flex-wrap:wrap">'+ids.join('')+'</div>';};
   document.getElementById('drePanels').innerHTML=
-    '<div id="drePanel-mensal" style="display:flex">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-mensal'),selQ('dre-q-mensal'),selMes('dre-mes-mensal'),selCanal('dre-canal-mensal'),selCluster('dre-cluster-mensal'),selRegiao('dre-reg-mensal'),selForn('dre-forn-mensal'),selTransp('dre-transp-mensal')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-mensal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-mensal"></div></div>'+
-    '<div id="drePanel-canal" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-canal'),selQ('dre-q-canal'),selMes('dre-mes-canal'),selCluster('dre-cluster-canal'),selRegiao('dre-reg-canal'),selForn('dre-forn-canal'),selTransp('dre-transp-canal')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-canal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-canal"></div></div>'+
-    '<div id="drePanel-cluster" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-cluster'),selQ('dre-q-cluster'),selMes('dre-mes-cluster'),selCanal('dre-canal-cluster'),selRegiao('dre-reg-cluster'),selForn('dre-forn-cluster'),selTransp('dre-transp-cluster')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-cluster" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-cluster"></div></div>'+
-    '<div id="drePanel-regiao" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-regiao'),selQ('dre-q-regiao'),selMes('dre-mes-regiao'),selCanal('dre-canal-regiao'),selCluster('dre-cluster-regiao'),selForn('dre-forn-regiao'),selTransp('dre-transp-regiao')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-regiao" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-regiao"></div></div>'+
-    '<div id="drePanel-fornecedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-forn'),selQ('dre-q-forn'),selMes('dre-mes-forn'),selCanal('dre-canal-forn'),selCluster('dre-cluster-forn'),selRegiao('dre-reg-forn'),selTransp('dre-transp-forn')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-forn" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-forn"></div></div>'+
-    '<div id="drePanel-transportadora" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-transp'),selQ('dre-q-transp'),selMes('dre-mes-transp'),selCanal('dre-canal-transp'),selCluster('dre-cluster-transp'),selRegiao('dre-reg-transp'),selForn('dre-forn-transp')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-transp" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-transp"></div></div>'+
+    '<div id="drePanel-mensal" style="display:flex">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-mensal'),selQ('dre-q-mensal'),selMes('dre-mes-mensal'),selCanal('dre-canal-mensal'),selCluster('dre-cluster-mensal'),selRegiao('dre-reg-mensal'),selForn('dre-forn-mensal'),selTransp('dre-transp-mensal'),selVend('dre-vend-mensal')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-mensal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-mensal"></div></div>'+
+    '<div id="drePanel-canal" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-canal'),selQ('dre-q-canal'),selMes('dre-mes-canal'),selCluster('dre-cluster-canal'),selRegiao('dre-reg-canal'),selForn('dre-forn-canal'),selTransp('dre-transp-canal'),selVend('dre-vend-canal')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-canal" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-canal"></div></div>'+
+    '<div id="drePanel-cluster" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-cluster'),selQ('dre-q-cluster'),selMes('dre-mes-cluster'),selCanal('dre-canal-cluster'),selRegiao('dre-reg-cluster'),selForn('dre-forn-cluster'),selTransp('dre-transp-cluster'),selVend('dre-vend-cluster')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-cluster" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-cluster"></div></div>'+
+    '<div id="drePanel-regiao" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-regiao'),selQ('dre-q-regiao'),selMes('dre-mes-regiao'),selCanal('dre-canal-regiao'),selCluster('dre-cluster-regiao'),selForn('dre-forn-regiao'),selTransp('dre-transp-regiao'),selVend('dre-vend-regiao')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-regiao" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-regiao"></div></div>'+
+    '<div id="drePanel-fornecedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-forn'),selQ('dre-q-forn'),selMes('dre-mes-forn'),selCanal('dre-canal-forn'),selCluster('dre-cluster-forn'),selRegiao('dre-reg-forn'),selTransp('dre-transp-forn'),selVend('dre-vend-forn')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-forn" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-forn"></div></div>'+
+    '<div id="drePanel-transportadora" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-transp'),selQ('dre-q-transp'),selMes('dre-mes-transp'),selCanal('dre-canal-transp'),selCluster('dre-cluster-transp'),selRegiao('dre-reg-transp'),selForn('dre-forn-transp'),selVend('dre-vend-transp')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-transp" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-transp"></div></div>'+
     '<div id="drePanel-vendedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-vend'),selQ('dre-q-vend'),selMes('dre-mes-vend'),selCanal('dre-canal-vend'),selCluster('dre-cluster-vend'),selRegiao('dre-reg-vend'),selForn('dre-forn-vend'),selTransp('dre-transp-vend')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-vend" style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px"></div></div>'+'<div id="dreTable-vend"></div></div>';
   dreSwitchTab('mensal');
 }
@@ -3526,12 +3526,66 @@ document.addEventListener('click', function(e){
   }
 });
 
+// Mapeamento de tipo de filtro → sufixos por aba
+// Quando um filtro muda em uma aba, sincronizamos com as outras
+var DRE_FILTER_TYPES = {
+  'ano':     ['mensal','canal','cluster','regiao','forn','transp','vend'],
+  'q':       ['mensal','canal','cluster','regiao','forn','transp','vend'],
+  'mes':     ['mensal','canal','cluster','regiao','forn','transp','vend'],
+  'canal':   ['mensal','cluster','regiao','forn','transp','vend'], // canal tab não tem filtro canal
+  'cluster': ['mensal','canal','regiao','forn','transp','vend'],   // cluster tab não tem filtro cluster
+  'reg':     ['mensal','canal','cluster','forn','transp','vend'],  // regiao tab não tem filtro regiao
+  'forn':    ['mensal','canal','cluster','regiao','transp','vend'],// fornecedor tab não tem filtro fornecedor
+  'transp':  ['mensal','canal','cluster','regiao','forn','vend'],  // transportadora tab não tem filtro transportadora
+  'vend':    ['mensal','canal','cluster','regiao','forn','transp'] // vendedor tab não tem filtro vendedor
+};
+
+// Parse o id de um filtro para descobrir tipo e aba
+// Ex: 'dre-ano-mensal' → {type:'ano', suffix:'mensal'}
+function dreParseFilterId(id){
+  // remove prefixo 'dre-'
+  if(id.indexOf('dre-')!==0) return null;
+  var rest = id.slice(4);
+  // procura cada tipo de filtro (ordem importa: 'cluster' vem antes de 'c' por exemplo)
+  var types = Object.keys(DRE_FILTER_TYPES).sort(function(a,b){ return b.length-a.length; });
+  for(var i=0;i<types.length;i++){
+    var t = types[i];
+    if(rest.indexOf(t+'-')===0){
+      return { type: t, suffix: rest.slice(t.length+1) };
+    }
+  }
+  return null;
+}
+
+// Sincroniza um filtro de uma aba para todas as outras abas
+function dreSyncFilterToAllTabs(sourceId){
+  var info = dreParseFilterId(sourceId);
+  if(!info) return;
+  var sourceDrop = document.getElementById(sourceId+'-drop');
+  if(!sourceDrop) return;
+  var checkedVals = Array.from(sourceDrop.querySelectorAll('input:checked')).map(function(c){return c.value;});
+  var otherSuffixes = (DRE_FILTER_TYPES[info.type]||[]).filter(function(s){ return s!==info.suffix; });
+  otherSuffixes.forEach(function(suf){
+    var targetId = 'dre-'+info.type+'-'+suf;
+    var targetDrop = document.getElementById(targetId+'-drop');
+    if(!targetDrop) return;
+    // marca/desmarca checkboxes para igualar à origem
+    var cbs = targetDrop.querySelectorAll('input.dre-ms-cb');
+    cbs.forEach(function(cb){ cb.checked = checkedVals.indexOf(cb.value) >= 0; });
+    // atualiza label
+    var valEl = document.getElementById(targetId+'-val');
+    if(valEl) valEl.textContent = checkedVals.length ? checkedVals.join(', ') : 'Todos';
+  });
+}
+
 function dreGvMs(id){
   var drop=document.getElementById(id+'-drop');
   if(!drop) return;
   var checked=Array.from(drop.querySelectorAll('input:checked')).map(function(c){return c.value;});
   var valEl=document.getElementById(id+'-val');
   if(valEl) valEl.textContent = checked.length?checked.join(', '):'Todos';
+  // Sincroniza com todas as outras abas antes de renderizar
+  dreSyncFilterToAllTabs(id);
   dreRender();
 }
 
