@@ -1107,8 +1107,9 @@ function openConfig(){
     var tbl = TBLS[d.key];
     var testBtn = (d.key==='despesa') ? '<button class="btn" onclick="gcDiagnoseDespesa(this)" style="font-size:11px;padding:5px 10px;background:#f0f3fa;border-color:#d0d8ee;color:#0f1a3a">🔍 Diagnóstico</button>'
               : (d.key==='folha')   ? '<button class="btn" onclick="gcDiagnoseTbl(\'folha\',this)" style="font-size:11px;padding:5px 10px;background:#f0f3fa;border-color:#d0d8ee;color:#0f1a3a">🔍 Diagnóstico</button>'
+              : (d.key==='frete_dre') ? '<button class="btn" onclick="gcDiagnoseTbl(\'frete_dre\',this)" style="font-size:11px;padding:5px 10px;background:#f0f3fa;border-color:#d0d8ee;color:#0f1a3a">🔍 Diagnóstico</button>'
               : '';
-    var spanCols = (d.key==='despesa'||d.key==='folha') ? '' : 'grid-column:span 2;';
+    var spanCols = (d.key==='despesa'||d.key==='folha'||d.key==='frete_dre') ? '' : 'grid-column:span 2;';
     return '<div class="cfg-row">'
       + '<div><span>'+d.label+'</span>'
       + '<input class="tbl-input" id="tbl_'+d.key+'" value="'+tbl+'" oninput="TBLS[&apos;'+d.key+'&apos;]=this.value;localStorage.setItem(&apos;otb_tbl_'+d.key+'&apos;,this.value)">'
@@ -5317,6 +5318,19 @@ function openFolhaDetail(area, ano){
   var ml = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   var fmtV = function(v){ if(!v||v===0) return '<span style="color:#ccc">—</span>'; return v<0?'<span style="color:#c0181a">-R$ '+Math.round(Math.abs(v)).toLocaleString('pt-BR')+'</span>':'R$ '+Math.round(v).toLocaleString('pt-BR'); };
 
+  // Detecta formato dos dados: LARGO (verbas como colunas) vs LONGO (uma verba por linha)
+  var _smp = (FOLHA_RAW||[]).find(function(r){ return r && Object.keys(r).length; });
+  var _smpKeys = _smp ? Object.keys(_smp) : [];
+  console.log('[openFolhaDetail] sample row keys:', _smpKeys);
+  var _vCandidates = ['verba','evento','tipo_verba','rubrica','descricao','desc','nome_verba','categoria'];
+  var verbaField = null;
+  for(var i=0;i<_vCandidates.length;i++){
+    var c = _vCandidates[i];
+    var match = _smpKeys.find(function(k){ return k.toLowerCase()===c.toLowerCase(); });
+    if(match){ verbaField = match; break; }
+  }
+  console.log('[openFolhaDetail] verba field detected:', verbaField);
+
   // Agrupa: nome → { byMonth: {ym:total}, verbas: {ym:{verba:val}} }
   var map = {};
   var monthSet = {};
@@ -5335,10 +5349,21 @@ function openFolhaDetail(area, ano){
     var verbas = FOLHA_VERBAS.filter(function(k){ return k!=='S13_PARC'; });
     var totalVerbas=0;
     var vObj={};
+    // 1) Formato LARGO: colunas separadas por verba
     verbas.forEach(function(k){
       var found=keys.find(function(rk){return rk.toUpperCase()===k;});
       if(found){ var v=folhaNum(r[found]); if(v){ totalVerbas+=v; vObj[k]=v; } }
     });
+    // 2) Formato LONGO: campo categorizador + valor
+    if(totalVerbas===0 && verbaField){
+      var verbaNome = String(r[verbaField]||'').trim().toUpperCase().replace(/\s+/g,'_');
+      var valor = folhaNum(r.valor||r.VALOR);
+      if(verbaNome && valor){
+        totalVerbas = valor;
+        vObj[verbaNome] = valor;
+      }
+    }
+    // 3) Fallback final: só o total
     if(totalVerbas===0) totalVerbas=parseFloat(r.valor||r.VALOR)||0;
 
     if(!map[nome]) map[nome]={total:0,byMonth:{},verbas:{}};
