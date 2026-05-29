@@ -3518,6 +3518,18 @@ document.addEventListener('click', function(e){
   btn.innerHTML = open ? '&#9654;' : '&#9660;';
 });
 
+// Folha "Por Verba" tab — toggle das sub-linhas de verba por área
+document.addEventListener('click', function(e){
+  var btn = e.target.closest('.fh-expand-btn');
+  if(!btn) return;
+  var uid = btn.getAttribute('data-uid');
+  var subRows = document.querySelectorAll('tr.fh-sub-row[data-parent-uid="'+uid+'"]');
+  if(!subRows.length) return;
+  var open = subRows[0].style.display !== 'none';
+  subRows.forEach(function(tr){ tr.style.display = open ? 'none' : ''; });
+  btn.innerHTML = open ? '&#9654;' : '&#9660;';
+});
+
 // Close dropdowns when clicking outside
 document.addEventListener('click', function(e){
   if(!e.target.closest('.dre-ms')){
@@ -4654,18 +4666,30 @@ function _folhaRenderBudgetStyle(container, rows){
     meses.forEach(function(am){h+='<th>'+_fpMesLabel(am)+'</th>';});
     h+='</tr></thead><tbody>';
 
-    areasV.forEach(function(area){
-      // Linha da área — total de verbas
-      h+='<tr class="fh-area"><td class="fh-fix">'+area+'</td>';
+    areasV.forEach(function(area,aix){
+      // Linha da área — total de verbas, com triângulo de expansão
+      var areaUid = 'fhv_'+aix;
+      // Verifica se há verbas com dados para esta área (decidir se mostra triângulo)
+      var hasVerbas = verbasDisp.some(function(k){
+        var vData=byAreaVerba[area][k]; if(!vData) return false;
+        return meses.some(function(am){return (vData[am]||0)>0;});
+      });
+      h+='<tr class="fh-area"><td class="fh-fix">';
+      if(hasVerbas){
+        h+='<button data-uid="'+areaUid+'" class="fh-expand-btn" style="background:none;border:none;cursor:pointer;font-size:11px;color:#1a2547;margin-right:6px;padding:0;font-weight:700">&#9654;</button>';
+      } else {
+        h+='<span style="display:inline-block;width:14px;margin-right:6px"></span>';
+      }
+      h+=escHtml(area)+'</td>';
       meses.forEach(function(am){var v=totAreaV[area][am]||0; h+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'—')+'</td>';});
       h+='</tr>';
-      // Sub-linhas por verba
+      // Sub-linhas por verba (ocultas por padrão, mostradas via toggle)
       verbasDisp.forEach(function(k){
         var vData=byAreaVerba[area][k];
         if(!vData) return;
         var hasData=meses.some(function(am){return (vData[am]||0)>0;});
         if(!hasData) return;
-        h+='<tr class="fh-sub"><td class="fh-fix">↳ '+(verbasLabels2[k]||k)+'</td>';
+        h+='<tr class="fh-sub fh-sub-row" data-parent-uid="'+areaUid+'" style="display:none"><td class="fh-fix">↳ '+(verbasLabels2[k]||k)+'</td>';
         meses.forEach(function(am){var v=(vData[am]||0); h+='<td class="fh-val'+(v===0?' fh-zero':'')+'">'+(v?brl(v):'—')+'</td>';});
         h+='</tr>';
       });
