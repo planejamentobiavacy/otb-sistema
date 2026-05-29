@@ -1378,7 +1378,23 @@ async function gcRecarregar(key, btn){
     });
     toast('[OK] ' + TBLS[key] + ' recarregado: ' + state[key].length + ' linhas');
     if(st) st.textContent = state[key].length + ' linhas (' + TBLS[key] + ')';
-    if(key === 'venda_dre'){ DRE_RAW = state[key]; DRE_LOADED = DRE_RAW.length>0; DRE_SNAPSHOT = false; dreBuildFreteLookup(); initDre(); }
+    if(key === 'venda_dre'){
+      DRE_RAW = state[key]; DRE_LOADED = DRE_RAW.length>0; DRE_SNAPSHOT = false; dreBuildFreteLookup();
+      // Auto-agrega em memória se tabela for grande, para UI ficar responsiva
+      if(DRE_RAW.length > 50000){
+        gcShowLoadingBanner('Otimizando '+DRE_RAW.length.toLocaleString('pt-BR')+' linhas para visualização rápida...');
+        try{
+          var _aggR = await dreAggregateFullAsync(DRE_RAW, function(done, total){
+            gcUpdateLoadingBanner('Agregando dados', done, total);
+          });
+          DRE_RAW = dreExpandSnapshot(_aggR);
+          DRE_SNAPSHOT = true;
+          console.log('[gcRecarregar] auto-agregado:', state[key].length, '→', DRE_RAW.length, 'linhas');
+        }catch(e){ console.warn('[gcRecarregar] auto-agregação falhou:', e.message); }
+        gcHideLoadingBanner();
+      }
+      initDre();
+    }
     else if(key === 'frete_dre'){ DRE_FRETE_RAW = state[key]; dreBuildFreteLookup(); if(DRE_LOADED) initDre(); toast('↺ Frete atualizado — recalculando rateio...'); }
     else if(key === 'folha'){
       FOLHA_RAW = state[key]; FOLHA_LOADED = true;
@@ -2962,6 +2978,26 @@ async function loadDreFromSupabase(forceRaw){
       // Constrói lookups para join canal/cluster + rateio frete
       dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
       dreBuildFreteLookup();
+
+      // Auto-agrega em memória para UI ficar responsiva imediatamente (sem precisar esperar o save)
+      // Sem isso, 285k linhas brutas tornam toda interação lenta/travada
+      if(DRE_RAW.length > 50000){
+        if(progLbl) progLbl.textContent = 'Otimizando dados (' + DRE_RAW.length.toLocaleString('pt-BR') + ' linhas)...';
+        console.log('[DRE] auto-agregando em memória para performance...');
+        try{
+          var aggregated = await dreAggregateFullAsync(DRE_RAW, function(done, total){
+            if(progLbl) progLbl.textContent = 'Otimizando... ' + Math.round(done/total*100) + '%';
+            dreShowProgress(done, total);
+          });
+          var expanded = dreExpandSnapshot(aggregated);
+          console.log('[DRE] auto-agregado:', DRE_RAW.length, '→', expanded.length, 'linhas');
+          DRE_RAW = expanded;
+          DRE_SNAPSHOT = true; // marca como snapshot em memória
+        }catch(e){
+          console.warn('[DRE] auto-agregação falhou, continuando com bruto:', e.message);
+        }
+      }
+
       // Auto-salva snapshot após 5s (dá tempo de renderizar primeiro)
       setTimeout(function(){ var b=document.getElementById('btnSaveDre'); if(b&&!b.disabled) b.click(); }, 5000);
     }
@@ -3348,6 +3384,11 @@ async function handleSaveDre(btn){
       // Salva meta (sem snapshot inline) com info de chunks
       await supaSave(TBLS.save_dre,'dre_current', Object.assign({},meta,{snapshot:null,chunks:chunks.length}));
       toast('✔ DRE salvo em '+chunks.length+' partes — '+snapshot.length.toLocaleString('pt-BR')+' linhas ('+kb+'KB)');
+      // Troca para modo snapshot em memória — UI fica responsiva imediatamente
+      DRE_RAW = dreExpandSnapshot(snapshot);
+      DRE_SNAPSHOT = true;
+      dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
+      dreRender();
     }
   } catch(e){ console.error('[DRE save]',e); toast('Erro ao salvar DRE: '+e.message,'err'); }
   btn.disabled=false; btn.textContent=orig;
@@ -5725,8 +5766,13 @@ function openFolhaDetail(area, ano){
     Object.keys(allVerbas).forEach(function(k){
       h += '<tr class="folha-sub-row" data-parent-uid="'+uid+'" style="display:none;background:#f9f5ff">';
       h += '<td style="padding:4px 10px 4px 28px;border-bottom:1px solid #f0ecfc;color:#7b2d8b;font-size:11px;position:sticky;left:0;background:#f9f5ff;z-index:1">↳ '+(verbasLabels[k]||k)+'</td>';
-      months.forEach(function(ym){ var v=(row.verbas[ym]||{})[k]; h += '<td style="padding:4px 8px;border-bottom:1px solid #f0ecfc;text-align:center;font-size:11px">'+fmtV(v)+'</td>'; });
-      h += '<td style="padding:4px 8px;border-bottom:1px solid #f0ecfc;text-align:center;font-size:11px;background:#f5f0ff"></td>';
+      var totalVerba = 0;
+      months.forEach(function(ym){
+        var v = (row.verbas[ym]||{})[k];
+        if(v) totalVerba += v;
+        h += '<td style="padding:4px 8px;border-bottom:1px solid #f0ecfc;text-align:center;font-size:11px">'+fmtV(v)+'</td>';
+      });
+      h += '<td style="padding:4px 8px;border-bottom:1px solid #f0ecfc;text-align:center;font-size:11px;font-weight:700;color:#7b2d8b;background:#f0e6fa">'+fmtV(totalVerba)+'</td>';
       h += '</tr>';
     });
   });
