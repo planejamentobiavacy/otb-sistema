@@ -1017,6 +1017,23 @@ async function afterLogin(){
       console.log('[afterLogin] dre_cfg_params not found yet');
     }
   } catch(e){ console.warn('[afterLogin] dre_cfg_params error:', e.message); }
+
+  // Carrega budget_classif logo no login — garante que tiposDespGerais/tiposCD estão
+  // disponíveis no DRE Config mesmo que o usuário nunca abra o Budget
+  try{
+    var budgetClassifEarly = await supaLoad(TBLS.save_dre, 'budget_classif');
+    if(budgetClassifEarly){
+      if(budgetClassifEarly.classif)        BUDGET_CFG.classif = Object.assign(BUDGET_CFG.classif||{}, budgetClassifEarly.classif);
+      if(budgetClassifEarly.tiposIgnorados) BUDGET_CFG.tiposIgnorados = budgetClassifEarly.tiposIgnorados;
+      if(budgetClassifEarly.tiposDespGerais)BUDGET_CFG.tiposDespGerais = budgetClassifEarly.tiposDespGerais;
+      if(budgetClassifEarly.tiposCD)        BUDGET_CFG.tiposCD = budgetClassifEarly.tiposCD;
+      if(budgetClassifEarly.sim)            BUDGET_CFG.sim = budgetClassifEarly.sim;
+      console.log('[afterLogin] budget_classif loaded — tiposDespGerais:', Object.keys(BUDGET_CFG.tiposDespGerais||{}).length, '| tiposCD:', Object.keys(BUDGET_CFG.tiposCD||{}).length);
+    } else {
+      console.log('[afterLogin] budget_classif not found yet');
+    }
+  } catch(e){ console.warn('[afterLogin] budget_classif error:', e.message); }
+
   // Carrega OTB em background
   loadOtbFromSupabase();
 }
@@ -4716,13 +4733,12 @@ function _folhaRenderBudgetStyle(container, rows){
       console.log('[Folha Verba] linhas com dado LARGO:', withWideData, '| linhas com dado LONGO:', withLongData, '| total:', rows.length);
     }
 
-    // Agrupa: area → verba → { am: val }
+    // Agrupa: area → verba → { am: val } (am no formato 6 chars "YYYYMM" para casar com meses)
     var byAreaVerba = {}; var totAreaV = {}; var totVerbaV = {}; var totGeralV = {};
     rows.forEach(function(r){
       var area = folhaGetArea(r);
       var am   = String(folhaGetPeriodo(r)||'').replace(/[^0-9]/g,'').slice(0,6);
       if(am.length!==6) return;
-      var am_ym = am.slice(0,4)+'-'+am.slice(4,6);
       if(!byAreaVerba[area]) byAreaVerba[area]={};
       if(!totAreaV[area]) totAreaV[area]={};
       var keys=Object.keys(r);
@@ -4732,11 +4748,11 @@ function _folhaRenderBudgetStyle(container, rows){
         var found=keys.find(function(rk){return rk.toUpperCase()===k;});
         var val=found?folhaNum(r[found]):0; if(!val) return;
         if(!byAreaVerba[area][k]) byAreaVerba[area][k]={};
-        byAreaVerba[area][k][am_ym]=(byAreaVerba[area][k][am_ym]||0)+val;
-        totAreaV[area][am_ym]=(totAreaV[area][am_ym]||0)+val;
+        byAreaVerba[area][k][am]=(byAreaVerba[area][k][am]||0)+val;
+        totAreaV[area][am]=(totAreaV[area][am]||0)+val;
         if(!totVerbaV[k]) totVerbaV[k]={};
-        totVerbaV[k][am_ym]=(totVerbaV[k][am_ym]||0)+val;
-        totGeralV[am_ym]=(totGeralV[am_ym]||0)+val;
+        totVerbaV[k][am]=(totVerbaV[k][am]||0)+val;
+        totGeralV[am]=(totGeralV[am]||0)+val;
         addedAny = true;
       });
       // 2) Formato LONGO: 1 linha = 1 verba; usa campo categorizador + r.valor
@@ -4745,11 +4761,11 @@ function _folhaRenderBudgetStyle(container, rows){
         var valorLg = folhaNum(r.valor||r.VALOR);
         if(verbaNomeLg && valorLg){
           if(!byAreaVerba[area][verbaNomeLg]) byAreaVerba[area][verbaNomeLg]={};
-          byAreaVerba[area][verbaNomeLg][am_ym]=(byAreaVerba[area][verbaNomeLg][am_ym]||0)+valorLg;
-          totAreaV[area][am_ym]=(totAreaV[area][am_ym]||0)+valorLg;
+          byAreaVerba[area][verbaNomeLg][am]=(byAreaVerba[area][verbaNomeLg][am]||0)+valorLg;
+          totAreaV[area][am]=(totAreaV[area][am]||0)+valorLg;
           if(!totVerbaV[verbaNomeLg]) totVerbaV[verbaNomeLg]={};
-          totVerbaV[verbaNomeLg][am_ym]=(totVerbaV[verbaNomeLg][am_ym]||0)+valorLg;
-          totGeralV[am_ym]=(totGeralV[am_ym]||0)+valorLg;
+          totVerbaV[verbaNomeLg][am]=(totVerbaV[verbaNomeLg][am]||0)+valorLg;
+          totGeralV[am]=(totGeralV[am]||0)+valorLg;
         }
       }
     });
@@ -5395,14 +5411,19 @@ async function loadBudget(forceRaw){
   // Carrega chave separada budget_classif — tem prioridade (sobrevive a regeneração de snapshot)
   try{
     var savedClassif = await supaLoad(TBLS.save_dre,'budget_classif');
-    if(savedClassif && savedClassif.classif){
+    if(savedClassif){
       if(savedClassif.tiposIgnorados) BUDGET_CFG.tiposIgnorados = savedClassif.tiposIgnorados;
       if(savedClassif.tiposDespGerais) BUDGET_CFG.tiposDespGerais = savedClassif.tiposDespGerais;
       if(savedClassif.tiposCD) BUDGET_CFG.tiposCD = savedClassif.tiposCD;
       if(savedClassif.sim) BUDGET_CFG.sim = savedClassif.sim;
-      // Merge: preserva entradas existentes, aplica por cima as salvas na chave dedicada
-      Object.assign(BUDGET_CFG.classif, savedClassif.classif);
-      console.log('[Budget] budget_classif carregado, savedAt:', savedClassif.savedAt, 'entradas:', Object.keys(savedClassif.classif).length);
+      if(savedClassif.classif){
+        // Merge: preserva entradas existentes, aplica por cima as salvas na chave dedicada
+        Object.assign(BUDGET_CFG.classif, savedClassif.classif);
+      }
+      console.log('[Budget] budget_classif carregado, savedAt:', savedClassif.savedAt,
+        'classif:', Object.keys(savedClassif.classif||{}).length,
+        '| tiposDespGerais:', Object.keys(BUDGET_CFG.tiposDespGerais||{}).length,
+        '| tiposCD:', Object.keys(BUDGET_CFG.tiposCD||{}).length);
     }
   } catch(e){ console.warn('[Budget] budget_classif não encontrado (primeira vez):', e.message); }
 
