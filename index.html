@@ -3089,6 +3089,67 @@ function dreAggregateFull(raw){
   return Object.values(map);
 }
 
+// Versão assíncrona de dreAggregateFull — processa em chunks com yield ao browser
+// Evita "Página sem resposta" para tabelas grandes (~285k linhas)
+// onProgress(processados, total) é chamado a cada chunk
+async function dreAggregateFullAsync(raw, onProgress){
+  var CHUNK_SIZE = 5000; // processa 5k linhas, depois libera o thread por ~0ms
+  var map = {};
+  var nk = function(v){ return dreNum(v)||0; };
+
+  // Lookup nome_vendedor (passada rápida — apenas indexação)
+  var _vLookup = Object.assign({}, DRE_VENDEDOR_LOOKUP);
+  for(var i=0; i<raw.length; i++){
+    var r = raw[i];
+    var cod  = String(r.COD_VENDEDOR||r.cod_vendedor||'').trim();
+    var nome = String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||'').trim();
+    if(cod && nome && !_vLookup[cod]) _vLookup[cod] = nome;
+    if(i>0 && i%50000===0) await new Promise(function(res){ setTimeout(res, 0); });
+  }
+
+  // Agregação principal em chunks
+  for(var ci=0; ci<raw.length; ci+=CHUNK_SIZE){
+    var end = Math.min(ci+CHUNK_SIZE, raw.length);
+    for(var j=ci; j<end; j++){
+      var r2 = raw[j];
+      var a  = String(r2.ANO||r2.ano||'');
+      var m  = String(r2.MES||r2.mes||'').padStart(2,'0');
+      var c  = dreResolveCanal(r2, _vLookup);
+      var cl = String(r2.CLUSTER||r2.cluster||'');
+      if(!cl){
+        if(DRE_HAS_CLUSTER_LOOKUP){
+          var _codCli = String(r2.COD_CLIENTE||r2.cod_cliente||r2.CLIENTE||r2.cliente||'').trim();
+          cl = DRE_CLUSTER_LOOKUP[_codCli] || 'Demais';
+        } else { cl = 'Demais'; }
+      }
+      var rg = String(r2.REGIAO||r2.regiao||'');
+      var f  = String(r2.FORNECEDOR||r2.fornecedor||'');
+      var tr = String(r2.TRANSPORTADORA||r2.transportadora||'');
+      var vd = String(r2.COD_VENDEDOR||r2.cod_vendedor||r2.VENDEDOR||r2.vendedor||'').trim();
+      var vdNome = String(r2.NOME_VENDEDOR||r2.nome_vendedor||r2.NOM_VENDEDOR||r2.nom_vendedor||'').trim();
+      if(!vdNome && vd) vdNome = _vLookup[vd] || vd;
+      var key = a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f+'|'+vdNome+'|'+tr;
+      if(!map[key]) map[key]={a:a,m:m,c:c,cl:cl,rg:rg,f:f,tr:tr,vd:vdNome,fv:0,dv:0,q:0,cu:0,ic:0,co:0,pi:0,fe:0,rf:0,cf:0,qg:0};
+      var x = map[key];
+      x.fv += nk(r2.faturamento_venda||r2.FATURAMENTO_VENDA||r2.faturamento||r2.FATURAMENTO);
+      x.dv += nk(r2.devolucao_venda  ||r2.DEVOLUCAO_VENDA);
+      x.q  += nk(r2.qtd              ||r2.QTD);
+      x.cu += nk(r2.custo            ||r2.CUSTO);
+      x.ic += nk(r2.icms             ||r2.ICMS);
+      x.co += nk(r2.cofins           ||r2.COFINS);
+      x.pi += nk(r2.pis              ||r2.PIS);
+      x.fe += nk(r2.fecpst           ||r2.FECPST);
+      x.rf += nk(r2.rec_frete        ||r2.REC_FRETE);
+      x.cf += dreCalcCustoFrete(r2);
+      x.qg += nk(r2.qtd_grade_hava   ||r2.QTD_GRADE_HAVA);
+    }
+    if(onProgress) onProgress(end, raw.length);
+    // Libera o thread para o browser respirar
+    await new Promise(function(res){ setTimeout(res, 0); });
+  }
+  return Object.values(map);
+}
+
 // Expande snapshot compacto de volta para o formato que dreAgg entende
 function dreExpandSnapshot(snap){
   return snap.map(function(x){
@@ -3170,7 +3231,22 @@ async function handleSaveDre(btn){
       }
     }
     btn.textContent = '⏳ Agregando...';
-    var snapshot = DRE_RAW.length ? dreAggregateFull(DRE_RAW) : null;
+    var snapshot;
+    if(DRE_RAW.length){
+      // Para >50k linhas, usa agregação async com progresso para não travar o browser
+      if(DRE_RAW.length > 50000){
+        gcShowLoadingBanner('Agregando '+DRE_RAW.length.toLocaleString('pt-BR')+' linhas...');
+        snapshot = await dreAggregateFullAsync(DRE_RAW, function(done, total){
+          gcUpdateLoadingBanner('Agregando DRE', done, total);
+          btn.textContent = '⏳ Agregando '+Math.round(done/total*100)+'%';
+        });
+        gcHideLoadingBanner();
+      } else {
+        snapshot = dreAggregateFull(DRE_RAW);
+      }
+    } else {
+      snapshot = null;
+    }
     // Extrai mapa cod->nome dos dados brutos (antes de entrar em snapshot)
     var vendedorMap = {};
     DRE_RAW.forEach(function(r){
