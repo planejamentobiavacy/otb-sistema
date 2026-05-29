@@ -1378,7 +1378,7 @@ async function gcRecarregar(key, btn){
     });
     toast('[OK] ' + TBLS[key] + ' recarregado: ' + state[key].length + ' linhas');
     if(st) st.textContent = state[key].length + ' linhas (' + TBLS[key] + ')';
-    if(key === 'venda_dre'){ DRE_RAW = state[key]; DRE_LOADED = DRE_RAW.length>0; dreBuildFreteLookup(); initDre(); }
+    if(key === 'venda_dre'){ DRE_RAW = state[key]; DRE_LOADED = DRE_RAW.length>0; DRE_SNAPSHOT = false; dreBuildFreteLookup(); initDre(); }
     else if(key === 'frete_dre'){ DRE_FRETE_RAW = state[key]; dreBuildFreteLookup(); if(DRE_LOADED) initDre(); toast('↺ Frete atualizado — recalculando rateio...'); }
     else if(key === 'folha'){ FOLHA_RAW = state[key]; FOLHA_LOADED = true; if(document.getElementById('screenFolha').classList.contains('screen-active')) initFolha(); }
     else if(key === 'despesa'){ DRE_DESP_RAW = state[key]; BUDGET_DESP_RAW = state[key]; BUDGET_LOADED = true; }
@@ -2714,6 +2714,8 @@ function dreBuildFreteLookup(){
 
   // 1) Soma custo de frete por filial_nf_serie (tabela dw_otb_frete_dre)
   var freteRows = DRE_FRETE_RAW || [];
+  var freteSample = freteRows.length ? Object.keys(freteRows[0]) : [];
+  console.log('[frete] dw_otb_frete_dre — campos da 1ª linha:', freteSample);
   freteRows.forEach(function(r){
     var nf = String(r.filial_nf_serie||r.FILIAL_NF_SERIE||'').trim();
     if(!nf) return;
@@ -2722,12 +2724,31 @@ function dreBuildFreteLookup(){
   });
 
   // 2) Soma receita bruta por filial_nf_serie (em DRE_RAW)
+  var vendaSample = DRE_RAW.length ? Object.keys(DRE_RAW[0]) : [];
+  console.log('[frete] dw_otb_venda_dre — campos da 1ª linha:', vendaSample);
+  var sampleRetira = null;
   DRE_RAW.forEach(function(r){
     var nf = String(r.filial_nf_serie||r.FILIAL_NF_SERIE||'').trim();
     if(!nf) return;
     var rb = parseFloat(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO||0)||0;
     if(rb > 0) DRE_NF_RECEITA[nf] = (DRE_NF_RECEITA[nf]||0) + rb;
+    // Captura uma amostra de linha "Retira na Loja" para diagnóstico
+    if(!sampleRetira){
+      var tr = String(r.transportadora||r.TRANSPORTADORA||'').trim().toUpperCase();
+      if(tr.indexOf('RETIRA') >= 0) sampleRetira = r;
+    }
   });
+  if(sampleRetira){
+    var nfR = String(sampleRetira.filial_nf_serie||sampleRetira.FILIAL_NF_SERIE||'').trim();
+    console.log('[frete] amostra linha "Retira na Loja":',
+      'nf=', nfR,
+      '| frete_lookup[nf]=', DRE_FRETE_LOOKUP[nfR],
+      '| receita_lookup[nf]=', DRE_NF_RECEITA[nfR],
+      '| custo_frete original=', sampleRetira.custo_frete||sampleRetira.CUSTO_FRETE,
+      '| isRaw=', !!(sampleRetira.filial_nf_serie||sampleRetira.FILIAL_NF_SERIE));
+  } else {
+    console.log('[frete] nenhuma linha "Retira na Loja" encontrada no DRE_RAW (talvez snapshot)');
+  }
 
   // 3) Estatística de cobertura: quantas notas do venda_dre têm match no frete_dre
   var nfVenda = Object.keys(DRE_NF_RECEITA);
