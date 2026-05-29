@@ -2862,6 +2862,30 @@ function backfillDreConfig(){
 // Mapeamento: a=ano,m=mes,c=canal,cl=cluster,r=regiao,f=fornecedor
 //             fv=faturamento_venda,dv=devolucao_venda,q=qtd,cu=custo,
 //             ic=icms,co=cofins,pi=pis,fe=fecpst,rf=rec_frete,cf=custo_frete,qg=qtd_grade_hava
+// Helper: resolve canal aplicando regras de negócio
+// Regra: vendedor cujo nome começa com "RCA" pertence ao canal "RCA"
+function dreResolveCanal(r, vendedorLookup){
+  var c = String(r.CANAL||r.canal||'').trim();
+  // Resolve nome do vendedor
+  var nome = String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||r.vd||'').trim();
+  if(!nome){
+    var cod = String(r.COD_VENDEDOR||r.cod_vendedor||'').trim();
+    if(cod){
+      var lk = vendedorLookup || DRE_VENDEDOR_LOOKUP;
+      nome = (lk && lk[cod]) || '';
+    }
+  }
+  if(nome && /^\s*RCA\b/i.test(nome)) return 'RCA';
+  // Fallback: lookup canal por cod_vendedor (já existente)
+  if(!c && Object.keys(DRE_CANAL_LOOKUP).length){
+    var a = String(r.ANO||r.ano||'');
+    var m = String(r.MES||r.mes||'').padStart(2,'0');
+    var _cod = String(r.COD_VENDEDOR||r.cod_vendedor||r.VENDEDOR||r.vendedor||'').trim();
+    c = DRE_CANAL_LOOKUP[a+m+'|'+_cod] || '';
+  }
+  return c;
+}
+
 function dreAggregateFull(raw){
   var map = {};
   var nk = function(v){ return dreNum(v)||0; };
@@ -2874,16 +2898,11 @@ function dreAggregateFull(raw){
     var nome = String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||'').trim();
     if(cod && nome && !_vLookup[cod]) _vLookup[cod] = nome;
   });
-
   raw.forEach(function(r){
     var a  = String(r.ANO||r.ano||'');
     var m  = String(r.MES||r.mes||'').padStart(2,'0');
-    // Canal: usa campo direto ou lookup por ano_mes+cod_vendedor
-    var c  = String(r.CANAL||r.canal||'');
-    if(!c && Object.keys(DRE_CANAL_LOOKUP).length){
-      var _cod = String(r.COD_VENDEDOR||r.cod_vendedor||r.VENDEDOR||r.vendedor||'').trim();
-      c = DRE_CANAL_LOOKUP[a+m+'|'+_cod] || '';
-    }
+    // Canal: helper aplica regra "vendedor RCA* -> canal RCA" + lookup por cod_vendedor
+    var c  = dreResolveCanal(r, _vLookup);
     // Cluster: usa campo direto ou lookup por cod_cliente; sem match -> "Demais"
     var cl = String(r.CLUSTER||r.cluster||'');
     if(!cl){
@@ -3069,7 +3088,7 @@ async function initDre(){
   if(state && state.matrices){ state._margProdBuilt=false; setTimeout(buildMargProdFromDre, 200); }
   var anos=Array.from(new Set(DRE_RAW.map(function(r){return r.ano||r.ANO;}))).filter(Boolean).sort();
   var meses=Array.from(new Set(DRE_RAW.map(function(r){return String(r.mes||r.MES||'').padStart(2,'0');}))).filter(function(m){return m!=='00';}).sort();
-  var canais=Array.from(new Set(DRE_RAW.map(function(r){return r.canal||r.CANAL||'';}))).filter(Boolean).sort();
+  var canais=Array.from(new Set(DRE_RAW.map(function(r){return dreResolveCanal(r)||'';}))).filter(Boolean).sort();
   var snapBadge=DRE_SNAPSHOT?'<span style="background:#e8f0fe;color:#1a56c4;font-size:10px;padding:2px 7px;border-radius:10px;margin-left:8px;font-weight:600">⚡ snapshot</span>':'<span style="background:#fff3cd;color:#856404;font-size:10px;padding:2px 7px;border-radius:10px;margin-left:8px;font-weight:600">🔴 dados brutos</span>';
   document.getElementById('dreHeaderMeta').innerHTML='<strong>'+DRE_RAW.length.toLocaleString('pt-BR')+' registros</strong> · DRE carregado'+snapBadge;
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
@@ -3165,10 +3184,10 @@ document.addEventListener('click', function(e){
   var btn = e.target.closest('.folha-expand-btn');
   if(!btn) return;
   var uid = btn.getAttribute('data-uid');
-  var s = document.getElementById(uid);
-  if(!s) return;
-  var open = s.style.display !== 'none';
-  s.style.display = open ? 'none' : 'table-row-group';
+  var subRows = document.querySelectorAll('tr.folha-sub-row[data-parent-uid="'+uid+'"]');
+  if(!subRows.length) return;
+  var open = subRows[0].style.display !== 'none';
+  subRows.forEach(function(tr){ tr.style.display = open ? 'none' : ''; });
   btn.innerHTML = open ? '&#9654;' : '&#9660;';
 });
 
@@ -3220,7 +3239,7 @@ function dreFilt(ano,mes,canal,q,cluster,regiao,forn,transp,vendedor){
   }
   if(qMeses&&qMeses.length) r=r.filter(function(x){return qMeses.includes(String(x.mes||x.MES||'').padStart(2,'0'));});
   if(mes&&mes!=='TODOS'){var _mes=Array.isArray(mes)?mes:[mes]; r=r.filter(function(x){return _mes.includes(String(x.mes||x.MES||'').padStart(2,'0'));});}
-  if(canal&&canal!=='TODOS'){var _canal=Array.isArray(canal)?canal:[canal]; r=r.filter(function(x){return _canal.map(function(c){return c.toUpperCase();}).includes(String(x.canal||x.CANAL||'').toUpperCase());});}
+  if(canal&&canal!=='TODOS'){var _canal=Array.isArray(canal)?canal:[canal]; var _canalUp=_canal.map(function(c){return c.toUpperCase();}); r=r.filter(function(x){return _canalUp.includes(String(dreResolveCanal(x)||'').toUpperCase());});}
   if(cluster&&cluster!=='TODOS'){var _cluster=Array.isArray(cluster)?cluster:[cluster]; r=r.filter(function(x){return _cluster.map(function(c){return c.toUpperCase();}).includes(String(x.cluster||x.CLUSTER||'').toUpperCase());});}
   if(regiao&&regiao!=='TODOS'){var _regiao=Array.isArray(regiao)?regiao:[regiao]; r=r.filter(function(x){return _regiao.includes(x.regiao||x.REGIAO||'');});}
   if(forn&&forn!=='TODOS'){var _forn=Array.isArray(forn)?forn:[forn]; r=r.filter(function(x){return _forn.includes(x.fornecedor||x.FORNECEDOR||'');});}
@@ -3308,6 +3327,9 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
       }
       return nome.toUpperCase();
     };
+  } else if(dimKey === 'canal'){
+    // Usa helper para aplicar regra RCA + lookup
+    dimVal = function(r){ return String(dreResolveCanal(r)||'').toUpperCase(); };
   } else {
     dimVal = function(r){ return String(r[_dimField]||r[_dimField.toUpperCase()]||'').toUpperCase(); };
   }
@@ -3388,7 +3410,7 @@ function dreAgg(rows){
   // Agrega fat_v por canal (para cálculo correto de salários comerciais por canal)
   var fat_v_canal={};
   rows.forEach(function(r){
-    var c=String(r.canal||r.CANAL||'').trim().toUpperCase();
+    var c=String(dreResolveCanal(r)||'').trim().toUpperCase();
     if(!c) return;
     fat_v_canal[c]=(fat_v_canal[c]||0)+dreNum(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO||0);
   });
@@ -5354,18 +5376,16 @@ function openFolhaDetail(area, ano){
     months.forEach(function(ym){ h += '<td style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center">'+fmtV(row.byMonth[ym])+'</td>'; });
     h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;text-align:center;font-weight:700;color:#1a2547;background:#f0f3fa">'+fmtV(row.total)+'</td>';
     h += '</tr>';
-    // Verba sub-rows (hidden by default)
-    h += '<tbody id="'+uid+'" style="display:none">';
+    // Verba sub-rows (hidden by default) — use class+data-attr para evitar tbody aninhado (HTML inválido)
     var allVerbas = {};
     months.forEach(function(ym){ Object.keys(row.verbas[ym]||{}).forEach(function(k){ allVerbas[k]=1; }); });
     Object.keys(allVerbas).forEach(function(k){
-      h += '<tr style="background:#f9f5ff">';
+      h += '<tr class="folha-sub-row" data-parent-uid="'+uid+'" style="display:none;background:#f9f5ff">';
       h += '<td style="padding:4px 10px 4px 28px;border-bottom:1px solid #f0ecfc;color:#7b2d8b;font-size:11px;position:sticky;left:0;background:#f9f5ff;z-index:1">↳ '+(verbasLabels[k]||k)+'</td>';
       months.forEach(function(ym){ var v=(row.verbas[ym]||{})[k]; h += '<td style="padding:4px 8px;border-bottom:1px solid #f0ecfc;text-align:center;font-size:11px">'+fmtV(v)+'</td>'; });
       h += '<td style="padding:4px 8px;border-bottom:1px solid #f0ecfc;text-align:center;font-size:11px;background:#f5f0ff"></td>';
       h += '</tr>';
     });
-    h += '</tbody>';
   });
 
   // Total row
