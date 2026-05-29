@@ -3153,6 +3153,22 @@ var SNAP_CHUNK = 3500000; // ~3.5MB por chave — margem segura
 async function handleSaveDre(btn){
   var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
   try{
+    // Verificação: se DRE_RAW tem filial_nf_serie mas DRE_FRETE_RAW está vazio,
+    // tenta carregar antes da agregação para garantir rateio correto do frete
+    var hasNfSerie = DRE_RAW.length && (DRE_RAW[0].filial_nf_serie || DRE_RAW[0].FILIAL_NF_SERIE);
+    if(hasNfSerie && (!DRE_FRETE_RAW || DRE_FRETE_RAW.length === 0)){
+      btn.textContent = '⏳ Carregando frete...';
+      try{
+        DRE_FRETE_RAW = await fetchAll(TBLS.frete_dre);
+        console.log('[DRE save] frete carregado on-demand:', DRE_FRETE_RAW.length, 'linhas');
+        dreBuildFreteLookup();
+      } catch(e){
+        console.warn('[DRE save] frete on-demand falhou:', e.message);
+        if(!confirm('Não foi possível carregar dw_otb_frete_dre.\n\nSalvar mesmo assim? (custo de frete ficará zero)')){
+          btn.disabled=false; btn.textContent=orig; return;
+        }
+      }
+    }
     btn.textContent = '⏳ Agregando...';
     var snapshot = DRE_RAW.length ? dreAggregateFull(DRE_RAW) : null;
     // Extrai mapa cod->nome dos dados brutos (antes de entrar em snapshot)
@@ -3658,7 +3674,11 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   var sv13ferias_share = _salShare;
   var sv=sv_closer+sv_developer+sv_farmer+sv_hava+sv_ka,com=com_martins+com_rca;
   var mb=rl-cmv-fob-grade; var pct13f=getSalPct('pct13ferias'); var sv13ferias=sv*(pct13f>0?pct13f:0.11); var mc=mb-sv-com-sv13ferias;
-  var rf_rec=a.rec_frete,cf=a.custo_frete>0?a.custo_frete:rl*0.031;
+  var rf_rec=a.rec_frete;
+  // freteMetodo: 'base' = estima 3,1% da Receita Líquida | 'qtd' (default) = valor real da base (pode ser zero)
+  var cf;
+  if(DRE_CONFIG.freteMetodo==='base') cf = rl*0.031;
+  else cf = a.custo_frete||0;
   // Marketing: valor fixo do mês (FIXOS_DEF.marketing) * shareRB
   // branding e leads são shares do total (ex: 60% branding, 40% performance)
   var mktBase=(function(){
