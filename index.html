@@ -1027,8 +1027,9 @@ async function afterLogin(){
       if(budgetClassifEarly.tiposIgnorados) BUDGET_CFG.tiposIgnorados = budgetClassifEarly.tiposIgnorados;
       if(budgetClassifEarly.tiposDespGerais)BUDGET_CFG.tiposDespGerais = budgetClassifEarly.tiposDespGerais;
       if(budgetClassifEarly.tiposCD)        BUDGET_CFG.tiposCD = budgetClassifEarly.tiposCD;
+      if(budgetClassifEarly.budgetOverrides)BUDGET_CFG.budgetOverrides = budgetClassifEarly.budgetOverrides;
       if(budgetClassifEarly.sim)            BUDGET_CFG.sim = budgetClassifEarly.sim;
-      console.log('[afterLogin] budget_classif loaded — tiposDespGerais:', Object.keys(BUDGET_CFG.tiposDespGerais||{}).length, '| tiposCD:', Object.keys(BUDGET_CFG.tiposCD||{}).length);
+      console.log('[afterLogin] budget_classif loaded — tiposDespGerais:', Object.keys(BUDGET_CFG.tiposDespGerais||{}).length, '| tiposCD:', Object.keys(BUDGET_CFG.tiposCD||{}).length, '| overrides:', Object.keys(BUDGET_CFG.budgetOverrides||{}).length);
     } else {
       console.log('[afterLogin] budget_classif not found yet');
     }
@@ -5379,6 +5380,8 @@ var BUDGET_CFG = {
   tiposIgnorados: {},
   tiposDespGerais: {}, // tipos que entram em Despesas Gerais no DRE
   tiposCD: {}, // tipos que entram em CD (Centro de Distribuição) no DRE
+  // budgetOverrides[tipo|area|nomforKey|am] = valor manual (sobrescreve otb_despesa)
+  budgetOverrides: {},
   // sim: valores simulados por mês {ym: {icms_pct, piscofins_pct, mg_prod}}
   sim: {}
 };
@@ -5423,6 +5426,7 @@ async function loadBudget(forceRaw){
       if(savedClassif.tiposIgnorados) BUDGET_CFG.tiposIgnorados = savedClassif.tiposIgnorados;
       if(savedClassif.tiposDespGerais) BUDGET_CFG.tiposDespGerais = savedClassif.tiposDespGerais;
       if(savedClassif.tiposCD) BUDGET_CFG.tiposCD = savedClassif.tiposCD;
+      if(savedClassif.budgetOverrides) BUDGET_CFG.budgetOverrides = savedClassif.budgetOverrides;
       if(savedClassif.sim) BUDGET_CFG.sim = savedClassif.sim;
       if(savedClassif.classif){
         // Merge: preserva entradas existentes, aplica por cima as salvas na chave dedicada
@@ -6053,6 +6057,113 @@ function openFolhaDetail(area, ano){
 }
 
 // ── Budget Detail Modal ─────────────────────────────────
+// ── Budget Overrides: edição célula por célula no dialog Detalhes por Fornecedor ──────
+// Chave: tipo|area|nomforKey|am (area pode ser '' quando não filtrado, am no formato YYYYMM)
+function budgetOvrKey(tipo, area, nomforKey, am){
+  return tipo+'|'+(area||'')+'|'+nomforKey+'|'+am;
+}
+// Parse de valor input (aceita "90000", "90.000", "R$ 90.000", "90.000,50")
+function parseBrlInput(v){
+  if(v == null) return null;
+  var s = String(v).trim();
+  if(!s) return null;
+  s = s.replace(/R\$/i,'').replace(/\s+/g,'').replace(/\./g,'').replace(',','.');
+  var n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+// Salva/limpa override e atualiza UI da célula + linha total
+function budgetSaveOverride(input){
+  var key = input.getAttribute('data-ovrkey');
+  var otbRaw = parseFloat(input.getAttribute('data-otb'))||0;
+  var typed = parseBrlInput(input.value);
+  var changed = false;
+  if(typed == null){
+    // Input vazio → remove override (volta a usar otb)
+    if(BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[key] != null){
+      delete BUDGET_CFG.budgetOverrides[key];
+      changed = true;
+    }
+  } else if(Math.abs(typed - otbRaw) < 0.01){
+    // Valor digitado igual ao otb → não precisa override
+    if(BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[key] != null){
+      delete BUDGET_CFG.budgetOverrides[key];
+      changed = true;
+    }
+  } else {
+    BUDGET_CFG.budgetOverrides = BUDGET_CFG.budgetOverrides || {};
+    if(BUDGET_CFG.budgetOverrides[key] !== typed){
+      BUDGET_CFG.budgetOverrides[key] = typed;
+      changed = true;
+    }
+  }
+  // Re-formata a célula e recalcula total da linha
+  budgetRenderCellValue(input);
+  budgetRecalcRowTotal(input);
+  if(changed){
+    // Salva de forma assíncrona — atualiza a chave budget_classif completa
+    supaSave(TBLS.save_dre,'budget_classif', {
+      classif: BUDGET_CFG.classif||{},
+      tiposIgnorados: BUDGET_CFG.tiposIgnorados||{},
+      tiposDespGerais: BUDGET_CFG.tiposDespGerais||{},
+      tiposCD: BUDGET_CFG.tiposCD||{},
+      budgetOverrides: BUDGET_CFG.budgetOverrides||{},
+      sim: BUDGET_CFG.sim||{},
+      savedAt: new Date().toISOString()
+    })
+      .then(function(){ toast('💾 Valor manual salvo'); })
+      .catch(function(e){ console.warn('Erro salvando override:', e.message); toast('❌ Erro ao salvar: '+e.message,'err'); });
+  }
+}
+function budgetRenderCellValue(input){
+  var otbRaw = parseFloat(input.getAttribute('data-otb'))||0;
+  var key = input.getAttribute('data-ovrkey');
+  var hasOvr = BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[key] != null;
+  var effective = hasOvr ? BUDGET_CFG.budgetOverrides[key] : otbRaw;
+  input.value = effective ? 'R$ '+Math.round(effective).toLocaleString('pt-BR') : '';
+  // Cor de fundo: amarelo (do otb) ou azul claro (com override)
+  input.style.background = hasOvr ? '#e3edff' : (otbRaw>0 ? '#fffde7' : '#fff');
+  input.style.color = hasOvr ? '#1a56c4' : (effective < 0 ? '#c0181a' : '#0f1a3a');
+  input.style.fontWeight = hasOvr ? '700' : '500';
+}
+function budgetRecalcRowTotal(input){
+  var tr = input.closest('tr');
+  if(!tr) return;
+  var inputs = tr.querySelectorAll('input.budget-cell-input');
+  var total = 0;
+  inputs.forEach(function(inp){
+    var otbRaw = parseFloat(inp.getAttribute('data-otb'))||0;
+    var key = inp.getAttribute('data-ovrkey');
+    var hasOvr = BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[key] != null;
+    total += hasOvr ? BUDGET_CFG.budgetOverrides[key] : otbRaw;
+  });
+  var totEl = tr.querySelector('.budget-row-total');
+  if(totEl) totEl.textContent = total ? 'R$ '+Math.round(total).toLocaleString('pt-BR') : '—';
+
+  // Recalcula footer (coluna por coluna + grand total)
+  var tbody = tr.closest('tbody');
+  if(!tbody) return;
+  var footerCells = tbody.querySelectorAll('.budget-footer-cell');
+  var grand = 0;
+  footerCells.forEach(function(fc){
+    var am = fc.getAttribute('data-am');
+    // Soma todos os inputs com este 'am' (último segmento da chave)
+    var allInputs = tbody.querySelectorAll('input.budget-cell-input');
+    var colSum = 0;
+    allInputs.forEach(function(inp){
+      var key = inp.getAttribute('data-ovrkey');
+      var inpAm = key.split('|').pop();
+      if(inpAm !== am) return;
+      var otbRaw = parseFloat(inp.getAttribute('data-otb'))||0;
+      var hasOvr = BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[key] != null;
+      colSum += hasOvr ? BUDGET_CFG.budgetOverrides[key] : otbRaw;
+    });
+    fc.textContent = colSum ? 'R$ '+Math.round(colSum).toLocaleString('pt-BR') : '—';
+    grand += colSum;
+  });
+  var ftEl = tbody.querySelector('.budget-footer-total');
+  if(ftEl) ftEl.textContent = grand ? 'R$ '+Math.round(grand).toLocaleString('pt-BR') : '—';
+}
+
 function openBudgetDetail(tipo, area, ano){
   var ml=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   // Aggregate: fornecedor → { total, byMonth }
@@ -6126,24 +6237,56 @@ function openBudgetDetail(tipo, area, ano){
     h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#7a8ab0;font-size:11px;max-width:300px" title="'+escHtml(obsDisplay)+'">'+escHtml(obsDisplay)+'</td>';
     months.forEach(function(am){
       var hists = row.histByMonth[am] ? Object.keys(row.histByMonth[am]) : [];
-      var tooltip = hists.length ? ' title="'+escHtml(hists.join(' | '))+'" style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center;cursor:help;background:#fffde7"' : ' style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center"';
-      h += '<td'+tooltip+'>'+fmtV(row.byMonth[am])+(hists.length?'<span style="font-size:9px;color:#b07a00;margin-left:2px">●</span>':'')+'</td>';
+      var otbVal = row.byMonth[am]||0;
+      var ovrKey = budgetOvrKey(tipo, area, fn, am);
+      var hasOvr = BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[ovrKey] != null;
+      var effective = hasOvr ? BUDGET_CFG.budgetOverrides[ovrKey] : otbVal;
+      var tipHints = [];
+      if(hists.length) tipHints.push('Hist: '+hists.join(' | '));
+      tipHints.push('Tabela otb_despesa: '+(otbVal ? 'R$ '+Math.round(otbVal).toLocaleString('pt-BR') : 'R$ 0'));
+      if(hasOvr) tipHints.push('💡 Valor editado manualmente. Deixe em branco para voltar ao valor da tabela.');
+      var bg = hasOvr ? '#e3edff' : (otbVal>0 ? '#fffde7' : '#fff');
+      var clr = hasOvr ? '#1a56c4' : (effective<0 ? '#c0181a' : '#0f1a3a');
+      var fw = hasOvr ? '700' : '500';
+      var displayVal = effective ? 'R$ '+Math.round(effective).toLocaleString('pt-BR') : '';
+      h += '<td style="padding:3px 5px;border-bottom:1px solid #eef1f8;text-align:center">'
+        + '<input type="text" class="budget-cell-input" '
+        + 'data-ovrkey="'+escHtml(ovrKey)+'" data-otb="'+otbVal+'" '
+        + 'value="'+escHtml(displayVal)+'" '
+        + 'title="'+escHtml(tipHints.join(' • '))+'" '
+        + 'onblur="budgetSaveOverride(this)" '
+        + 'onfocus="this.select()" '
+        + 'style="width:90px;padding:4px 6px;border:1px solid #d0d8ee;border-radius:4px;text-align:center;font-size:11px;background:'+bg+';color:'+clr+';font-weight:'+fw+'">'
+        + (hists.length?'<span style="font-size:9px;color:#b07a00;margin-left:2px" title="'+escHtml(hists.join(' | '))+'">●</span>':'')
+        + '</td>';
     });
-    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;text-align:center;font-weight:700;color:#1a2547;background:#f0f3fa">'+fmtV(row.total)+'</td>';
+    // Total da linha — considera overrides
+    var rowTotalEff = months.reduce(function(s,am){
+      var otb = row.byMonth[am]||0;
+      var k = budgetOvrKey(tipo, area, fn, am);
+      var hasOvr = BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[k] != null;
+      return s + (hasOvr ? BUDGET_CFG.budgetOverrides[k] : otb);
+    }, 0);
+    h += '<td class="budget-row-total" style="padding:6px 10px;border-bottom:1px solid #eef1f8;text-align:center;font-weight:700;color:#1a2547;background:#f0f3fa">'+(rowTotalEff?'R$ '+Math.round(rowTotalEff).toLocaleString('pt-BR'):'—')+'</td>';
     h += '</tr>';
   });
 
-  // Total row
+  // Total row — considera overrides
   h += '<tr style="background:#1a2547;color:#fff;font-weight:700">';
   h += '<td style="padding:7px 10px;position:sticky;left:0;background:#1a2547;z-index:1">TOTAL</td>';
   h += '<td></td>';
   var grandTotal = 0;
   months.forEach(function(am){
-    var sum = fns.reduce(function(s,fn){ return s+(map[fn].byMonth[am]||0); },0);
+    var sum = fns.reduce(function(s,fn){
+      var otb = map[fn].byMonth[am]||0;
+      var k = budgetOvrKey(tipo, area, fn, am);
+      var hasOvr = BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[k] != null;
+      return s+(hasOvr ? BUDGET_CFG.budgetOverrides[k] : otb);
+    },0);
     grandTotal += sum;
-    h += '<td style="padding:7px 8px;text-align:center">'+fmtV(sum)+'</td>';
+    h += '<td class="budget-footer-cell" data-am="'+am+'" style="padding:7px 8px;text-align:center">'+fmtV(sum)+'</td>';
   });
-  h += '<td style="padding:7px 10px;text-align:center;background:#0f1a3a">'+fmtV(grandTotal)+'</td>';
+  h += '<td class="budget-footer-total" style="padding:7px 10px;text-align:center;background:#0f1a3a">'+fmtV(grandTotal)+'</td>';
   h += '</tr>';
 
   h += '</tbody></table></div>';
@@ -6188,7 +6331,7 @@ async function handleSaveBudget(btn){
     };
     var kb = Math.round(JSON.stringify(payload).length/1024);
     // Salva classif em chave separada ANTES do payload (snapshot pode falhar)
-    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados||{}, tiposDespGerais: BUDGET_CFG.tiposDespGerais||{}, tiposCD: BUDGET_CFG.tiposCD||{}, sim: BUDGET_CFG.sim||{}, savedAt: new Date().toISOString()});
+    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados||{}, tiposDespGerais: BUDGET_CFG.tiposDespGerais||{}, tiposCD: BUDGET_CFG.tiposCD||{}, budgetOverrides: BUDGET_CFG.budgetOverrides||{}, sim: BUDGET_CFG.sim||{}, savedAt: new Date().toISOString()});
     await supaSave(TBLS.save_dre,'budget_cfg', payload);
     toast('✔ Budget salvo — snapshot de '+(snapshot?snapshot.length.toLocaleString('pt-BR'):0)+' linhas ('+kb+'KB), era '+BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' linhas brutas');
     // Badge
@@ -6528,7 +6671,7 @@ async function saveBudgetCfg(btn){
 
   try{
     // Salva em chave dedicada (sobrevive a regeneração de snapshot)
-    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados, tiposDespGerais: BUDGET_CFG.tiposDespGerais||{}, tiposCD: BUDGET_CFG.tiposCD||{}, savedAt: new Date().toISOString()});
+    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados, tiposDespGerais: BUDGET_CFG.tiposDespGerais||{}, tiposCD: BUDGET_CFG.tiposCD||{}, budgetOverrides: BUDGET_CFG.budgetOverrides||{}, savedAt: new Date().toISOString()});
     // Atualiza também budget_cfg para manter consistência
     await supaSave(TBLS.save_dre,'budget_cfg', BUDGET_CFG);
     invalidateBudgetClassifIndex();
