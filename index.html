@@ -5856,9 +5856,14 @@ function renderBudget(anoFilter){
   function dataRow(label, fn, opts){
     opts = opts||{};
     var bold = opts.bold, sub = opts.sub, isPct = opts.pct, detailBtn = opts.detailBtn, simKey = opts.simKey||null;
-    var bg = bold ? '#eef2fc' : sub ? '#fafbff' : '#fff';
-    var fw = bold ? '700' : '400';
-    var pl = sub ? '28px' : '12px';
+    var ss = opts.summaryStyle; // {gradStart, gradEnd, icon} — visual de linha-resumo colorida
+    var grad = ss ? 'linear-gradient(90deg,'+ss.gradStart+' 0%,'+ss.gradEnd+' 100%)' : null;
+    var bg = ss ? grad : (bold ? '#eef2fc' : sub ? '#fafbff' : '#fff');
+    var fw = ss ? '800' : (bold ? '700' : '400');
+    var pl = sub ? '28px' : (ss ? '14px' : '12px');
+    var rowColor = ss ? '#fff' : '#0f1a3a';
+    var pTop = ss ? '9px' : '6px';
+    var fontSize = ss ? '13px' : '12px';
     // Atributo data-parent-area para que sub-linhas possam ser ocultadas via toggle
     var trAttrs = '';
     if(opts.parentArea){
@@ -5868,7 +5873,9 @@ function renderBudget(anoFilter){
       // Linha de área (header de cada área) — pertence ao grupo "despesas" para toggle global
       trAttrs = ' class="budget-despesas-area-row budget-despesas-content" data-area-row="'+escHtml(opts.areaUid)+'"';
     }
-    h += '<tr'+trAttrs+'>';
+    // Para summary-style, aplica gradiente no <tr>
+    var trStyle = ss ? ' style="background:'+grad+'"' : '';
+    h += '<tr'+trAttrs+trStyle+'>';
     // Triângulo de expansão para linhas de área (areaUid setado)
     var toggleHtml = '';
     if(opts.areaUid){
@@ -5887,7 +5894,11 @@ function renderBudget(anoFilter){
       var fdArea = opts.folhaDetailArea, fdAno = opts.selectedAno||'';
       btnHtml = '<button data-area="'+escHtml(fdArea)+'" data-ano="'+escHtml(String(fdAno))+'" onclick="openFolhaDetail(this.dataset.area,this.dataset.ano)" style="margin-left:8px;padding:1px 7px;font-size:10px;font-weight:600;border:1.5px solid #7b2d8b;border-radius:4px;background:#fff;color:#7b2d8b;cursor:pointer;vertical-align:middle">detalhes</button>';
     }
-    h += '<td style="padding:6px '+pl+';background:'+bg+';font-weight:'+fw+';color:#0f1a3a;border-bottom:1px solid #eef1f8;border-right:2px solid #d0d8ee;position:sticky;left:0;z-index:1;display:flex;align-items:center;justify-content:space-between">'+toggleHtml+'<span style="flex:1">'+label+'</span>'+btnHtml+'</td>';
+    var labelHtml = (ss && ss.icon ? ss.icon+' ' : '') + label;
+    var labelStyle = ss
+      ? 'padding:'+pTop+' '+pl+';background:'+grad+';font-weight:'+fw+';font-size:'+fontSize+';color:#fff;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid '+ss.gradStart+';border-right:2px solid '+ss.gradStart+';position:sticky;left:0;z-index:1;display:flex;align-items:center;justify-content:space-between'
+      : 'padding:6px '+pl+';background:'+bg+';font-weight:'+fw+';color:#0f1a3a;border-bottom:1px solid #eef1f8;border-right:2px solid #d0d8ee;position:sticky;left:0;z-index:1;display:flex;align-items:center;justify-content:space-between';
+    h += '<td style="'+labelStyle+'">'+toggleHtml+'<span style="flex:1">'+labelHtml+'</span>'+btnHtml+'</td>';
     var monthlyEffectiveVals = []; // valores efetivos para somar na coluna ANO
     months.forEach(function(ym){
       var val = fn(ym);
@@ -5901,9 +5912,13 @@ function renderBudget(anoFilter){
         var hasOvr = BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[ovrKey] != null;
         var effective = hasOvr ? BUDGET_CFG.budgetOverrides[ovrKey] : otbVal;
         effectiveForYear = effective;
-        var inputBg = hasOvr ? '#e3edff' : (otbVal>0 ? '#fffde7' : '#fff');
+        // Em modo summaryStyle, inputs ficam com fundo branco translúcido pra contrastar com a linha colorida
+        var inputBg = ss
+          ? (hasOvr ? 'rgba(227,237,255,.95)' : 'rgba(255,255,255,.92)')
+          : (hasOvr ? '#e3edff' : (otbVal>0 ? '#fffde7' : '#fff'));
         var inputClr = hasOvr ? '#1a56c4' : (effective<0 ? '#c0181a' : '#0f1a3a');
-        var inputFw = hasOvr ? '700' : '600';
+        var inputFw = ss ? '700' : (hasOvr ? '700' : '600');
+        var inputBorder = ss ? 'rgba(255,255,255,.5)' : '#d0d8ee';
         var displayVal = effective ? 'R$ '+Math.round(effective).toLocaleString('pt-BR') : '';
         // Tooltip e label do botão revert: diferente quando linha é puramente manual (sem valor OTB)
         var hasOtbBase = otbVal > 0;
@@ -5919,12 +5934,12 @@ function renderBudget(anoFilter){
           + 'title="'+escHtml(tip)+'" '
           + 'onblur="budgetSaveOverride(this);setTimeout(function(){if(typeof renderBudget===\'function\')renderBudget(BUDGET_ANO_FILTER);},10);" '
           + 'onfocus="this.select()" '
-          + 'style="width:92px;padding:4px 6px;border:1px solid #d0d8ee;border-radius:4px;text-align:center;font-size:12px;background:'+inputBg+';color:'+inputClr+';font-weight:'+inputFw+'">'
+          + 'style="width:92px;padding:4px 6px;border:1px solid '+inputBorder+';border-radius:4px;text-align:center;font-size:12px;background:'+inputBg+';color:'+inputClr+';font-weight:'+inputFw+'">'
           + '<button type="button" class="budget-revert-btn" '
           + 'data-ovrkey="'+escHtml(ovrKey)+'" data-otb="'+otbVal+'" '
           + 'onclick="budgetRevertCell(this)" '
           + 'title="'+escHtml(revertTip)+'" '
-          + 'style="margin-left:2px;padding:2px 4px;border:1px solid #d0d8ee;border-radius:4px;background:#fff;color:#1a56c4;cursor:pointer;font-size:9px;line-height:1;vertical-align:middle;'+(hasOvr?'':'visibility:hidden')+'">↺</button>';
+          + 'style="margin-left:2px;padding:2px 4px;border:1px solid '+inputBorder+';border-radius:4px;background:#fff;color:#1a56c4;cursor:pointer;font-size:9px;line-height:1;vertical-align:middle;'+(hasOvr?'':'visibility:hidden')+'">↺</button>';
       } else if(future && simKey && val===null){
         // Mês futuro sem dado real: input simulável
         var simVal = BUDGET_CFG.sim[ym] && BUDGET_CFG.sim[ym][simKey] != null ? (BUDGET_CFG.sim[ym][simKey]*100).toFixed(1) : '';
@@ -5936,12 +5951,15 @@ function renderBudget(anoFilter){
         display = inp.outerHTML;
         effectiveForYear = simVal ? parseFloat(simVal)/100 : null;
       } else {
-        display = val===null ? '<span style="color:#ccc">—</span>' : isPct ? _bPct(val) : _bFmt(val);
+        display = val===null ? (ss?'<span style="color:rgba(255,255,255,.5)">—</span>':'<span style="color:#ccc">—</span>') : isPct ? _bPct(val) : _bFmt(val);
         effectiveForYear = val;
       }
       monthlyEffectiveVals.push(effectiveForYear);
-      var color = (typeof val==='number'&&val<0) ? '#c0181a' : (future?'#1a56c4':'#0f1a3a');
-      h += '<td style="text-align:center;padding:4px 8px;background:'+(future?'#f0f5ff':bg)+';font-weight:'+fw+';color:'+color+';border-bottom:1px solid #eef1f8;white-space:nowrap">'+display+'</td>';
+      var color = ss ? '#fff' : ((typeof val==='number'&&val<0) ? '#c0181a' : (future?'#1a56c4':'#0f1a3a'));
+      var cellBg = ss ? grad : (future?'#f0f5ff':bg);
+      var cellBorderBottom = ss ? ss.gradStart : '#eef1f8';
+      var cellPad = ss ? ('padding:'+pTop+' 8px') : 'padding:4px 8px';
+      h += '<td style="text-align:center;'+cellPad+';background:'+cellBg+';font-weight:'+fw+';font-size:'+fontSize+';color:'+color+';border-bottom:1px solid '+cellBorderBottom+';white-space:nowrap">'+display+'</td>';
     });
     // Coluna ANO: soma para R$ ou média para %
     var yearVal;
@@ -5951,9 +5969,12 @@ function renderBudget(anoFilter){
     } else {
       yearVal = monthlyEffectiveVals.reduce(function(s,v){return s+((typeof v === 'number')?v:0);},0);
     }
-    var yearDisplay = (yearVal == null || yearVal === 0) ? '<span style="color:#ccc">—</span>' : (isPct ? _bPct(yearVal) : _bFmt(yearVal));
-    var yearColor = (typeof yearVal==='number' && yearVal<0) ? '#c0181a' : '#0f1a3a';
-    h += '<td style="text-align:center;padding:4px 8px;background:#eef5fa;font-weight:700;color:'+yearColor+';border-bottom:1px solid #eef1f8;border-left:2px solid #d0d8ee;white-space:nowrap;position:sticky;right:0;z-index:1">'+yearDisplay+'</td>';
+    var yearDisplay = (yearVal == null || yearVal === 0) ? (ss?'<span style="color:rgba(255,255,255,.5)">—</span>':'<span style="color:#ccc">—</span>') : (isPct ? _bPct(yearVal) : _bFmt(yearVal));
+    var yearColor = ss ? '#fff' : ((typeof yearVal==='number' && yearVal<0) ? '#c0181a' : '#0f1a3a');
+    var yearStyle = ss
+      ? 'text-align:center;padding:'+pTop+' 8px;background:'+grad+';font-weight:800;font-size:'+fontSize+';color:#fff;border-bottom:1px solid '+ss.gradStart+';border-left:2px solid rgba(255,255,255,.25);white-space:nowrap;position:sticky;right:0;z-index:1;box-shadow:inset 0 0 0 9999px rgba(0,0,0,.15)'
+      : 'text-align:center;padding:4px 8px;background:#eef5fa;font-weight:700;color:'+yearColor+';border-bottom:1px solid #eef1f8;border-left:2px solid #d0d8ee;white-space:nowrap;position:sticky;right:0;z-index:1';
+    h += '<td style="'+yearStyle+'">'+yearDisplay+'</td>';
     h += '</tr>';
   }
 
@@ -6038,7 +6059,7 @@ function renderBudget(anoFilter){
 
   // ── RECEITA ──
   secRow('Receita', '📈');
-  dataRow('Receita Bruta AVACY', function(ym){ return budgetAvacyFatVal(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_BRUTA_AVACY'}});
+  dataRow('Receita Bruta AVACY', function(ym){ return budgetAvacyFatVal(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_BRUTA_AVACY'}, summaryStyle:{gradStart:'#0a7c4e', gradEnd:'#1eb574', icon:'📊'}});
   // Receita PLANO Avacy — totalmente manual, valores salvos em BUDGET_CFG.budgetOverrides
   dataRow('Receita PLANO Avacy', function(ym){ return 0; }, {bold:true, editable:{keyPrefix:'RECEITA_PLANO_AVACY'}});
   // Diff Plano = Plano - Bruta (positivo = plano maior que realizado)
