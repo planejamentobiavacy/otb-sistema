@@ -5452,6 +5452,28 @@ function applyDreCfg(){
 // ═══════════════════════════════════════════════════════
 var BUDGET_DESP_RAW = [];
 var BUDGET_LOADED = false;
+// Estado de expansão dos blocos no Budget Config (Despesas Gerais DRE, CD DRE, Tipos Ignorados)
+var BUDGET_CFG_BLOCKS_EXPANDED = {dg: true, cd: true, ignorados: true};
+// Toggle do triângulo dos 3 blocos do Budget Config
+function bcfgToggleBlock(btn, block){
+  BUDGET_CFG_BLOCKS_EXPANDED[block] = !BUDGET_CFG_BLOCKS_EXPANDED[block];
+  var newExp = BUDGET_CFG_BLOCKS_EXPANDED[block];
+  var bodies = document.querySelectorAll('.bcfg-block-body[data-block="'+block+'"]');
+  bodies.forEach(function(el){
+    if(newExp){
+      // Restaura display salvo (ou remove inline pra usar default)
+      el.style.display = el.dataset.savedDisplay || '';
+    } else {
+      // Salva display atual (computado) antes de esconder
+      if(!el.dataset.savedDisplay){
+        var current = window.getComputedStyle(el).display;
+        el.dataset.savedDisplay = (current && current !== 'none') ? current : 'flex';
+      }
+      el.style.display = 'none';
+    }
+  });
+  btn.innerHTML = newExp ? '&#9660;' : '&#9654;';
+}
 // Toggle mês no filtro multi-select do Budget
 function budgetToggleMes(ms){
   var i = BUDGET_MESES_FILTER.indexOf(ms);
@@ -6830,11 +6852,13 @@ function openBudgetCfg(){
   // Add Despesas Gerais DRE section before the table
   var dgSection = document.createElement('div');
   dgSection.style.cssText='background:#f7f9ff;border:1.5px solid #d0d8ee;border-radius:8px;padding:14px 18px;margin-bottom:8px';
+  var dgExpanded = BUDGET_CFG_BLOCKS_EXPANDED.dg !== false; // default expanded
   var dgHtml='<div style="font-size:12px;font-weight:700;color:#1a2547;margin-bottom:10px;display:flex;align-items:center;gap:8px">'
+    +'<button onclick="bcfgToggleBlock(this,\'dg\')" style="background:none;border:none;cursor:pointer;font-size:12px;color:#1a2547;padding:0 4px;font-weight:700;line-height:1">'+(dgExpanded?'&#9660;':'&#9654;')+'</button>'
     +'<span>🏢 Tipos que entram em <strong>Despesas Gerais</strong> no DRE</span>'
     +'<span style="font-size:11px;color:#7a8ab0;font-weight:400">(marque os tipos que compõem o valor de Desp. Gerais usado no DRE)</span>'
     +'</div>';
-  dgHtml += '<div style="display:flex;flex-wrap:wrap;gap:8px 16px">';
+  dgHtml += '<div class="bcfg-block-body" data-block="dg" style="display:flex;flex-wrap:wrap;gap:8px 16px'+(dgExpanded?'':';display:none')+'">';
   BUDGET_TIPOS.forEach(function(tipo){
     var checked = BUDGET_CFG.tiposDespGerais[tipo] ? 'checked' : '';
     dgHtml += '<label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#0f1a3a;cursor:pointer">'
@@ -6849,11 +6873,13 @@ function openBudgetCfg(){
   // Add CD (Centro de Distribuição) DRE section
   var cdSection = document.createElement('div');
   cdSection.style.cssText='background:#f7f9ff;border:1.5px solid #d0d8ee;border-radius:8px;padding:14px 18px;margin-bottom:8px';
+  var cdExpanded = BUDGET_CFG_BLOCKS_EXPANDED.cd !== false;
   var cdHtml='<div style="font-size:12px;font-weight:700;color:#1a2547;margin-bottom:10px;display:flex;align-items:center;gap:8px">'
+    +'<button onclick="bcfgToggleBlock(this,\'cd\')" style="background:none;border:none;cursor:pointer;font-size:12px;color:#1a2547;padding:0 4px;font-weight:700;line-height:1">'+(cdExpanded?'&#9660;':'&#9654;')+'</button>'
     +'<span>🚚 Tipos que entram em <strong>CD — Centro de Distribuição</strong> no DRE</span>'
     +'<span style="font-size:11px;color:#7a8ab0;font-weight:400">(marque os tipos que compõem o valor de CD usado no DRE)</span>'
     +'</div>';
-  cdHtml += '<div style="display:flex;flex-wrap:wrap;gap:8px 16px">';
+  cdHtml += '<div class="bcfg-block-body" data-block="cd" style="display:flex;flex-wrap:wrap;gap:8px 16px'+(cdExpanded?'':';display:none')+'">';
   BUDGET_TIPOS.forEach(function(tipo){
     var checked = (BUDGET_CFG.tiposCD||{})[tipo] ? 'checked' : '';
     cdHtml += '<label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#0f1a3a;cursor:pointer">'
@@ -6922,9 +6948,12 @@ function renderBudgetCfgTable(search){
 
   var h = '';
   // ── Tipos Ignorados ──
+  var igExpanded = BUDGET_CFG_BLOCKS_EXPANDED.ignorados !== false;
   h += '<div style="background:#fff8f5;border:1.5px solid #e05a2b;border-radius:8px;padding:12px 16px;margin-bottom:14px">';
-  h += '<div style="font-size:11px;font-weight:700;color:#e05a2b;letter-spacing:1px;margin-bottom:8px">⛔ TIPOS IGNORADOS NO BUDGET</div>';
-  h += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+  h += '<div style="font-size:11px;font-weight:700;color:#e05a2b;letter-spacing:1px;margin-bottom:8px;display:flex;align-items:center;gap:6px">';
+  h += '<button onclick="bcfgToggleBlock(this,\'ignorados\')" style="background:none;border:none;cursor:pointer;font-size:11px;color:#e05a2b;padding:0 4px;font-weight:700;line-height:1">'+(igExpanded?'&#9660;':'&#9654;')+'</button>';
+  h += '⛔ TIPOS IGNORADOS NO BUDGET</div>';
+  h += '<div class="bcfg-block-body" data-block="ignorados" style="display:flex;flex-wrap:wrap;gap:8px'+(igExpanded?'':';display:none')+'">';
   BUDGET_TIPOS.forEach(function(tipo){
     var ignored = !!BUDGET_CFG.tiposIgnorados[tipo];
     h += '<label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:12px;padding:4px 10px;border-radius:20px;border:1.5px solid '+(ignored?'#e05a2b':'#d0d8ee')+';background:'+(ignored?'#fff0ec':'#fff')+';color:'+(ignored?'#e05a2b':'#555')+';font-weight:'+(ignored?'700':'400')+'">';
@@ -6932,7 +6961,7 @@ function renderBudgetCfgTable(search){
     h += '</label>';
   });
   h += '</div>';
-  h += '<div style="font-size:10px;color:#a07060;margin-top:6px">Tipos marcados não aparecem no Dashboard do Budget nem nos cálculos</div>';
+  h += '<div class="bcfg-block-body" data-block="ignorados" style="font-size:10px;color:#a07060;margin-top:6px'+(igExpanded?'':';display:none')+'">Tipos marcados não aparecem no Dashboard do Budget nem nos cálculos</div>';
   h += '</div>';
   // Barra de busca + resumo
   h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">';
