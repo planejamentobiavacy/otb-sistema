@@ -5021,9 +5021,16 @@ async function openDreCfg(){
     }).reduce(function(s,r){ return s + (parseFloat(r.valor||r.VALOR)||0); }, 0);
   }
   function folhaTotalAdm(am){
+    // Usa DRE_FOLHA_RAW se carregado, senão FOLHA_RAW (módulo Folha)
+    var src = (DRE_FOLHA_RAW && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
+            : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW.length) ? FOLHA_RAW
+            : [];
+    console.log('[DRE Cfg] folhaTotalAdm — am='+am+' | DRE_FOLHA_RAW:', (DRE_FOLHA_RAW||[]).length, '| FOLHA_RAW:', (typeof FOLHA_RAW!=='undefined'?FOLHA_RAW.length:'undef'), '| source escolhida:', src.length);
+    if(!src.length) return 0;
     // Se há pessoas marcadas como Admin no FOLHA_CFG, usa elas
-    var hasAdminConfig = Object.values(FOLHA_CFG.classif).some(function(c){ return c.admin==='sim'; });
-    return DRE_FOLHA_RAW.filter(function(r){
+    var hasAdminConfig = Object.values(FOLHA_CFG.classif||{}).some(function(c){ return c.admin==='sim'; });
+    var totalRows = 0, totalVal = 0;
+    var filtered = src.filter(function(r){
       var nome = folhaGetNome(r);
       var anomes = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
       if(am && anomes!==am) return false;
@@ -5031,11 +5038,20 @@ async function openDreCfg(){
         // Usa flag admin explícita
         return (FOLHA_CFG.classif[nome]||{}).admin === 'sim';
       } else {
-        // Fallback: todos que não são comerciais
+        // Fallback 1: classif do Folha module com area === ADMINISTRATIVO
+        var cfg = FOLHA_CFG.classif[nome];
+        if(cfg && cfg.area){
+          return String(cfg.area).toUpperCase() === 'ADMINISTRATIVO';
+        }
+        // Fallback 2: campo area direto da linha — exclui comerciais
         var area = String(r.area||r.AREA||'').toUpperCase();
         return !['CLOSER','DEVELOPER','FARMER'].some(function(c){ return area.includes(c); });
       }
-    }).reduce(function(s,r){ return s + folhaTotal(r); }, 0);
+    });
+    totalRows = filtered.length;
+    totalVal = filtered.reduce(function(s,r){ return s + folhaTotal(r); }, 0);
+    console.log('[DRE Cfg] folhaTotalAdm — hasAdminConfig:', hasAdminConfig, '| linhas filtradas:', totalRows, '| total: R$', totalVal.toLocaleString('pt-BR',{maximumFractionDigits:2}));
+    return totalVal;
   }
   function despTotal(categoria, am){
     return DRE_DESP_RAW.filter(function(r){
@@ -5919,7 +5935,7 @@ function renderBudget(anoFilter){
     h += '<button onclick="budgetClearMeses()" style="padding:4px 9px;border:1.5px solid #c0181a;border-radius:14px;font-size:11px;font-weight:600;background:#fff;color:#c0181a;cursor:pointer;font-family:inherit;margin-left:4px" title="Limpar filtro de meses">✕ Limpar</button>';
   }
   h += '</div></div>';
-  h += '<div style="flex:1;overflow-x:auto;overflow-y:auto;min-height:0;max-height:calc(100vh - 200px)"><table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:900px">';
+  h += '<div style="flex:1;min-height:0;overflow-x:auto;overflow-y:auto"><table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:900px">';
   h += '<thead><tr>';
   h += '<th style="text-align:left;padding:8px 12px;background:#1a2547;color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;position:sticky;left:0;top:0;z-index:5;min-width:220px;border-right:2px solid rgba(255,255,255,.2)">INDICADOR</th>';
   months.forEach(function(ym){
