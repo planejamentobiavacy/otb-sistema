@@ -5889,6 +5889,13 @@ function renderBudget(anoFilter){
     });
     h += '</tr>';
   }
+  // ── Helper para linha de espaçamento entre blocos (transparente, altura fixa) ──
+  function spacerRow(){
+    h += '<tr class="budget-spacer" style="background:transparent">';
+    h += '<td style="padding:0;height:18px;background:transparent;border:none;position:sticky;left:0;z-index:1"></td>';
+    months.forEach(function(){ h += '<td style="padding:0;height:18px;background:transparent;border:none"></td>'; });
+    h += '</tr>';
+  }
   // ── Helpers para os cálculos resumo (reutilizados em várias linhas) ──
   function budgetReceitaLiquida(ym){
     var rb = budgetAvacyFatVal(ym)||0;
@@ -5916,6 +5923,7 @@ function renderBudget(anoFilter){
 
   // RECEITA LÍQUIDA (linha resumo verde)
   summaryRow('Receita Líquida', '💵', '#0a7c4e', '#1eb574', function(ym){ return budgetReceitaLiquida(ym); });
+  spacerRow();
 
   // ── CMV ──
   secRow('CMV', '🏭');
@@ -5923,6 +5931,7 @@ function renderBudget(anoFilter){
 
   // CMV R$ (linha resumo vermelha — mais escura que Total Despesas)
   summaryRow('CMV R$', '🏭', '#8b1a26', '#b32533', function(ym){ return budgetCmvVal(ym); });
+  spacerRow();
 
 
   // ── PRÉ-COMPUTA folhaByArea para uso no bloco de cada área ──
@@ -6023,6 +6032,7 @@ function renderBudget(anoFilter){
     });
     // (linha Total Despesas movida para o topo após o título)
   }
+  spacerRow();
 
   // ── EBITDA — última linha (cor azul) ──
   // EBITDA = Receita Líquida − CMV R$ − Total Despesas
