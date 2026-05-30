@@ -5149,25 +5149,13 @@ async function openDreCfg(){
     }
     return despTotal('DESPESA GERAL',am)||despTotal('DESP GERAL',am)||despTotal('GERAL',am);
   })();
-  // CD: se tiposCD configurado, soma do Budget; senão usa despTotal por nome
+  // CD: total da linha CD (Operações) do Budget para o mês — mesmo cálculo que aparece em "↳ CD" sob Operações
   var despCd = (function(){
-    var tipos = Object.keys(BUDGET_CFG.tiposCD||{}).filter(function(k){ return BUDGET_CFG.tiposCD[k]; });
-    console.log('[DRE Cfg] despCd — tipos flagados:', tipos, '| BUDGET_DESP_RAW:', (BUDGET_DESP_RAW||[]).length);
-    if(tipos.length && BUDGET_DESP_RAW && BUDGET_DESP_RAW.length){
-      var total=0; var matchedClassif=0, matchedTipo=0, matchedAm=0;
-      BUDGET_DESP_RAW.forEach(function(r){
-        var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
-        var hist=String(r.e2_hist||r.E2_HIST||'').trim();
-        var k=nomfor+'|'+hist;
-        var classif=BUDGET_CFG.classif[k]||BUDGET_CFG.classif[nomfor]||{};
-        if(!classif.tipo) return; matchedClassif++;
-        if(!tipos.includes(classif.tipo)) return; matchedTipo++;
-        if(classif.desconsiderar==='sim') return;
-        var rAm=budgetDespAm(r);
-        if(rAm!==am) return; matchedAm++;
-        total+=parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0);
-      });
-      console.log('[DRE Cfg] despCd — am='+am+' | linhas com classif:', matchedClassif, '| com tipo flagado:', matchedTipo, '| do mês:', matchedAm, '| total: R$', total.toLocaleString('pt-BR',{maximumFractionDigits:2}));
+    if(BUDGET_DESP_RAW && BUDGET_DESP_RAW.length){
+      // Converte am 'YYYYMM' para ym 'YYYY-MM' usado pelo budgetDespByTipoArea
+      var ym = am.length===6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
+      var total = (typeof budgetDespByTipoArea==='function') ? (budgetDespByTipoArea(ym, 'CD', 'Operações')||0) : 0;
+      console.log('[DRE Cfg] despCd — am='+am+' (ym='+ym+') | tipo=CD | area=Operações | total: R$', total.toLocaleString('pt-BR',{maximumFractionDigits:2}));
       return total;
     }
     return despTotal('CD',am)||despTotal('CENTRO DE DISTRIBUIÇÃO',am)||despTotal('DISTRIBUICAO',am);
@@ -5404,6 +5392,19 @@ function applyDreCfg(){
 // ═══════════════════════════════════════════════════════
 var BUDGET_DESP_RAW = [];
 var BUDGET_LOADED = false;
+// Toggle mês no filtro multi-select do Budget
+function budgetToggleMes(ms){
+  var i = BUDGET_MESES_FILTER.indexOf(ms);
+  if(i >= 0) BUDGET_MESES_FILTER.splice(i,1);
+  else BUDGET_MESES_FILTER.push(ms);
+  BUDGET_MESES_FILTER.sort();
+  if(typeof renderBudget === 'function') renderBudget(BUDGET_ANO_FILTER);
+}
+function budgetClearMeses(){
+  BUDGET_MESES_FILTER = [];
+  if(typeof renderBudget === 'function') renderBudget(BUDGET_ANO_FILTER);
+}
+
 // Estado de expansão das áreas no Budget — mantido em memória entre renders
 var BUDGET_AREAS_EXPANDED = {};
 // Estado de expansão de grupos de resumo (ex: 'despesas' colapsa todas as áreas de uma vez)
@@ -5780,6 +5781,7 @@ var _bPct = function(v){ if(v===null||v===undefined) return '—';
   return (v*100).toFixed(1)+'%'; };
 
 var BUDGET_ANO_FILTER = '';
+var BUDGET_MESES_FILTER = []; // array de '01' a '12' (vazio = todos os meses)
 
 
 // ── Permissões de Budget por usuário ──────────────────
@@ -5814,7 +5816,15 @@ function renderBudget(anoFilter){
   var dreYears = Array.from(new Set(DRE_RAW.map(function(r){return String(r.ano||r.ANO||'');}))).filter(function(y){return y>='2015'&&y<='2030';}).sort();
   var defaultAno = dreYears.length ? dreYears[dreYears.length-1] : (anos.length ? anos[anos.length-1] : '');
   var selectedAno = BUDGET_ANO_FILTER || defaultAno || '';
-  var months = allMonths.filter(function(ym){ return !selectedAno || ym.startsWith(selectedAno+'-'); });
+  // Filtra meses por ano selecionado E pela lista BUDGET_MESES_FILTER (se houver)
+  var months = allMonths.filter(function(ym){
+    if(selectedAno && !ym.startsWith(selectedAno+'-')) return false;
+    if(BUDGET_MESES_FILTER && BUDGET_MESES_FILTER.length){
+      var mo = ym.split('-')[1];
+      if(BUDGET_MESES_FILTER.indexOf(mo) < 0) return false;
+    }
+    return true;
+  });
 
   var meta = document.getElementById('budgetHeaderMeta');
   if(meta) meta.textContent = months.length+' meses · '+BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' lançamentos';
@@ -5834,11 +5844,22 @@ function renderBudget(anoFilter){
     return '<option value="'+a+'"'+(a===selectedAno?' selected':'')+'>'+a+'</option>';
   }).join('');
 
-  // Build header — with year filter bar
-  var h = '<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-shrink:0">';
+  // Build header — with year filter bar + month pills
+  var h = '<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap">';
   h += '<span style="font-size:11px;font-weight:700;color:#7a8ab0;text-transform:uppercase;letter-spacing:.8px">Ano:</span>';
   h += '<select onchange="renderBudget(this.value)" style="padding:5px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:13px;font-family:inherit;color:#0f1a3a;background:#f7f9ff;cursor:pointer">'+anoOpts+'</select>';
-  h += '</div>';
+  // Pílulas de mês — multi-select com toggle
+  h += '<span style="font-size:11px;font-weight:700;color:#7a8ab0;text-transform:uppercase;letter-spacing:.8px;margin-left:6px">Mês:</span>';
+  h += '<div style="display:inline-flex;gap:4px;flex-wrap:wrap;align-items:center">';
+  for(var _m=1;_m<=12;_m++){
+    var _ms = String(_m).padStart(2,'0');
+    var _on = BUDGET_MESES_FILTER.indexOf(_ms) >= 0;
+    h += '<button onclick="budgetToggleMes(\''+_ms+'\')" style="padding:4px 9px;border:1.5px solid '+(_on?'#2352c8':'#d0d8ee')+';border-radius:14px;font-size:11px;font-weight:600;background:'+(_on?'#2352c8':'#f7f9ff')+';color:'+(_on?'#fff':'#0f1a3a')+';cursor:pointer;font-family:inherit;transition:all .1s">'+ml[_m]+'</button>';
+  }
+  if(BUDGET_MESES_FILTER.length){
+    h += '<button onclick="budgetClearMeses()" style="padding:4px 9px;border:1.5px solid #c0181a;border-radius:14px;font-size:11px;font-weight:600;background:#fff;color:#c0181a;cursor:pointer;font-family:inherit;margin-left:4px" title="Limpar filtro de meses">✕ Limpar</button>';
+  }
+  h += '</div></div>';
   h += '<div style="flex:1;overflow:auto;min-height:0"><table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:900px">';
   h += '<thead><tr>';
   h += '<th style="text-align:left;padding:8px 12px;background:#1a2547;color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;position:sticky;left:0;top:0;z-index:5;min-width:220px;border-right:2px solid rgba(255,255,255,.2)">INDICADOR</th>';
@@ -5846,8 +5867,8 @@ function renderBudget(anoFilter){
     var future = isFuture(ym);
     h += '<th style="text-align:center;padding:8px 10px;background:'+(future?'#1e3a6e':'#1a2547')+';color:'+(future?'#a8c4f0':'#fff')+';font-size:11px;font-weight:700;min-width:110px;position:sticky;top:0;z-index:3">'+mLabel(ym)+(future?' ✦':'')+'</th>';
   });
-  // Coluna ANO — somatória de todos os meses
-  h += '<th style="text-align:center;padding:8px 10px;background:#0a7c4e;color:#fff;font-size:11px;font-weight:700;min-width:120px;position:sticky;top:0;right:0;z-index:4;border-left:2px solid rgba(255,255,255,.25)">ANO</th>';
+  // Coluna TOTAL — somatória de todos os meses
+  h += '<th style="text-align:center;padding:8px 10px;background:#0a7c4e;color:#fff;font-size:11px;font-weight:700;min-width:120px;position:sticky;top:0;right:0;z-index:4;border-left:2px solid rgba(255,255,255,.25)">TOTAL</th>';
   h += '</tr></thead><tbody>';
 
   function secRow(label, icon){
@@ -5863,7 +5884,7 @@ function renderBudget(anoFilter){
     var pl = sub ? '28px' : (ss ? '14px' : '12px');
     var rowColor = ss ? '#fff' : '#0f1a3a';
     var pTop = ss ? '9px' : '6px';
-    var fontSize = ss ? '13px' : '12px';
+    var fontSize = ss ? '11px' : '12px';
     // Atributo data-parent-area para que sub-linhas possam ser ocultadas via toggle
     var trAttrs = '';
     if(opts.parentArea){
@@ -5991,7 +6012,7 @@ function renderBudget(anoFilter){
       var isExp = !!BUDGET_GROUP_EXPANDED[opts.toggleGroup];
       toggleHtml = '<button class="budget-group-toggle" data-group="'+escHtml(opts.toggleGroup)+'" onclick="budgetToggleGroup(this)" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);border-radius:4px;cursor:pointer;font-size:11px;color:#fff;margin-right:8px;padding:1px 6px;font-weight:700;line-height:1;vertical-align:middle">'+(isExp?'&#9660;':'&#9654;')+'</button>';
     }
-    h += '<td style="padding:9px 14px;font-weight:800;font-size:13px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid '+gradStart+';border-right:2px solid '+gradStart+';position:sticky;left:0;z-index:1;background:'+grad+'">'+toggleHtml+icon+' '+label+'</td>';
+    h += '<td style="padding:9px 14px;font-weight:800;font-size:11px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid '+gradStart+';border-right:2px solid '+gradStart+';position:sticky;left:0;z-index:1;background:'+grad+'">'+toggleHtml+icon+' '+label+'</td>';
     var monthlyVals = [];
     months.forEach(function(ym){
       var v = computeFn(ym);
@@ -6002,7 +6023,7 @@ function renderBudget(anoFilter){
       } else {
         txt = isPct ? _bPct(v) : _bFmt(v);
       }
-      h += '<td style="text-align:center;padding:9px 8px;font-weight:800;color:#fff;font-size:13px;border-bottom:1px solid '+gradStart+'">'+txt+'</td>';
+      h += '<td style="text-align:center;padding:9px 8px;font-weight:800;color:#fff;font-size:11px;border-bottom:1px solid '+gradStart+'">'+txt+'</td>';
     });
     // Coluna ANO: soma para R$ ou média para %
     var yearVal;
@@ -6013,7 +6034,7 @@ function renderBudget(anoFilter){
       yearVal = monthlyVals.reduce(function(s,v){return s+(v||0);},0);
     }
     var yearTxt = (yearVal == null || yearVal === 0) ? '<span style="color:rgba(255,255,255,.5)">—</span>' : (isPct ? _bPct(yearVal) : _bFmt(yearVal));
-    h += '<td style="text-align:center;padding:9px 8px;font-weight:800;color:#fff;font-size:13px;border-bottom:1px solid '+gradStart+';background:'+grad+';border-left:2px solid rgba(255,255,255,.25);position:sticky;right:0;z-index:1;box-shadow:inset 0 0 0 9999px rgba(0,0,0,.15)">'+yearTxt+'</td>';
+    h += '<td style="text-align:center;padding:9px 8px;font-weight:800;color:#fff;font-size:11px;border-bottom:1px solid '+gradStart+';background:'+grad+';border-left:2px solid rgba(255,255,255,.25);position:sticky;right:0;z-index:1;box-shadow:inset 0 0 0 9999px rgba(0,0,0,.15)">'+yearTxt+'</td>';
     h += '</tr>';
   }
   // ── Helper para linha de espaçamento entre blocos (transparente, altura fixa) ──
