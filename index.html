@@ -4070,8 +4070,10 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   var dg_unit = getFixo('desp_gerais', FIXOS_DEF.desp_gerais);
   var cd_unit = getFixo('cd_mensal', FIXOS_DEF.cd_mensal);
   var mcon=mc+rf_rec-cf-mkt,sa=sa_unit*shareRB,dg=dg_unit*shareRB,cd=cd_unit*shareQTD;
-  var ebt=mcon-sa-dg-cd;
-  return{rb_dev,dev,rb_gross,rb,imp,icms:a.icms,pc:a.cofins+a.pis+a.fecpst,rl,qtd:a.qtd,cmv_b,cmv,cmv_base,ajuste_cmv:ajusteCmv,mkp,mg_prod,fob,mb,sv,sv_closer,sv_developer,sv_farmer,sv_hava,sv_ka,sv13ferias,com,com_martins,com_rca,mc,rf:rf_rec,cf,mkt,mkt_branding,mkt_leads,mcon,grade,sa,dg,cd,ebt};
+  // 13º + Férias também aplicado em Salários Adm (mesmo pct das comissões comerciais)
+  var sa13ferias = sa * (pct13f>0?pct13f:0.11);
+  var ebt=mcon-sa-sa13ferias-dg-cd;
+  return{rb_dev,dev,rb_gross,rb,imp,icms:a.icms,pc:a.cofins+a.pis+a.fecpst,rl,qtd:a.qtd,cmv_b,cmv,cmv_base,ajuste_cmv:ajusteCmv,mkp,mg_prod,fob,mb,sv,sv_closer,sv_developer,sv_farmer,sv_hava,sv_ka,sv13ferias,com,com_martins,com_rca,mc,rf:rf_rec,cf,mkt,mkt_branding,mkt_leads,mcon,grade,sa,sa13ferias,dg,cd,ebt};
 }
 var dreBrl=function(v){var n=Math.round(v);return n<0?'<span style="color:#c0181a;font-weight:700">-R$ '+Math.abs(n).toLocaleString('pt-BR')+'</span>':'R$ '+n.toLocaleString('pt-BR');};
 var dreBrlp=function(v){return'R$ '+Math.round(v).toLocaleString('pt-BR');};
@@ -4139,7 +4141,7 @@ function dreTabela(cols){
   +sp()+sec('🚚 FRETE')+row('Receita Frete (+)',function(d){return dreBrl(d.rf);},'row-sub')+row('Custo Frete (-)',function(d){return dreBrl(d.cf);},'row-sub')+rowP('% Frete / Rec Líq',function(d){return drePct(d.cf,d.rl);})+rowP('Frete / Par',function(d){return d.qtd>0?'R$ '+(d.cf/d.qtd).toFixed(2):'-';})
   +sp()+sec('📢 MARKETING')+row('Branding (-)',function(d){return dreBrl(d.mkt_branding!=null?d.mkt_branding:(d.mkt||0)/2);},'row-sub')+row('Leads Novos (-)',function(d){return dreBrl(d.mkt_leads!=null?d.mkt_leads:(d.mkt||0)/2);},'row-sub')+rowT('Total Marketing',function(d){return dreBrl(d.mkt||0);})+rowP('% Marketing',function(d){return drePct(d.mkt||0,d.rl);})
   +sp()+sec('💡 MARGEM DE CONTRIBUIÇÃO')+rowBig('Margem de Contribuição',function(d){return dreBrl(d.mcon);},16)+rowBigP('Margem Contrib %',function(d){return drePct(d.mcon,d.rl);},16)+rowP('Margem Contrib / Par',function(d){return d.qtd>0?'R$ '+(d.mcon/d.qtd).toFixed(2):'-';})
-  +sp()+sec('🏢 DESPESAS FIXAS')+row('Salários Adm (-)',function(d){return dreBrl(d.sa);},'row-sub')+rowP('% Sal Adm',function(d){return drePct(d.sa,d.rl);})+row('Despesas Gerais (-)',function(d){return dreBrl(d.dg);},'row-sub')+rowP('% Desp Gerais',function(d){return drePct(d.dg,d.rl);})+row('CD (-)',function(d){return dreBrl(d.cd);},'row-sub')+rowP('% CD',function(d){return drePct(d.cd,d.rl);})
+  +sp()+sec('🏢 DESPESAS FIXAS')+row('Salários Adm (-)',function(d){return dreBrl(d.sa);},'row-sub')+rowP('% Sal Adm',function(d){return drePct(d.sa,d.rl);})+row('13º + Férias Adm (-)',function(d){return dreBrl(d.sa13ferias||0);},'row-sub')+rowP('% 13º+Férias Adm',function(d){return drePct(d.sa13ferias||0,d.rl);})+row('Despesas Gerais (-)',function(d){return dreBrl(d.dg);},'row-sub')+rowP('% Desp Gerais',function(d){return drePct(d.dg,d.rl);})+row('CD (-)',function(d){return dreBrl(d.cd);},'row-sub')+rowP('% CD',function(d){return drePct(d.cd,d.rl);})
   +sp()+sec('📊 EBITDA')+ebitdaRow+ebitdaPct+'</tbody></table></div>';
 }
 
