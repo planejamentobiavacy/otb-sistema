@@ -5661,14 +5661,25 @@ function budgetGetMonths(){
 }
 
 function budgetAvacyFatVal(ym){
-  // Override manual tem prioridade sobre o valor OTB
+  // ym = 'YYYY-MM'
+  var parts = ym.split('-'), ano=parts[0], mes=parts[1];
+
+  // 1. Mês REALIZADO (tem dados em DRE_RAW): retorna valor real, ignora override
+  var realizedSum = DRE_RAW.reduce(function(s,r){
+    if(String(r.ano||r.ANO)===ano && String(r.mes||r.MES||'').padStart(2,'0')===mes){
+      return s + (parseFloat(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO)||0);
+    }
+    return s;
+  }, 0);
+  if(realizedSum > 0) return realizedSum;
+
+  // 2. Mês não realizado: override manual tem prioridade
   var ovrKey = 'RECEITA_BRUTA_AVACY|'+ym;
   if(BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[ovrKey] != null){
     return BUDGET_CFG.budgetOverrides[ovrKey];
   }
-  // ym = 'YYYY-MM'
-  var parts = ym.split('-'), ano=parts[0], mes=parts[1];
-  // 1. Try OTB projected value from state.matrices (includes future simulation)
+
+  // 3. Fallback: OTB projetado em state.matrices
   if(state && state.matrices){
     var total = 0;
     Object.keys(state.matrices).forEach(function(sup){
@@ -5681,10 +5692,8 @@ function budgetAvacyFatVal(ym){
     var avacy = state.matrices['AVACY'];
     if(avacy && avacy[ym] && avacy[ym].fatVal) return avacy[ym].fatVal;
   }
-  // 2. Fallback: sum from DRE_RAW
-  return DRE_RAW.filter(function(r){
-    return String(r.ano||r.ANO)===ano && String(r.mes||r.MES||'').padStart(2,'0')===mes;
-  }).reduce(function(s,r){ return s+(parseFloat(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO)||0);},0);
+  return 0;
+}
 }
 
 function budgetDreMetric(ym, key){
@@ -5838,6 +5847,13 @@ function renderBudget(anoFilter){
   function mLabel(ym){ var p=ym.split('-'); return ml[+p[1]]+'/'+(p[0].slice(2)); }
   var nowYm = new Date().getFullYear()+'-'+(String(new Date().getMonth()+1).padStart(2,'0'));
   function isFuture(ym){ return ym >= nowYm; }
+  // Set de meses REALIZADOS (com dados em DRE_RAW) — usado para bloquear edição
+  var realizedMonths = {};
+  DRE_RAW.forEach(function(r){
+    var rAno = String(r.ano||r.ANO||'');
+    var rMes = String(r.mes||r.MES||'').padStart(2,'0');
+    if(rAno && rMes && rMes!=='00') realizedMonths[rAno+'-'+rMes] = true;
+  });
 
   // Year selector
   var anoOpts = anos.map(function(a){
@@ -5884,7 +5900,8 @@ function renderBudget(anoFilter){
     var pl = sub ? '28px' : (ss ? '14px' : '12px');
     var rowColor = ss ? '#fff' : '#0f1a3a';
     var pTop = ss ? '9px' : '6px';
-    var fontSize = ss ? '11px' : '12px';
+    var labelFontSize = ss ? '11px' : '12px'; // título mantém menor
+    var valueFontSize = ss ? '13px' : '12px'; // números 20% maiores que o título
     // Atributo data-parent-area para que sub-linhas possam ser ocultadas via toggle
     var trAttrs = '';
     if(opts.parentArea){
@@ -5917,7 +5934,7 @@ function renderBudget(anoFilter){
     }
     var labelHtml = (ss && ss.icon ? ss.icon+' ' : '') + label;
     var labelStyle = ss
-      ? 'padding:'+pTop+' '+pl+';background:'+grad+';font-weight:'+fw+';font-size:'+fontSize+';color:#fff;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid '+ss.gradStart+';border-right:2px solid '+ss.gradStart+';position:sticky;left:0;z-index:1;display:flex;align-items:center;justify-content:space-between'
+      ? 'padding:'+pTop+' '+pl+';background:'+grad+';font-weight:'+fw+';font-size:'+labelFontSize+';color:#fff;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid '+ss.gradStart+';border-right:2px solid '+ss.gradStart+';position:sticky;left:0;z-index:1;display:flex;align-items:center;justify-content:space-between'
       : 'padding:6px '+pl+';background:'+bg+';font-weight:'+fw+';color:#0f1a3a;border-bottom:1px solid #eef1f8;border-right:2px solid #d0d8ee;position:sticky;left:0;z-index:1;display:flex;align-items:center;justify-content:space-between';
     h += '<td style="'+labelStyle+'">'+toggleHtml+'<span style="flex:1">'+labelHtml+'</span>'+btnHtml+'</td>';
     var monthlyEffectiveVals = []; // valores efetivos para somar na coluna ANO
@@ -5927,7 +5944,9 @@ function renderBudget(anoFilter){
       var display;
       var effectiveForYear = null;
       // Modo editável (linha Receita Bruta AVACY etc) — célula vira input com revert
-      if(opts.editable && opts.editable.keyPrefix){
+      // Se editable.lockRealized=true E o mês tem dados em DRE_RAW, renderiza valor estático (sem input)
+      var isLockedRealized = opts.editable && opts.editable.lockRealized && realizedMonths[ym];
+      if(opts.editable && opts.editable.keyPrefix && !isLockedRealized){
         var otbVal = parseFloat(val)||0;
         var ovrKey = opts.editable.keyPrefix+'|'+ym;
         var hasOvr = BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[ovrKey] != null;
@@ -5974,13 +5993,17 @@ function renderBudget(anoFilter){
       } else {
         display = val===null ? (ss?'<span style="color:rgba(255,255,255,.5)">—</span>':'<span style="color:#ccc">—</span>') : isPct ? _bPct(val) : _bFmt(val);
         effectiveForYear = val;
+        // Para células bloqueadas (mês realizado em linha com lockRealized), envolve num span com tooltip + ícone 🔒
+        if(isLockedRealized){
+          display = '<span title="Mês realizado — valor da tabela otb_venda_dre (não editável)" style="cursor:help;opacity:.95">'+display+' <span style="font-size:9px;opacity:.6">🔒</span></span>';
+        }
       }
       monthlyEffectiveVals.push(effectiveForYear);
       var color = ss ? '#fff' : ((typeof val==='number'&&val<0) ? '#c0181a' : (future?'#1a56c4':'#0f1a3a'));
       var cellBg = ss ? grad : (future?'#f0f5ff':bg);
       var cellBorderBottom = ss ? ss.gradStart : '#eef1f8';
       var cellPad = ss ? ('padding:'+pTop+' 8px') : 'padding:4px 8px';
-      h += '<td style="text-align:center;'+cellPad+';background:'+cellBg+';font-weight:'+fw+';font-size:'+fontSize+';color:'+color+';border-bottom:1px solid '+cellBorderBottom+';white-space:nowrap">'+display+'</td>';
+      h += '<td style="text-align:center;'+cellPad+';background:'+cellBg+';font-weight:'+fw+';font-size:'+valueFontSize+';color:'+color+';border-bottom:1px solid '+cellBorderBottom+';white-space:nowrap">'+display+'</td>';
     });
     // Coluna ANO: soma para R$ ou média para %
     var yearVal;
@@ -5993,7 +6016,7 @@ function renderBudget(anoFilter){
     var yearDisplay = (yearVal == null || yearVal === 0) ? (ss?'<span style="color:rgba(255,255,255,.5)">—</span>':'<span style="color:#ccc">—</span>') : (isPct ? _bPct(yearVal) : _bFmt(yearVal));
     var yearColor = ss ? '#fff' : ((typeof yearVal==='number' && yearVal<0) ? '#c0181a' : '#0f1a3a');
     var yearStyle = ss
-      ? 'text-align:center;padding:'+pTop+' 8px;background:'+grad+';font-weight:800;font-size:'+fontSize+';color:#fff;border-bottom:1px solid '+ss.gradStart+';border-left:2px solid rgba(255,255,255,.25);white-space:nowrap;position:sticky;right:0;z-index:1;box-shadow:inset 0 0 0 9999px rgba(0,0,0,.15)'
+      ? 'text-align:center;padding:'+pTop+' 8px;background:'+grad+';font-weight:800;font-size:'+valueFontSize+';color:#fff;border-bottom:1px solid '+ss.gradStart+';border-left:2px solid rgba(255,255,255,.25);white-space:nowrap;position:sticky;right:0;z-index:1;box-shadow:inset 0 0 0 9999px rgba(0,0,0,.15)'
       : 'text-align:center;padding:4px 8px;background:#eef5fa;font-weight:700;color:'+yearColor+';border-bottom:1px solid #eef1f8;border-left:2px solid #d0d8ee;white-space:nowrap;position:sticky;right:0;z-index:1';
     h += '<td style="'+yearStyle+'">'+yearDisplay+'</td>';
     h += '</tr>';
@@ -6023,7 +6046,7 @@ function renderBudget(anoFilter){
       } else {
         txt = isPct ? _bPct(v) : _bFmt(v);
       }
-      h += '<td style="text-align:center;padding:9px 8px;font-weight:800;color:#fff;font-size:11px;border-bottom:1px solid '+gradStart+'">'+txt+'</td>';
+      h += '<td style="text-align:center;padding:9px 8px;font-weight:800;color:#fff;font-size:13px;border-bottom:1px solid '+gradStart+'">'+txt+'</td>';
     });
     // Coluna ANO: soma para R$ ou média para %
     var yearVal;
@@ -6034,7 +6057,7 @@ function renderBudget(anoFilter){
       yearVal = monthlyVals.reduce(function(s,v){return s+(v||0);},0);
     }
     var yearTxt = (yearVal == null || yearVal === 0) ? '<span style="color:rgba(255,255,255,.5)">—</span>' : (isPct ? _bPct(yearVal) : _bFmt(yearVal));
-    h += '<td style="text-align:center;padding:9px 8px;font-weight:800;color:#fff;font-size:11px;border-bottom:1px solid '+gradStart+';background:'+grad+';border-left:2px solid rgba(255,255,255,.25);position:sticky;right:0;z-index:1;box-shadow:inset 0 0 0 9999px rgba(0,0,0,.15)">'+yearTxt+'</td>';
+    h += '<td style="text-align:center;padding:9px 8px;font-weight:800;color:#fff;font-size:13px;border-bottom:1px solid '+gradStart+';background:'+grad+';border-left:2px solid rgba(255,255,255,.25);position:sticky;right:0;z-index:1;box-shadow:inset 0 0 0 9999px rgba(0,0,0,.15)">'+yearTxt+'</td>';
     h += '</tr>';
   }
   // ── Helper para linha de espaçamento entre blocos (transparente, altura fixa) ──
@@ -6080,7 +6103,7 @@ function renderBudget(anoFilter){
 
   // ── RECEITA ──
   secRow('Receita', '📈');
-  dataRow('Receita Bruta AVACY', function(ym){ return budgetAvacyFatVal(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_BRUTA_AVACY'}, summaryStyle:{gradStart:'#0a7c4e', gradEnd:'#1eb574', icon:'📊'}});
+  dataRow('Receita Bruta AVACY', function(ym){ return budgetAvacyFatVal(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_BRUTA_AVACY', lockRealized:true}, summaryStyle:{gradStart:'#0a7c4e', gradEnd:'#1eb574', icon:'📊'}});
   // Receita PLANO Avacy — totalmente manual, valores salvos em BUDGET_CFG.budgetOverrides
   dataRow('Receita PLANO Avacy', function(ym){ return 0; }, {bold:true, editable:{keyPrefix:'RECEITA_PLANO_AVACY'}});
   // Diff Plano = Plano - Bruta (positivo = plano maior que realizado)
