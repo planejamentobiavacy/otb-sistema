@@ -5897,6 +5897,10 @@ function renderBudget(anoFilter){
 
   if(areasUsadas.length){
     secRow('Despesas', '💸');
+    // Acumulador para a linha Total Despesas (soma de todas as áreas com folha)
+    var totalDespesasGeral = {};
+    months.forEach(function(ym){ totalDespesasGeral[ym] = 0; });
+
     areasUsadas.forEach(function(area){
       var usedTiposForArea = {};
       BUDGET_DESP_RAW.forEach(function(r){
@@ -5906,10 +5910,17 @@ function renderBudget(anoFilter){
       });
       var tipos = BUDGET_TIPOS.filter(function(t){ return usedTiposForArea[t]; });
 
-      // Total por área (bold, com triângulo de expansão)
+      // Total por área = soma de despesas (todos os tipos) + Salário Folha da área
       (function(areaCapture){
         var areaUid = 'area_'+areaCapture.replace(/\W+/g,'_');
-        dataRow(areaCapture, function(ym){ return budgetDespByTipoArea(ym,null,areaCapture)||null; }, {bold:true, areaUid: areaUid});
+        var areaKeyFolha = areaCapture.toUpperCase();
+        dataRow(areaCapture, function(ym){
+          var desp = budgetDespByTipoArea(ym,null,areaCapture)||0;
+          var fol  = (folhaByArea[areaKeyFolha]||{})[ym]||0;
+          var t = desp + fol;
+          totalDespesasGeral[ym] = (totalDespesasGeral[ym]||0) + t;
+          return t>0 ? t : null;
+        }, {bold:true, areaUid: areaUid});
         tipos.forEach(function(tipo){
           (function(tipoCapture){
             dataRow('↳ '+tipoCapture, function(ym){ return budgetDespByTipoArea(ym,tipoCapture,areaCapture)||null; }, {sub:true, detailBtn:{tipo:tipoCapture,area:areaCapture}, parentArea: areaUid});
@@ -5917,7 +5928,7 @@ function renderBudget(anoFilter){
         });
       })(area);
 
-      // Linha Salário Folha dentro do bloco da área
+      // Linha Salário Folha dentro do bloco da área (continua como sub-linha)
       (function(areaCapFolha){
         var areaUid = 'area_'+areaCapFolha.replace(/\W+/g,'_');
         var areaKeyFolha = areaCapFolha.toUpperCase();
@@ -5930,6 +5941,15 @@ function renderBudget(anoFilter){
         }
       })(area);
     });
+
+    // Linha "Total Despesas" — soma de todas as áreas (despesas + folha) em cor destacada
+    h += '<tr style="background:linear-gradient(90deg,#d62b3a 0%,#ed5a4d 100%);color:#fff">';
+    h += '<td style="padding:9px 14px;font-weight:800;font-size:13px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #b32533;border-right:2px solid #b32533;position:sticky;left:0;z-index:1;background:linear-gradient(90deg,#d62b3a 0%,#ed5a4d 100%)">💸 Total Despesas</td>';
+    months.forEach(function(ym){
+      var v = totalDespesasGeral[ym]||0;
+      h += '<td style="text-align:center;padding:9px 8px;font-weight:800;color:#fff;font-size:13px;border-bottom:1px solid #b32533">'+(v>0?_bFmt(v):'<span style="color:rgba(255,255,255,.5)">—</span>')+'</td>';
+    });
+    h += '</tr>';
   }
 
 
