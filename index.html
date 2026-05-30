@@ -5919,7 +5919,7 @@ function renderBudget(anoFilter){
     h += '<button onclick="budgetClearMeses()" style="padding:4px 9px;border:1.5px solid #c0181a;border-radius:14px;font-size:11px;font-weight:600;background:#fff;color:#c0181a;cursor:pointer;font-family:inherit;margin-left:4px" title="Limpar filtro de meses">✕ Limpar</button>';
   }
   h += '</div></div>';
-  h += '<div style="flex:1;overflow:auto;min-height:0"><table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:900px">';
+  h += '<div style="flex:1;overflow-x:auto;overflow-y:auto;min-height:0;max-height:calc(100vh - 200px)"><table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:900px">';
   h += '<thead><tr>';
   h += '<th style="text-align:left;padding:8px 12px;background:#1a2547;color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;position:sticky;left:0;top:0;z-index:5;min-width:220px;border-right:2px solid rgba(255,255,255,.2)">INDICADOR</th>';
   months.forEach(function(ym){
