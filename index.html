@@ -2777,6 +2777,42 @@ var FIXOS_DEF={sal_vend:191500,sal_adm:409000,marketing:79800,desp_gerais:579000
 var DRE_CONFIG={freteMetodo:'qtd',fob:{},closer:{},developer:{},farmer:{},martins:{},rca:{},branding:{},leads:{},grade:{},custoGrade:{},canaisBranding:{},canaisLeads:{}};
 var DRE_CONFIG_DEFAULTS={fob:0.006,closer:0.008,developer:0.006,farmer:0.006,martins:0.003,rca:0.005,branding:0.025,leads:0.015,grade:0,custoGrade:0};
 
+// Estado de expansão das seções do DRE (Receita, Volume, CMV, etc.) — mantido entre renders
+var DRE_SECTIONS_EXPANDED = {};
+// Toggle de seção do DRE: oculta/mostra linhas entre o header da seção e o próximo header
+function dreToggleSection(btn){
+  var uid = btn.getAttribute('data-sec-uid');
+  var currentlyExpanded = DRE_SECTIONS_EXPANDED[uid] !== false;
+  DRE_SECTIONS_EXPANDED[uid] = !currentlyExpanded;
+  var newExpanded = DRE_SECTIONS_EXPANDED[uid];
+  // Encontra o <tr> da seção e percorre siblings até a próxima seção
+  var secTr = btn.closest('tr.dre-sec-row');
+  if(!secTr) return;
+  var next = secTr.nextElementSibling;
+  while(next && !next.classList.contains('dre-sec-row')){
+    next.style.display = newExpanded ? '' : 'none';
+    next = next.nextElementSibling;
+  }
+  btn.innerHTML = newExpanded ? '&#9660;' : '&#9654;';
+}
+// Aplica o estado salvo após cada render (oculta linhas de seções marcadas como colapsadas)
+function dreApplySectionsState(){
+  Object.keys(DRE_SECTIONS_EXPANDED).forEach(function(uid){
+    if(DRE_SECTIONS_EXPANDED[uid] !== false) return; // só processa as colapsadas
+    var secTr = document.querySelector('tr.dre-sec-row[data-sec-uid="'+uid+'"]');
+    if(!secTr) return;
+    // Atualiza ícone do botão
+    var btn = secTr.querySelector('button.dre-sec-toggle[data-sec-uid="'+uid+'"]');
+    if(btn) btn.innerHTML = '&#9654;';
+    // Oculta linhas até próxima seção
+    var next = secTr.nextElementSibling;
+    while(next && !next.classList.contains('dre-sec-row')){
+      next.style.display = 'none';
+      next = next.nextElementSibling;
+    }
+  });
+}
+
 function dreShowProgress(loaded, total){
   var bar = document.getElementById('dreProgBar');
   var lbl = document.getElementById('dreProgLabel');
@@ -3738,6 +3774,7 @@ function dreRenderMensal(){
   var kpiData=cols.filter(function(c){return c.isTotal;});if(!kpiData.length) kpiData=cols;
   document.getElementById('dreKpi-mensal').innerHTML=kpiData.length?dreKpis(kpiData.map(function(c){return c.d;}),dLY):'';
   document.getElementById('dreTable-mensal').innerHTML=cols.length?dreTabela(cols):'<div style="text-align:center;padding:60px;color:#7a8ab0;font-size:13px">Sem dados.</div>';
+  if(typeof dreApplySectionsState==='function') dreApplySectionsState();
 }
 function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   var ano=dreGv(anoId),mes=dreGv(mesId),canal=canalId?dreGv(canalId):null;
@@ -3824,6 +3861,7 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   var kpiDataD=cols.filter(function(c){return c.isTotal;});if(!kpiDataD.length) kpiDataD=cols;
   document.getElementById('dreKpi-'+suffix).innerHTML=kpiDataD.length?dreKpis(kpiDataD.map(function(c){return c.d;}),dLY):'';
   document.getElementById('dreTable-'+suffix).innerHTML=cols.length?dreTabela(cols):'<div style="text-align:center;padding:60px;color:#7a8ab0;font-size:13px">Sem dados.</div>';
+  if(typeof dreApplySectionsState==='function') dreApplySectionsState();
 }
 function dreCalcShare(sliceRows,allRows,canalCtx){
   var aSlice=dreAgg(sliceRows),aAll=dreAgg(allRows);
@@ -4122,16 +4160,22 @@ function dreTabela(cols){
   var _secGrad = 'linear-gradient(90deg,#1a2a6c 0%,#2352c8 100%)';
   var _secStart = '#1a2a6c'; // cor sólida que combina com o início do gradiente (para a célula sticky)
   var sec=function(t){
+    // UID único derivado do título da seção (mantido entre renders para preservar estado)
+    var uid = 'dre_sec_' + t.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g,'_');
+    var expanded = DRE_SECTIONS_EXPANDED[uid] !== false; // default: expandido
+    var toggleBtn = '<button class="dre-sec-toggle" data-sec-uid="'+uid+'" onclick="dreToggleSection(this)" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);border-radius:4px;cursor:pointer;font-size:11px;color:#fff;margin-right:8px;padding:1px 6px;font-weight:700;line-height:1;vertical-align:middle">'+(expanded?'&#9660;':'&#9654;')+'</button>';
     // Gradiente no <tr> = aparência contínua, sem segmentação por células
     // Primeira célula (sticky) usa cor sólida igual à origem do gradiente; demais transparentes
-    return '<tr style="background:'+_secGrad+'">'
-      + '<td style="position:sticky;left:0;z-index:12;background:'+_secStart+';color:#fff;font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:2px;padding:9px 14px;text-align:left;min-width:270px;border-right:2px solid rgba(255,255,255,.15)">'+t+'</td>'
+    return '<tr class="dre-sec-row" data-sec-uid="'+uid+'" style="background:'+_secGrad+'">'
+      + '<td style="position:sticky;left:0;z-index:12;background:'+_secStart+';color:#fff;font-size:12.5px;font-weight:700;text-transform:uppercase;letter-spacing:2px;padding:9px 14px;text-align:left;min-width:270px;border-right:2px solid rgba(255,255,255,.15)">'+toggleBtn+t+'</td>'
       + cols.map(function(){return '<td style="background:transparent;padding:9px 14px"></td>';}).join('')
       + '</tr>';
   };
   var secBig=function(t){
+    // EBITDA section (verde) — também é stopping point para o toggle, mas não recebe botão (é a última)
+    var uid = 'dre_secbig_' + t.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g,'_');
     // Mesma estratégia: cor sólida no <tr>, transparente nas células
-    return '<tr style="background:'+_solidGreen+';border-top:3px solid #0a7c4e">'
+    return '<tr class="dre-sec-row" data-sec-uid="'+uid+'" style="background:'+_solidGreen+';border-top:3px solid #0a7c4e">'
       + '<td style="position:sticky;left:0;z-index:12;background:'+_solidGreen+';color:#084d2b;font-size:16px;font-weight:800;padding:10px 14px;letter-spacing:.3px;text-align:left;min-width:270px;border-right:2px solid #d0d8ee">'+t+'</td>'
       + cols.map(function(){return '<td style="background:transparent;padding:10px 14px"></td>';}).join('')
       + '</tr>';
@@ -6091,7 +6135,8 @@ function renderBudget(anoFilter){
     var plano = budgetReceitaPlano(ym);
     var bruta = budgetAvacyFatVal(ym)||0;
     if(!plano && !bruta) return null;
-    return plano - bruta;
+    // Diff = Receita Realizada (Bruta) − Plano  (positivo = superou plano, negativo = abaixo)
+    return bruta - plano;
   }
   function budgetVarPlano(ym){
     var plano = budgetReceitaPlano(ym);
@@ -6105,29 +6150,10 @@ function renderBudget(anoFilter){
   dataRow('Receita Bruta AVACY', function(ym){ return budgetAvacyFatVal(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_BRUTA_AVACY', lockRealized:true}, summaryStyle:{gradStart:'#0a7c4e', gradEnd:'#1eb574', icon:'📊'}});
   // Receita PLANO Avacy — totalmente manual, valores salvos em BUDGET_CFG.budgetOverrides
   dataRow('Receita PLANO Avacy', function(ym){ return 0; }, {bold:true, editable:{keyPrefix:'RECEITA_PLANO_AVACY'}});
-  // Diff Plano = Plano - Bruta (positivo = plano maior que realizado)
+  // Diff x Plano = Receita Bruta − Plano (positivo = bateu/superou plano, negativo = abaixo)
   dataRow('Diff x Plano', function(ym){ return budgetDiffPlano(ym); }, {sub:true});
   // Var Plano = Bruta/Plano - 1 (positivo = realizado superou plano)
   dataRow('Var x Plano', function(ym){ return budgetVarPlano(ym); }, {sub:true, pct:true});
-  // Helpers para Diff / Var x Plano
-  function _getReceitaPlano(ym){
-    var k = 'RECEITA_PLANO_AVACY|'+ym;
-    return (BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[k]) || 0;
-  }
-  // Diff x Plano = Plano − Receita Bruta (positivo = bateu/superou plano, negativo = abaixo)
-  dataRow('↳ Diff x Plano', function(ym){
-    var plano = _getReceitaPlano(ym);
-    if(!plano) return null; // sem plano, não calcula
-    var bruta = budgetAvacyFatVal(ym)||0;
-    return plano - bruta;
-  }, {sub:true});
-  // Var x Plano = Receita Bruta / Plano - 1 (% de variação vs plano)
-  dataRow('↳ Var x Plano', function(ym){
-    var plano = _getReceitaPlano(ym);
-    if(!plano) return null;
-    var bruta = budgetAvacyFatVal(ym)||0;
-    return (bruta / plano) - 1;
-  }, {sub:true, pct:true});
 
   // ── IMPOSTOS ──
   secRow('Impostos', '🧾');
