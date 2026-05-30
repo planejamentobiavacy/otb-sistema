@@ -5373,6 +5373,16 @@ function applyDreCfg(){
 // ═══════════════════════════════════════════════════════
 var BUDGET_DESP_RAW = [];
 var BUDGET_LOADED = false;
+// Estado de expansão das áreas no Budget — mantido em memória entre renders
+var BUDGET_AREAS_EXPANDED = {};
+// Toggle do triângulo: mostra/esconde tipos+folha de uma área
+function budgetToggleArea(btn){
+  var uid = btn.getAttribute('data-area-uid');
+  BUDGET_AREAS_EXPANDED[uid] = !BUDGET_AREAS_EXPANDED[uid];
+  var subRows = document.querySelectorAll('tr.budget-area-sub[data-parent-area="'+uid+'"]');
+  subRows.forEach(function(tr){ tr.style.display = BUDGET_AREAS_EXPANDED[uid] ? '' : 'none'; });
+  btn.innerHTML = BUDGET_AREAS_EXPANDED[uid] ? '&#9660;' : '&#9654;';
+}
 var BUDGET_CFG = {
   // classif[e2_nomfor+'|'+e2_hist] = {tipo, area}
   classif: {},
@@ -5786,7 +5796,19 @@ function renderBudget(anoFilter){
     var bg = bold ? '#eef2fc' : sub ? '#fafbff' : '#fff';
     var fw = bold ? '700' : '400';
     var pl = sub ? '28px' : '12px';
-    h += '<tr>';
+    // Atributo data-parent-area para que sub-linhas possam ser ocultadas via toggle
+    var trAttrs = '';
+    if(opts.parentArea){
+      var hidden = !BUDGET_AREAS_EXPANDED[opts.parentArea];
+      trAttrs = ' class="budget-area-sub" data-parent-area="'+escHtml(opts.parentArea)+'"'+(hidden?' style="display:none"':'');
+    }
+    h += '<tr'+trAttrs+'>';
+    // Triângulo de expansão para linhas de área (areaUid setado)
+    var toggleHtml = '';
+    if(opts.areaUid){
+      var isExpanded = !!BUDGET_AREAS_EXPANDED[opts.areaUid];
+      toggleHtml = '<button class="budget-area-toggle" data-area-uid="'+escHtml(opts.areaUid)+'" onclick="budgetToggleArea(this)" style="background:none;border:none;cursor:pointer;font-size:11px;color:#1a2547;margin-right:6px;padding:0;font-weight:700">'+(isExpanded?'&#9660;':'&#9654;')+'</button>';
+    }
     var btnHtml = '';
     if(detailBtn){
       var dTipo = escHtml(detailBtn.tipo||'');
@@ -5799,7 +5821,7 @@ function renderBudget(anoFilter){
       var fdArea = opts.folhaDetailArea, fdAno = opts.selectedAno||'';
       btnHtml = '<button data-area="'+escHtml(fdArea)+'" data-ano="'+escHtml(String(fdAno))+'" onclick="openFolhaDetail(this.dataset.area,this.dataset.ano)" style="margin-left:8px;padding:1px 7px;font-size:10px;font-weight:600;border:1.5px solid #7b2d8b;border-radius:4px;background:#fff;color:#7b2d8b;cursor:pointer;vertical-align:middle">detalhes</button>';
     }
-    h += '<td style="padding:6px '+pl+';background:'+bg+';font-weight:'+fw+';color:#0f1a3a;border-bottom:1px solid #eef1f8;border-right:2px solid #d0d8ee;position:sticky;left:0;z-index:1;display:flex;align-items:center;justify-content:space-between">'+label+btnHtml+'</td>';
+    h += '<td style="padding:6px '+pl+';background:'+bg+';font-weight:'+fw+';color:#0f1a3a;border-bottom:1px solid #eef1f8;border-right:2px solid #d0d8ee;position:sticky;left:0;z-index:1;display:flex;align-items:center;justify-content:space-between">'+toggleHtml+'<span style="flex:1">'+label+'</span>'+btnHtml+'</td>';
     months.forEach(function(ym){
       var val = fn(ym);
       var future = isFuture(ym);
@@ -5884,25 +5906,27 @@ function renderBudget(anoFilter){
       });
       var tipos = BUDGET_TIPOS.filter(function(t){ return usedTiposForArea[t]; });
 
-      // Total por área (bold, sem botão)
+      // Total por área (bold, com triângulo de expansão)
       (function(areaCapture){
-        dataRow(areaCapture, function(ym){ return budgetDespByTipoArea(ym,null,areaCapture)||null; }, {bold:true});
+        var areaUid = 'area_'+areaCapture.replace(/\W+/g,'_');
+        dataRow(areaCapture, function(ym){ return budgetDespByTipoArea(ym,null,areaCapture)||null; }, {bold:true, areaUid: areaUid});
         tipos.forEach(function(tipo){
           (function(tipoCapture){
-            dataRow('↳ '+tipoCapture, function(ym){ return budgetDespByTipoArea(ym,tipoCapture,areaCapture)||null; }, {sub:true, detailBtn:{tipo:tipoCapture,area:areaCapture}});
+            dataRow('↳ '+tipoCapture, function(ym){ return budgetDespByTipoArea(ym,tipoCapture,areaCapture)||null; }, {sub:true, detailBtn:{tipo:tipoCapture,area:areaCapture}, parentArea: areaUid});
           })(tipo);
         });
       })(area);
 
       // Linha Salário Folha dentro do bloco da área
       (function(areaCapFolha){
+        var areaUid = 'area_'+areaCapFolha.replace(/\W+/g,'_');
         var areaKeyFolha = areaCapFolha.toUpperCase();
         var hasFolha = months.some(function(ym){ return (folhaByArea[areaKeyFolha]||{})[ym]>0; });
         if(hasFolha){
           dataRow('↳ Salário Folha', function(ym){
             var v=(folhaByArea[areaKeyFolha]||{})[ym];
             return v>0?v:null;
-          }, {sub:true, folhaDetailArea: areaKeyFolha, selectedAno: selectedAno});
+          }, {sub:true, folhaDetailArea: areaKeyFolha, selectedAno: selectedAno, parentArea: areaUid});
         }
       })(area);
     });
