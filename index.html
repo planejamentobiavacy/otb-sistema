@@ -5779,21 +5779,23 @@ function renderBudget(anoFilter){
   }).join('');
 
   // Build header — with year filter bar
-  var h = '<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px">';
+  var h = '<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-shrink:0">';
   h += '<span style="font-size:11px;font-weight:700;color:#7a8ab0;text-transform:uppercase;letter-spacing:.8px">Ano:</span>';
   h += '<select onchange="renderBudget(this.value)" style="padding:5px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:13px;font-family:inherit;color:#0f1a3a;background:#f7f9ff;cursor:pointer">'+anoOpts+'</select>';
   h += '</div>';
-  h += '<div style="overflow:auto;max-height:calc(100vh - 180px)"><table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:900px">';
+  h += '<div style="flex:1;overflow:auto;min-height:0"><table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:900px">';
   h += '<thead><tr>';
   h += '<th style="text-align:left;padding:8px 12px;background:#1a2547;color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;position:sticky;left:0;top:0;z-index:5;min-width:220px;border-right:2px solid rgba(255,255,255,.2)">INDICADOR</th>';
   months.forEach(function(ym){
     var future = isFuture(ym);
     h += '<th style="text-align:center;padding:8px 10px;background:'+(future?'#1e3a6e':'#1a2547')+';color:'+(future?'#a8c4f0':'#fff')+';font-size:11px;font-weight:700;min-width:110px;position:sticky;top:0;z-index:3">'+mLabel(ym)+(future?' ✦':'')+'</th>';
   });
+  // Coluna ANO — somatória de todos os meses
+  h += '<th style="text-align:center;padding:8px 10px;background:#0a7c4e;color:#fff;font-size:11px;font-weight:700;min-width:120px;position:sticky;top:0;right:0;z-index:4;border-left:2px solid rgba(255,255,255,.25)">ANO</th>';
   h += '</tr></thead><tbody>';
 
   function secRow(label, icon){
-    h += '<tr><td colspan="'+(months.length+1)+'" style="padding:6px 12px;background:linear-gradient(90deg,#1a2a6c,#2352c8);color:#fff;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;position:sticky;left:0;z-index:2">'+icon+' '+label+'</td></tr>';
+    h += '<tr><td colspan="'+(months.length+2)+'" style="padding:6px 12px;background:linear-gradient(90deg,#1a2a6c,#2352c8);color:#fff;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;position:sticky;left:0;z-index:2">'+icon+' '+label+'</td></tr>';
   }
   function dataRow(label, fn, opts){
     opts = opts||{};
@@ -5827,16 +5829,19 @@ function renderBudget(anoFilter){
       btnHtml = '<button data-area="'+escHtml(fdArea)+'" data-ano="'+escHtml(String(fdAno))+'" onclick="openFolhaDetail(this.dataset.area,this.dataset.ano)" style="margin-left:8px;padding:1px 7px;font-size:10px;font-weight:600;border:1.5px solid #7b2d8b;border-radius:4px;background:#fff;color:#7b2d8b;cursor:pointer;vertical-align:middle">detalhes</button>';
     }
     h += '<td style="padding:6px '+pl+';background:'+bg+';font-weight:'+fw+';color:#0f1a3a;border-bottom:1px solid #eef1f8;border-right:2px solid #d0d8ee;position:sticky;left:0;z-index:1;display:flex;align-items:center;justify-content:space-between">'+toggleHtml+'<span style="flex:1">'+label+'</span>'+btnHtml+'</td>';
+    var monthlyEffectiveVals = []; // valores efetivos para somar na coluna ANO
     months.forEach(function(ym){
       var val = fn(ym);
       var future = isFuture(ym);
       var display;
+      var effectiveForYear = null;
       // Modo editável (linha Receita Bruta AVACY etc) — célula vira input com revert
       if(opts.editable && opts.editable.keyPrefix){
         var otbVal = parseFloat(val)||0;
         var ovrKey = opts.editable.keyPrefix+'|'+ym;
         var hasOvr = BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[ovrKey] != null;
         var effective = hasOvr ? BUDGET_CFG.budgetOverrides[ovrKey] : otbVal;
+        effectiveForYear = effective;
         var inputBg = hasOvr ? '#e3edff' : (otbVal>0 ? '#fffde7' : '#fff');
         var inputClr = hasOvr ? '#1a56c4' : (effective<0 ? '#c0181a' : '#0f1a3a');
         var inputFw = hasOvr ? '700' : '600';
@@ -5870,30 +5875,56 @@ function renderBudget(anoFilter){
         inp.setAttribute('onchange','budgetSetSim(this.dataset.ym,this.dataset.key,this.value)');
         inp.style.cssText='width:58px;text-align:center;border:1px solid #a0b4e0;border-radius:4px;padding:2px 4px;font-size:11px;background:#eef5ff;color:#1a56c4;font-weight:700';
         display = inp.outerHTML;
+        effectiveForYear = simVal ? parseFloat(simVal)/100 : null;
       } else {
         display = val===null ? '<span style="color:#ccc">—</span>' : isPct ? _bPct(val) : _bFmt(val);
+        effectiveForYear = val;
       }
+      monthlyEffectiveVals.push(effectiveForYear);
       var color = (typeof val==='number'&&val<0) ? '#c0181a' : (future?'#1a56c4':'#0f1a3a');
       h += '<td style="text-align:center;padding:4px 8px;background:'+(future?'#f0f5ff':bg)+';font-weight:'+fw+';color:'+color+';border-bottom:1px solid #eef1f8;white-space:nowrap">'+display+'</td>';
     });
+    // Coluna ANO: soma para R$ ou média para %
+    var yearVal;
+    if(isPct){
+      var valid = monthlyEffectiveVals.filter(function(v){return v != null && !isNaN(v) && v !== 0;});
+      yearVal = valid.length ? valid.reduce(function(s,v){return s+v;},0)/valid.length : null;
+    } else {
+      yearVal = monthlyEffectiveVals.reduce(function(s,v){return s+((typeof v === 'number')?v:0);},0);
+    }
+    var yearDisplay = (yearVal == null || yearVal === 0) ? '<span style="color:#ccc">—</span>' : (isPct ? _bPct(yearVal) : _bFmt(yearVal));
+    var yearColor = (typeof yearVal==='number' && yearVal<0) ? '#c0181a' : '#0f1a3a';
+    h += '<td style="text-align:center;padding:4px 8px;background:#eef5fa;font-weight:700;color:'+yearColor+';border-bottom:1px solid #eef1f8;border-left:2px solid #d0d8ee;white-space:nowrap;position:sticky;right:0;z-index:1">'+yearDisplay+'</td>';
     h += '</tr>';
   }
 
   // ── Helper para linhas-resumo coloridas (Total Despesas, Receita Líquida, CMV R$, EBITDA) ──
-  function summaryRow(label, icon, gradStart, gradEnd, computeFn){
+  function summaryRow(label, icon, gradStart, gradEnd, computeFn, isPct){
     var grad = 'linear-gradient(90deg,'+gradStart+' 0%,'+gradEnd+' 100%)';
     h += '<tr style="background:'+grad+';color:#fff">';
     h += '<td style="padding:9px 14px;font-weight:800;font-size:13px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid '+gradStart+';border-right:2px solid '+gradStart+';position:sticky;left:0;z-index:1;background:'+grad+'">'+icon+' '+label+'</td>';
+    var monthlyVals = [];
     months.forEach(function(ym){
       var v = computeFn(ym);
+      monthlyVals.push(v);
       var txt;
       if(v == null || v === 0){
         txt = '<span style="color:rgba(255,255,255,.5)">—</span>';
       } else {
-        txt = _bFmt(v);
+        txt = isPct ? _bPct(v) : _bFmt(v);
       }
       h += '<td style="text-align:center;padding:9px 8px;font-weight:800;color:#fff;font-size:13px;border-bottom:1px solid '+gradStart+'">'+txt+'</td>';
     });
+    // Coluna ANO: soma para R$ ou média para %
+    var yearVal;
+    if(isPct){
+      var valid = monthlyVals.filter(function(v){return v != null && !isNaN(v) && v !== 0;});
+      yearVal = valid.length ? valid.reduce(function(s,v){return s+v;},0)/valid.length : 0;
+    } else {
+      yearVal = monthlyVals.reduce(function(s,v){return s+(v||0);},0);
+    }
+    var yearTxt = (yearVal == null || yearVal === 0) ? '<span style="color:rgba(255,255,255,.5)">—</span>' : (isPct ? _bPct(yearVal) : _bFmt(yearVal));
+    h += '<td style="text-align:center;padding:9px 8px;font-weight:800;color:#fff;font-size:13px;border-bottom:1px solid '+gradStart+';background:'+grad+';border-left:2px solid rgba(255,255,255,.25);position:sticky;right:0;z-index:1;box-shadow:inset 0 0 0 9999px rgba(0,0,0,.15)">'+yearTxt+'</td>';
     h += '</tr>';
   }
   // ── Helper para linha de espaçamento entre blocos (transparente, altura fixa) ──
@@ -5901,6 +5932,7 @@ function renderBudget(anoFilter){
     h += '<tr class="budget-spacer" style="background:transparent">';
     h += '<td style="padding:0;height:18px;background:transparent;border:none;position:sticky;left:0;z-index:1"></td>';
     months.forEach(function(){ h += '<td style="padding:0;height:18px;background:transparent;border:none"></td>'; });
+    h += '<td style="padding:0;height:18px;background:transparent;border:none"></td>';
     h += '</tr>';
   }
   // ── Helpers para os cálculos resumo (reutilizados em várias linhas) ──
@@ -5919,11 +5951,51 @@ function renderBudget(anoFilter){
   }
   // totalDespesasGeral é populado adiante (quando há áreas), mas pode estar vazio até lá
 
+  function budgetReceitaPlano(ym){
+    var k = 'RECEITA_PLANO_AVACY|'+ym;
+    return (BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[k] != null) ? BUDGET_CFG.budgetOverrides[k] : 0;
+  }
+  function budgetDiffPlano(ym){
+    var plano = budgetReceitaPlano(ym);
+    var bruta = budgetAvacyFatVal(ym)||0;
+    if(!plano && !bruta) return null;
+    return plano - bruta;
+  }
+  function budgetVarPlano(ym){
+    var plano = budgetReceitaPlano(ym);
+    var bruta = budgetAvacyFatVal(ym)||0;
+    if(!plano) return null;
+    return (bruta/plano) - 1;
+  }
+
   // ── RECEITA ──
   secRow('Receita', '📈');
   dataRow('Receita Bruta AVACY', function(ym){ return budgetAvacyFatVal(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_BRUTA_AVACY'}});
   // Receita PLANO Avacy — totalmente manual, valores salvos em BUDGET_CFG.budgetOverrides
   dataRow('Receita PLANO Avacy', function(ym){ return 0; }, {bold:true, editable:{keyPrefix:'RECEITA_PLANO_AVACY'}});
+  // Diff Plano = Plano - Bruta (positivo = plano maior que realizado)
+  dataRow('Diff x Plano', function(ym){ return budgetDiffPlano(ym); }, {sub:true});
+  // Var Plano = Bruta/Plano - 1 (positivo = realizado superou plano)
+  dataRow('Var x Plano', function(ym){ return budgetVarPlano(ym); }, {sub:true, pct:true});
+  // Helpers para Diff / Var x Plano
+  function _getReceitaPlano(ym){
+    var k = 'RECEITA_PLANO_AVACY|'+ym;
+    return (BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[k]) || 0;
+  }
+  // Diff x Plano = Plano − Receita Bruta (positivo = bateu/superou plano, negativo = abaixo)
+  dataRow('↳ Diff x Plano', function(ym){
+    var plano = _getReceitaPlano(ym);
+    if(!plano) return null; // sem plano, não calcula
+    var bruta = budgetAvacyFatVal(ym)||0;
+    return plano - bruta;
+  }, {sub:true});
+  // Var x Plano = Receita Bruta / Plano - 1 (% de variação vs plano)
+  dataRow('↳ Var x Plano', function(ym){
+    var plano = _getReceitaPlano(ym);
+    if(!plano) return null;
+    var bruta = budgetAvacyFatVal(ym)||0;
+    return (bruta / plano) - 1;
+  }, {sub:true, pct:true});
 
   // ── IMPOSTOS ──
   secRow('Impostos', '🧾');
@@ -6917,7 +6989,7 @@ async function saveBudgetCfg(btn){
       <button class="btn save" id="btnSaveBudget" onclick="handleSaveBudget(this)">💾 Salvar</button>
     </div>
   </header>
-  <div style="flex:1;overflow:auto;padding:16px 20px" id="budgetBody">
+  <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;padding:16px 20px;min-height:0" id="budgetBody">
     <div style="text-align:center;padding:80px;color:#7a8ab0;font-size:14px" id="budgetEmpty">Carregando dados...</div>
   </div>
 </div>
