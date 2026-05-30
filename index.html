@@ -4070,8 +4070,20 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   var dg_unit = getFixo('desp_gerais', FIXOS_DEF.desp_gerais);
   var cd_unit = getFixo('cd_mensal', FIXOS_DEF.cd_mensal);
   var mcon=mc+rf_rec-cf-mkt,sa=sa_unit*shareRB,dg=dg_unit*shareRB,cd=cd_unit*shareQTD;
-  // 13º + Férias também aplicado em Salários Adm (mesmo pct das comissões comerciais)
-  var sa13ferias = sa * (pct13f>0?pct13f:0.11);
+  // 13º + Férias Adm: usa pct13ferias_adm se configurado, senão fallback para pct13ferias
+  var pct13Adm = (function(){
+    if(!a.anomesList || !a.anomesList.length) return null;
+    var total=0, count=0;
+    a.anomesList.forEach(function(am){
+      var p = DRE_CFG_PARAMS[String(am)];
+      if(p && p.pct13ferias_adm != null){ total += p.pct13ferias_adm; count++; }
+      else if(p && p.pct13ferias != null){ total += p.pct13ferias; count++; }
+    });
+    if(!count) return null;
+    return total/count;
+  })();
+  var pct13fAdmEff = pct13Adm != null ? pct13Adm : (pct13f>0?pct13f:0.11);
+  var sa13ferias = sa * pct13fAdmEff;
   var ebt=mcon-sa-sa13ferias-dg-cd;
   return{rb_dev,dev,rb_gross,rb,imp,icms:a.icms,pc:a.cofins+a.pis+a.fecpst,rl,qtd:a.qtd,cmv_b,cmv,cmv_base,ajuste_cmv:ajusteCmv,mkp,mg_prod,fob,mb,sv,sv_closer,sv_developer,sv_farmer,sv_hava,sv_ka,sv13ferias,com,com_martins,com_rca,mc,rf:rf_rec,cf,mkt,mkt_branding,mkt_leads,mcon,grade,sa,sa13ferias,dg,cd,ebt};
 }
@@ -5257,6 +5269,16 @@ async function openDreCfg(){
       despGerais ? '💸 Base: '+fmt(despGerais) : '')
     +fieldBrl('CD — Centro de Dist. (R$)', 'cd_mensal', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].cd_mensal!=null)?DRE_CFG_PARAMS[am].cd_mensal:FIXOS_DEF.cd_mensal,
       despCd ? '💸 Base: '+fmt(despCd) : '')
+    +'</div>'
+    +'<div class="dre-cfg-grid" style="margin-top:12px;padding-top:12px;border-top:1px dashed #d0d8ee">'
+    +fieldPct('% 13º + Férias Adm', 'pct13ferias_adm', (function(){
+        var p = DRE_CFG_PARAMS[am];
+        if(p && p.pct13ferias_adm != null) return p.pct13ferias_adm;
+        // fallback: usa o mesmo valor do comercial
+        if(p && p.pct13ferias != null) return p.pct13ferias;
+        return 0.11;
+      })(),
+      '📐 Aplicado sobre Salários Adm — resultado em 13º + Férias Adm (-)')
     +'</div></div>';
   document.getElementById('dreCfgOverlay').style.display='flex';
 }
@@ -5335,6 +5357,13 @@ function applyDreCfg(){
     // If user somehow typed >100, clamp to 0.11
     var pct13stored = pct13val > 100 ? 0.11 : (pct13val > 0 ? pct13val / 100 : 0.11);
     DRE_CFG_PARAMS[am]['pct13ferias'] = pct13stored;
+    // Save pct13ferias_adm (% 13º+Férias para Salários Adm) — mesma lógica
+    var pct13admEl = document.getElementById('dcf_pct13ferias_adm');
+    if(pct13admEl){
+      var pct13admVal = parseFloat(pct13admEl.value)||0;
+      var pct13admStored = pct13admVal > 100 ? 0.11 : (pct13admVal > 0 ? pct13admVal / 100 : 0.11);
+      DRE_CFG_PARAMS[am]['pct13ferias_adm'] = pct13admStored;
+    }
     console.log('[pct13ferias] input=',pct13val,'stored=',pct13stored);
     // Backfill NÃO roda aqui — só no carregamento inicial (evita sobrescrever valores salvos)
   } else {
