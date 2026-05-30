@@ -5841,7 +5841,14 @@ function renderBudget(anoFilter){
         var inputClr = hasOvr ? '#1a56c4' : (effective<0 ? '#c0181a' : '#0f1a3a');
         var inputFw = hasOvr ? '700' : '600';
         var displayVal = effective ? 'R$ '+Math.round(effective).toLocaleString('pt-BR') : '';
-        var tip = 'Valor OTB: '+(otbVal?'R$ '+Math.round(otbVal).toLocaleString('pt-BR'):'R$ 0')+(hasOvr?' • 💡 Editado manualmente':'');
+        // Tooltip e label do botão revert: diferente quando linha é puramente manual (sem valor OTB)
+        var hasOtbBase = otbVal > 0;
+        var tip = hasOtbBase
+          ? ('Valor OTB: R$ '+Math.round(otbVal).toLocaleString('pt-BR')+(hasOvr?' • 💡 Editado manualmente':''))
+          : 'Valor manual planejado'+(hasOvr?' (preenchido)':' (vazio)');
+        var revertTip = hasOtbBase
+          ? ('Restaurar valor da OTB (R$ '+Math.round(otbVal).toLocaleString('pt-BR')+')')
+          : 'Limpar valor manual';
         display = '<input type="text" class="budget-cell-input" '
           + 'data-ovrkey="'+escHtml(ovrKey)+'" data-otb="'+otbVal+'" '
           + 'value="'+escHtml(displayVal)+'" '
@@ -5852,7 +5859,7 @@ function renderBudget(anoFilter){
           + '<button type="button" class="budget-revert-btn" '
           + 'data-ovrkey="'+escHtml(ovrKey)+'" data-otb="'+otbVal+'" '
           + 'onclick="budgetRevertCell(this)" '
-          + 'title="Restaurar valor da OTB ('+(otbVal?'R$ '+Math.round(otbVal).toLocaleString('pt-BR'):'R$ 0')+')" '
+          + 'title="'+escHtml(revertTip)+'" '
           + 'style="margin-left:2px;padding:2px 4px;border:1px solid #d0d8ee;border-radius:4px;background:#fff;color:#1a56c4;cursor:pointer;font-size:9px;line-height:1;vertical-align:middle;'+(hasOvr?'':'visibility:hidden')+'">↺</button>';
       } else if(future && simKey && val===null){
         // Mês futuro sem dado real: input simulável
@@ -5915,6 +5922,8 @@ function renderBudget(anoFilter){
   // ── RECEITA ──
   secRow('Receita', '📈');
   dataRow('Receita Bruta AVACY', function(ym){ return budgetAvacyFatVal(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_BRUTA_AVACY'}});
+  // Receita PLANO Avacy — totalmente manual, valores salvos em BUDGET_CFG.budgetOverrides
+  dataRow('Receita PLANO Avacy', function(ym){ return 0; }, {bold:true, editable:{keyPrefix:'RECEITA_PLANO_AVACY'}});
 
   // ── IMPOSTOS ──
   secRow('Impostos', '🧾');
