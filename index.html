@@ -5375,6 +5375,8 @@ var BUDGET_DESP_RAW = [];
 var BUDGET_LOADED = false;
 // Estado de expansão das áreas no Budget — mantido em memória entre renders
 var BUDGET_AREAS_EXPANDED = {};
+// Estado de expansão de grupos de resumo (ex: 'despesas' colapsa todas as áreas de uma vez)
+var BUDGET_GROUP_EXPANDED = {despesas: true}; // default: despesas expandido (mostra áreas)
 // Toggle do triângulo: mostra/esconde tipos+folha de uma área
 function budgetToggleArea(btn){
   var uid = btn.getAttribute('data-area-uid');
@@ -5382,6 +5384,29 @@ function budgetToggleArea(btn){
   var subRows = document.querySelectorAll('tr.budget-area-sub[data-parent-area="'+uid+'"]');
   subRows.forEach(function(tr){ tr.style.display = BUDGET_AREAS_EXPANDED[uid] ? '' : 'none'; });
   btn.innerHTML = BUDGET_AREAS_EXPANDED[uid] ? '&#9660;' : '&#9654;';
+}
+// Toggle de grupo de resumo (Total Despesas → mostra/oculta todas as áreas)
+function budgetToggleGroup(btn){
+  var group = btn.getAttribute('data-group');
+  BUDGET_GROUP_EXPANDED[group] = !BUDGET_GROUP_EXPANDED[group];
+  if(group === 'despesas'){
+    var contentRows = document.querySelectorAll('tr.budget-despesas-content');
+    if(BUDGET_GROUP_EXPANDED.despesas){
+      // Expandindo: mostra áreas; sub-linhas só se a área específica estiver expandida
+      contentRows.forEach(function(tr){
+        if(tr.classList.contains('budget-area-sub')){
+          var pUid = tr.getAttribute('data-parent-area');
+          tr.style.display = BUDGET_AREAS_EXPANDED[pUid] ? '' : 'none';
+        } else {
+          tr.style.display = '';
+        }
+      });
+    } else {
+      // Colapsando: esconde tudo
+      contentRows.forEach(function(tr){ tr.style.display = 'none'; });
+    }
+  }
+  btn.innerHTML = BUDGET_GROUP_EXPANDED[group] ? '&#9660;' : '&#9654;';
 }
 var BUDGET_CFG = {
   // classif[e2_nomfor+'|'+e2_hist] = {tipo, area}
@@ -5807,7 +5832,10 @@ function renderBudget(anoFilter){
     var trAttrs = '';
     if(opts.parentArea){
       var hidden = !BUDGET_AREAS_EXPANDED[opts.parentArea];
-      trAttrs = ' class="budget-area-sub" data-parent-area="'+escHtml(opts.parentArea)+'"'+(hidden?' style="display:none"':'');
+      trAttrs = ' class="budget-area-sub budget-despesas-content" data-parent-area="'+escHtml(opts.parentArea)+'"'+(hidden?' style="display:none"':'');
+    } else if(opts.areaUid){
+      // Linha de área (header de cada área) — pertence ao grupo "despesas" para toggle global
+      trAttrs = ' class="budget-despesas-area-row budget-despesas-content" data-area-row="'+escHtml(opts.areaUid)+'"';
     }
     h += '<tr'+trAttrs+'>';
     // Triângulo de expansão para linhas de área (areaUid setado)
@@ -5899,10 +5927,19 @@ function renderBudget(anoFilter){
   }
 
   // ── Helper para linhas-resumo coloridas (Total Despesas, Receita Líquida, CMV R$, EBITDA) ──
-  function summaryRow(label, icon, gradStart, gradEnd, computeFn, isPct){
+  // Aceita opts: { isPct, toggleGroup } — toggleGroup ativa um botão ▶/▼ que oculta classe CSS
+  function summaryRow(label, icon, gradStart, gradEnd, computeFn, opts){
+    opts = opts||{};
+    var isPct = opts.isPct||false;
     var grad = 'linear-gradient(90deg,'+gradStart+' 0%,'+gradEnd+' 100%)';
     h += '<tr style="background:'+grad+';color:#fff">';
-    h += '<td style="padding:9px 14px;font-weight:800;font-size:13px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid '+gradStart+';border-right:2px solid '+gradStart+';position:sticky;left:0;z-index:1;background:'+grad+'">'+icon+' '+label+'</td>';
+    // Botão de toggle (visível se opts.toggleGroup setado)
+    var toggleHtml = '';
+    if(opts.toggleGroup){
+      var isExp = !!BUDGET_GROUP_EXPANDED[opts.toggleGroup];
+      toggleHtml = '<button class="budget-group-toggle" data-group="'+escHtml(opts.toggleGroup)+'" onclick="budgetToggleGroup(this)" style="background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.3);border-radius:4px;cursor:pointer;font-size:11px;color:#fff;margin-right:8px;padding:1px 6px;font-weight:700;line-height:1;vertical-align:middle">'+(isExp?'&#9660;':'&#9654;')+'</button>';
+    }
+    h += '<td style="padding:9px 14px;font-weight:800;font-size:13px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid '+gradStart+';border-right:2px solid '+gradStart+';position:sticky;left:0;z-index:1;background:'+grad+'">'+toggleHtml+icon+' '+label+'</td>';
     var monthlyVals = [];
     months.forEach(function(ym){
       var v = computeFn(ym);
@@ -6069,8 +6106,8 @@ function renderBudget(anoFilter){
       totalDespesasGeral[ym] = sum;
     });
 
-    // Linha "Total Despesas" — primeira linha após o título, cor vermelha
-    summaryRow('Total Despesas', '💸', '#d62b3a', '#ed5a4d', function(ym){ return totalDespesasGeral[ym]||0; });
+    // Linha "Total Despesas" — primeira linha após o título, cor vermelha, com toggle
+    summaryRow('Total Despesas', '💸', '#d62b3a', '#ed5a4d', function(ym){ return totalDespesasGeral[ym]||0; }, {toggleGroup:'despesas'});
 
     areasUsadas.forEach(function(area){
       var usedTiposForArea = {};
