@@ -5604,6 +5604,11 @@ function budgetGetMonths(){
 }
 
 function budgetAvacyFatVal(ym){
+  // Override manual tem prioridade sobre o valor OTB
+  var ovrKey = 'RECEITA_BRUTA_AVACY|'+ym;
+  if(BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[ovrKey] != null){
+    return BUDGET_CFG.budgetOverrides[ovrKey];
+  }
   // ym = 'YYYY-MM'
   var parts = ym.split('-'), ano=parts[0], mes=parts[1];
   // 1. Try OTB projected value from state.matrices (includes future simulation)
@@ -5826,7 +5831,30 @@ function renderBudget(anoFilter){
       var val = fn(ym);
       var future = isFuture(ym);
       var display;
-      if(future && simKey && val===null){
+      // Modo editável (linha Receita Bruta AVACY etc) — célula vira input com revert
+      if(opts.editable && opts.editable.keyPrefix){
+        var otbVal = parseFloat(val)||0;
+        var ovrKey = opts.editable.keyPrefix+'|'+ym;
+        var hasOvr = BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[ovrKey] != null;
+        var effective = hasOvr ? BUDGET_CFG.budgetOverrides[ovrKey] : otbVal;
+        var inputBg = hasOvr ? '#e3edff' : (otbVal>0 ? '#fffde7' : '#fff');
+        var inputClr = hasOvr ? '#1a56c4' : (effective<0 ? '#c0181a' : '#0f1a3a');
+        var inputFw = hasOvr ? '700' : '600';
+        var displayVal = effective ? 'R$ '+Math.round(effective).toLocaleString('pt-BR') : '';
+        var tip = 'Valor OTB: '+(otbVal?'R$ '+Math.round(otbVal).toLocaleString('pt-BR'):'R$ 0')+(hasOvr?' • 💡 Editado manualmente':'');
+        display = '<input type="text" class="budget-cell-input" '
+          + 'data-ovrkey="'+escHtml(ovrKey)+'" data-otb="'+otbVal+'" '
+          + 'value="'+escHtml(displayVal)+'" '
+          + 'title="'+escHtml(tip)+'" '
+          + 'onblur="budgetSaveOverride(this);setTimeout(function(){if(typeof renderBudget===\'function\')renderBudget(BUDGET_ANO_FILTER);},10);" '
+          + 'onfocus="this.select()" '
+          + 'style="width:92px;padding:4px 6px;border:1px solid #d0d8ee;border-radius:4px;text-align:center;font-size:12px;background:'+inputBg+';color:'+inputClr+';font-weight:'+inputFw+'">'
+          + '<button type="button" class="budget-revert-btn" '
+          + 'data-ovrkey="'+escHtml(ovrKey)+'" data-otb="'+otbVal+'" '
+          + 'onclick="budgetRevertCell(this)" '
+          + 'title="Restaurar valor da OTB ('+(otbVal?'R$ '+Math.round(otbVal).toLocaleString('pt-BR'):'R$ 0')+')" '
+          + 'style="margin-left:2px;padding:2px 4px;border:1px solid #d0d8ee;border-radius:4px;background:#fff;color:#1a56c4;cursor:pointer;font-size:9px;line-height:1;vertical-align:middle;'+(hasOvr?'':'visibility:hidden')+'">↺</button>';
+      } else if(future && simKey && val===null){
         // Mês futuro sem dado real: input simulável
         var simVal = BUDGET_CFG.sim[ym] && BUDGET_CFG.sim[ym][simKey] != null ? (BUDGET_CFG.sim[ym][simKey]*100).toFixed(1) : '';
         var inp = document.createElement('input');
@@ -5839,14 +5867,14 @@ function renderBudget(anoFilter){
         display = val===null ? '<span style="color:#ccc">—</span>' : isPct ? _bPct(val) : _bFmt(val);
       }
       var color = (typeof val==='number'&&val<0) ? '#c0181a' : (future?'#1a56c4':'#0f1a3a');
-      h += '<td style="text-align:center;padding:4px 8px;background:'+(future?'#f0f5ff':bg)+';font-weight:'+fw+';color:'+color+';border-bottom:1px solid #eef1f8">'+display+'</td>';
+      h += '<td style="text-align:center;padding:4px 8px;background:'+(future?'#f0f5ff':bg)+';font-weight:'+fw+';color:'+color+';border-bottom:1px solid #eef1f8;white-space:nowrap">'+display+'</td>';
     });
     h += '</tr>';
   }
 
   // ── RECEITA ──
   secRow('Receita', '📈');
-  dataRow('Receita Bruta AVACY', function(ym){ return budgetAvacyFatVal(ym)||null; }, {bold:true});
+  dataRow('Receita Bruta AVACY', function(ym){ return budgetAvacyFatVal(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_BRUTA_AVACY'}});
 
   // ── IMPOSTOS ──
   secRow('Impostos', '🧾');
@@ -5897,9 +5925,26 @@ function renderBudget(anoFilter){
 
   if(areasUsadas.length){
     secRow('Despesas', '💸');
-    // Acumulador para a linha Total Despesas (soma de todas as áreas com folha)
+    // Pré-computa o Total Despesas (soma de todas as áreas: despesas + folha)
     var totalDespesasGeral = {};
-    months.forEach(function(ym){ totalDespesasGeral[ym] = 0; });
+    months.forEach(function(ym){
+      var sum = 0;
+      areasUsadas.forEach(function(area){
+        var desp = budgetDespByTipoArea(ym,null,area)||0;
+        var fol  = (folhaByArea[area.toUpperCase()]||{})[ym]||0;
+        sum += (desp + fol);
+      });
+      totalDespesasGeral[ym] = sum;
+    });
+
+    // Linha "Total Despesas" — primeira linha após o título, com cor destacada
+    h += '<tr style="background:linear-gradient(90deg,#d62b3a 0%,#ed5a4d 100%);color:#fff">';
+    h += '<td style="padding:9px 14px;font-weight:800;font-size:13px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #b32533;border-right:2px solid #b32533;position:sticky;left:0;z-index:1;background:linear-gradient(90deg,#d62b3a 0%,#ed5a4d 100%)">💸 Total Despesas</td>';
+    months.forEach(function(ym){
+      var v = totalDespesasGeral[ym]||0;
+      h += '<td style="text-align:center;padding:9px 8px;font-weight:800;color:#fff;font-size:13px;border-bottom:1px solid #b32533">'+(v>0?_bFmt(v):'<span style="color:rgba(255,255,255,.5)">—</span>')+'</td>';
+    });
+    h += '</tr>';
 
     areasUsadas.forEach(function(area){
       var usedTiposForArea = {};
@@ -5918,7 +5963,6 @@ function renderBudget(anoFilter){
           var desp = budgetDespByTipoArea(ym,null,areaCapture)||0;
           var fol  = (folhaByArea[areaKeyFolha]||{})[ym]||0;
           var t = desp + fol;
-          totalDespesasGeral[ym] = (totalDespesasGeral[ym]||0) + t;
           return t>0 ? t : null;
         }, {bold:true, areaUid: areaUid});
         tipos.forEach(function(tipo){
@@ -5941,15 +5985,7 @@ function renderBudget(anoFilter){
         }
       })(area);
     });
-
-    // Linha "Total Despesas" — soma de todas as áreas (despesas + folha) em cor destacada
-    h += '<tr style="background:linear-gradient(90deg,#d62b3a 0%,#ed5a4d 100%);color:#fff">';
-    h += '<td style="padding:9px 14px;font-weight:800;font-size:13px;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid #b32533;border-right:2px solid #b32533;position:sticky;left:0;z-index:1;background:linear-gradient(90deg,#d62b3a 0%,#ed5a4d 100%)">💸 Total Despesas</td>';
-    months.forEach(function(ym){
-      var v = totalDespesasGeral[ym]||0;
-      h += '<td style="text-align:center;padding:9px 8px;font-weight:800;color:#fff;font-size:13px;border-bottom:1px solid #b32533">'+(v>0?_bFmt(v):'<span style="color:rgba(255,255,255,.5)">—</span>')+'</td>';
-    });
-    h += '</tr>';
+    // (linha Total Despesas movida para o topo após o título)
   }
 
 
@@ -6178,6 +6214,8 @@ function budgetRevertCell(btn){
   var key = btn.getAttribute('data-ovrkey');
   if(!BUDGET_CFG.budgetOverrides || BUDGET_CFG.budgetOverrides[key] == null) return; // já está usando otb
   delete BUDGET_CFG.budgetOverrides[key];
+  // Detecta contexto: dialog (recalc inline) vs main Budget (re-render completo)
+  var inDialog = btn.closest('#budgetDetailBody') !== null;
   // Atualiza o input vizinho
   var input = btn.parentNode.querySelector('input.budget-cell-input');
   if(input){
@@ -6196,6 +6234,10 @@ function budgetRevertCell(btn){
   })
     .then(function(){ toast('↺ Restaurado para valor da tabela'); })
     .catch(function(e){ console.warn('Erro restaurando:', e.message); toast('❌ Erro ao restaurar: '+e.message,'err'); });
+  // Se estamos no main view do Budget, re-renderiza para propagar (downstream: ICMS, margens, etc.)
+  if(!inDialog && typeof renderBudget === 'function'){
+    setTimeout(function(){ renderBudget(BUDGET_ANO_FILTER); }, 10);
+  }
 }
 function budgetRecalcRowTotal(input){
   var tr = input.closest('tr');
