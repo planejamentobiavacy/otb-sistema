@@ -26,8 +26,21 @@ body{font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;background:var(--b
 
 /* ── Screen stack ───────────────────────────────── */
 /* All screens are position:fixed so they stack cleanly */
-#screenLogin,#screenHome,#screenOtb,#screenDre,#screenFolha{
+#screenLogin,#screenHome,#screenOtb,#screenDre,#screenFolha,#screenBudget{
   position:fixed;inset:0;display:none;
+}
+/* Quando admin está impersonando outro usuário, empurra TODAS as telas pra baixo
+   para que o banner roxo do "Visualizando como" fique sempre visível e acessível */
+body.impersonating #screenHome,
+body.impersonating #screenOtb,
+body.impersonating #screenDre,
+body.impersonating #screenFolha,
+body.impersonating #screenBudget{
+  top:42px;
+}
+/* Quando impersonando, o wrapper da tabela do Budget precisa descontar os 42px do banner roxo */
+body.impersonating #budgetBody > div[style*="overflow"]{
+  max-height:calc(100vh - 242px) !important;
 }
 #screenLogin{background:var(--navy-dk);z-index:100;align-items:center;justify-content:center}
 #screenHome{background:var(--navy);z-index:90;flex-direction:column;align-items:center;justify-content:center;gap:32px}
@@ -5644,11 +5657,11 @@ function updateImpersonateBanner(){
     document.getElementById('impersonateBannerEmail').textContent = IMPERSONATING_EMAIL;
     var areas = (USER_PERMISSIONS[IMPERSONATING_EMAIL]&&USER_PERMISSIONS[IMPERSONATING_EMAIL].budgetAreas)||[];
     document.getElementById('impersonateBannerAreas').textContent = areas.length ? '— Áreas: '+areas.join(', ') : '— Sem restrição de área';
-    // Empurra o conteúdo da página pra baixo (40px do banner)
-    document.body.style.paddingTop = '40px';
+    // Adiciona classe no body — o CSS empurra todas as telas (position:fixed) pra baixo
+    document.body.classList.add('impersonating');
   } else {
     banner.style.display = 'none';
-    document.body.style.paddingTop = '';
+    document.body.classList.remove('impersonating');
   }
 }
 
@@ -6083,7 +6096,7 @@ function renderBudget(anoFilter){
     h += '<button onclick="budgetClearMeses()" style="padding:4px 9px;border:1.5px solid #c0181a;border-radius:14px;font-size:11px;font-weight:600;background:#fff;color:#c0181a;cursor:pointer;font-family:inherit;margin-left:4px" title="Limpar filtro de meses">✕ Limpar</button>';
   }
   h += '</div></div>';
-  h += '<div style="flex:1;min-height:0;overflow-x:auto;overflow-y:auto"><table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:900px">';
+  h += '<div style="flex:1;min-height:0;overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 200px)"><table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:900px">';
   h += '<thead><tr>';
   h += '<th style="text-align:left;padding:8px 12px;background:#1a2547;color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;position:sticky;left:0;top:0;z-index:5;min-width:220px;border-right:2px solid rgba(255,255,255,.2)">INDICADOR</th>';
   months.forEach(function(ym){
