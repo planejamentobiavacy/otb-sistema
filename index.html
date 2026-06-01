@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231a2a6c'/><text x='16' y='22' font-family='Arial' font-size='13' font-weight='bold' fill='white' text-anchor='middle'>OTB</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231a2a6c'/><text x='16' y='20' font-family='Arial' font-size='9' font-weight='bold' fill='white' text-anchor='middle'>Plan%26BI</text></svg>">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sistema OTB — AVACY</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -68,7 +68,7 @@ input.budget-cell-input[data-ss="1"]:focus{
 /* ── Login ──────────────────────────────────────── */
 .login-wrap{width:100%;max-width:380px;padding:0 24px}
 .login-logo{display:flex;align-items:center;gap:14px;margin-bottom:36px;justify-content:center}
-.login-mark{width:52px;height:52px;background:var(--red);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:20px;color:#fff;flex-shrink:0}
+.login-mark{width:64px;height:52px;background:var(--red);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#fff;flex-shrink:0;letter-spacing:.3px}
 .login-card{background:#1a2547;border-radius:12px;padding:32px 28px;box-shadow:0 24px 64px rgba(0,0,0,.4)}
 .login-field{margin-bottom:16px}
 .login-field label{display:block;font-size:11px;font-weight:600;color:rgba(255,255,255,.6);letter-spacing:.8px;text-transform:uppercase;margin-bottom:6px}
@@ -81,7 +81,7 @@ input.budget-cell-input[data-ss="1"]:focus{
 
 /* ── Home ───────────────────────────────────────── */
 .home-logo{display:flex;align-items:center;gap:14px;margin-bottom:8px}
-.home-mark{width:56px;height:56px;background:var(--red);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:22px;color:#fff;border-radius:6px}
+.home-mark{width:70px;height:56px;background:var(--red);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:15px;color:#fff;border-radius:6px;letter-spacing:.3px}
 .home-modules{display:flex;gap:20px;flex-wrap:wrap;justify-content:center}
 .home-card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:32px 40px;cursor:pointer;text-align:center;min-width:180px;width:180px;font-family:inherit;transition:background .15s;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .home-card:hover{background:rgba(255,255,255,.12)}
@@ -98,7 +98,7 @@ input.budget-cell-input[data-ss="1"]:focus{
 /* ── App shared header ──────────────────────────── */
 .app-header{background:linear-gradient(90deg,var(--navy-dk),var(--navy));color:#fff;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid var(--red);box-shadow:0 2px 8px rgba(0,0,0,.15);flex-shrink:0}
 .app-brand{display:flex;align-items:center;gap:12px}
-.app-brand-mark{width:36px;height:36px;background:var(--red);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;letter-spacing:.5px;border-radius:4px}
+.app-brand-mark{width:48px;height:36px;background:var(--red);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:10px;letter-spacing:.3px;border-radius:4px;color:#fff}
 .app-brand h1{font-size:16px;font-weight:600;letter-spacing:.3px}
 .app-brand small{display:block;font-size:11px;opacity:.7;font-weight:400}
 .btn-back{background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.35);color:#fff;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;margin-right:8px;font-family:inherit;letter-spacing:.3px}
@@ -304,7 +304,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
 <div id="screenLogin">
   <div class="login-wrap">
     <div class="login-logo">
-      <div class="login-mark">OTB</div>
+      <div class="login-mark">Plan&amp;BI</div>
       <div>
         <div style="font-size:20px;font-weight:700;color:#fff">Sistema de Planejamento</div>
         <div style="font-size:12px;color:rgba(255,255,255,.45);margin-top:2px">AVACY · Acesso restrito</div>
@@ -381,7 +381,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
 <!-- ══════════════════ HOME ═══════════════════════ -->
 <div id="screenHome">
   <div class="home-logo">
-    <div class="home-mark">OTB</div>
+    <div class="home-mark">Plan&amp;BI</div>
     <div>
       <h1 style="font-size:24px;font-weight:600;color:#fff">Sistema de Planejamento</h1>
       <small style="font-size:12px;color:rgba(255,255,255,.5)">Selecione o módulo</small>
@@ -420,7 +420,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
   <header class="app-header">
     <div class="app-brand">
       <button class="btn-back" onclick="showHome()">← Início</button>
-      <div class="app-brand-mark">OTB</div>
+      <div class="app-brand-mark">Plan&amp;BI</div>
       <div>
         <h1>Open To Buy — Sistema de Planejamento</h1>
         <small>Análise consolidada por fornecedor · Realizado e simulado</small>
@@ -4483,7 +4483,14 @@ function _ensureFolhaSalLookups(src){
     if(typeof FOLHA_CFG !== 'undefined' && FOLHA_CFG && FOLHA_CFG.classif){
       Object.keys(FOLHA_CFG.classif).forEach(function(nome){
         var cfg = FOLHA_CFG.classif[nome];
-        if(cfg && cfg.canal && cfg.canal !== '—') lkp[nome] = String(cfg.canal).toUpperCase();
+        if(!cfg || !cfg.canal) return;
+        // canal pode ser array (multi) ou string (legado)
+        var canais;
+        if(Array.isArray(cfg.canal)) canais = cfg.canal;
+        else if(cfg.canal !== '—') canais = [cfg.canal];
+        else canais = [];
+        canais = canais.map(function(c){ return String(c).toUpperCase(); }).filter(Boolean);
+        if(canais.length) lkp[nome] = canais;
       });
     }
     _folhaSalCache.canalLookup = lkp;
@@ -4527,6 +4534,7 @@ function _is13VerbaName(colName){
 
 // ── Total de Folha por canal (CLOSER/DEVELOPER/FARMER/HAVA/KA) em um am, excluindo 13º ──
 // Lê de DRE_FOLHA_RAW (preferencial) ou FOLHA_RAW (fallback). Memoizado por (canal,am).
+// Multi-canal: se uma pessoa pertence a N canais, seu salário é RATEADO 1/N por canal.
 function folhaSalCanalAm(canal, am){
   if(!canal || !am) return 0;
   var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
@@ -4539,15 +4547,17 @@ function folhaSalCanalAm(canal, am){
   _ensureFolhaSalLookups(src);
   var lkp = _folhaSalCache.canalLookup;
   var nomeKey = _folhaSalCache.nomeKey;
-  // Filtra linhas correspondentes (canal + am) e soma verbas (exc. 13º)
   var verbasOK = FOLHA_VERBAS.filter(function(k){ return !_is13VerbaName(k); });
   var total = 0;
   for(var i=0;i<src.length;i++){
     var r = src[i];
     var nome = nomeKey ? String(r[nomeKey]).trim() : '';
-    if(!lkp[nome] || lkp[nome] !== canalUp) continue;
+    var personCanais = lkp[nome];
+    if(!personCanais || personCanais.indexOf(canalUp) < 0) continue;
     var anomes = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
     if(anomes !== am) continue;
+    // Rateio: se pessoa tem N canais, soma 1/N do salário neste canal
+    var prorate = 1 / personCanais.length;
     var keys = Object.keys(r);
     var totalVerbas = 0;
     for(var j=0;j<verbasOK.length;j++){
@@ -4556,15 +4566,14 @@ function folhaSalCanalAm(canal, am){
       if(found) totalVerbas += folhaNum(r[found]);
     }
     if(totalVerbas > 0){
-      total += totalVerbas;
+      total += totalVerbas * prorate;
     } else {
-      // Fallback: r.valor menos colunas detectadas como 13°
       var rTotal = parseFloat(r.valor||r.VALOR)||0;
       var total13 = 0;
       for(var k2=0;k2<keys.length;k2++){
         if(_is13VerbaName(keys[k2])) total13 += folhaNum(r[keys[k2]]);
       }
-      total += (rTotal - total13);
+      total += (rTotal - total13) * prorate;
     }
   }
   _folhaSalCache.byCanalAm[cacheKey] = total;
@@ -4701,7 +4710,7 @@ function folhaCfgRender(lista){
     +'<th style="'+thS+'">CARGO (base)</th>'
     +'<th style="'+thS+';min-width:120px">ÁREA (original)</th>'
     +'<th style="'+thS+';min-width:160px">ÁREA AJUST.</th>'
-    +'<th style="'+thS+';min-width:130px">CANAL</th>'
+    +'<th style="'+thS+';min-width:230px">CANAL <span style="font-size:9px;color:#7a8ab0;font-weight:400">(múltiplo • rateado)</span></th>'
     +'<th style="'+thS+';min-width:80px;text-align:center">SAL. ADM</th>'
     +'</tr></thead><tbody>';
 
@@ -4724,9 +4733,20 @@ function folhaCfgRender(lista){
         +'</select>'
       +'</td>'
       +'<td style="padding:5px 10px;border-bottom:1px solid #eef1f4">'
-        +'<select class="fcfg-canal" data-nome="'+escHtml(nome)+'" style="width:100%;padding:5px 8px;border:1.5px solid #d0d8ee;border-radius:4px;font-size:12px;font-family:inherit;background:#fff">'
-        +FOLHA_CANAIS.map(function(c){ return '<option value="'+c+'"'+(c===canal?' selected':'')+'>'+c+'</option>'; }).join('')
-        +'</select>'
+        +(function(){
+          // Normaliza canal: pode ser string (legado) ou array (novo)
+          var canalsAtuais;
+          if(Array.isArray(canal)) canalsAtuais = canal.slice();
+          else if(canal && canal !== '—') canalsAtuais = [canal];
+          else canalsAtuais = [];
+          var canaisDisp = ['Farmer','Developer','Closer','Hava','KA'];
+          return '<div class="fcfg-canal-multi" data-nome="'+escHtml(nome)+'" style="display:flex;flex-wrap:wrap;gap:3px;padding:2px">'
+            +canaisDisp.map(function(c){
+              var active = canalsAtuais.indexOf(c)>=0;
+              return '<button type="button" data-canal="'+c+'" onclick="fcfgToggleCanal(this)" style="padding:3px 7px;font-size:10px;border-radius:11px;border:1px solid '+(active?'#1a56c4':'#d0d8ee')+';background:'+(active?'#1a56c4':'#fff')+';color:'+(active?'#fff':'#7a8ab0')+';cursor:pointer;font-weight:'+(active?'700':'500')+';transition:all .1s">'+c+'</button>';
+            }).join('')
+            +'</div>';
+        })()
       +'</td>'
       +'<td style="padding:5px 10px;border-bottom:1px solid #eef1f4;text-align:center">'
         +'<input type="checkbox" class="fcfg-admin" data-nome="'+escHtml(nome)+'" '+(((FOLHA_CFG.classif[nome]||{}).admin==='sim')?'checked':'')+' style="width:16px;height:16px;accent-color:#1a2547;cursor:pointer">'
@@ -4760,6 +4780,22 @@ function closeFolhaCfg(){
   document.getElementById('folhaCfgOverlay').style.display = 'none';
 }
 
+// Toggle de pill de canal na config da Folha (multi-seleção)
+function fcfgToggleCanal(btn){
+  var active = btn.style.background === 'rgb(26, 86, 196)' || btn.style.background === '#1a56c4';
+  if(active){
+    btn.style.background = '#fff';
+    btn.style.color = '#7a8ab0';
+    btn.style.borderColor = '#d0d8ee';
+    btn.style.fontWeight = '500';
+  } else {
+    btn.style.background = '#1a56c4';
+    btn.style.color = '#fff';
+    btn.style.borderColor = '#1a56c4';
+    btn.style.fontWeight = '700';
+  }
+}
+
 async function saveFolhaCfg(btn){
   var orig = btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
 
@@ -4767,12 +4803,21 @@ async function saveFolhaCfg(btn){
   document.querySelectorAll('#folhaCfgBody tr[data-nome]').forEach(function(row){
     var nome   = row.getAttribute('data-nome');
     var area   = row.querySelector('.fcfg-area')  ? row.querySelector('.fcfg-area').value  : '';
-    var canal  = row.querySelector('.fcfg-canal') ? row.querySelector('.fcfg-canal').value : '—';
+    // Multi-canal: coleta todos os pills ativos
+    var canalContainer = row.querySelector('.fcfg-canal-multi');
+    var canais = [];
+    if(canalContainer){
+      canalContainer.querySelectorAll('button[data-canal]').forEach(function(b){
+        var isActive = b.style.background === 'rgb(26, 86, 196)' || b.style.background === '#1a56c4';
+        if(isActive) canais.push(b.getAttribute('data-canal'));
+      });
+    }
     var adminCb = row.querySelector('.fcfg-admin');
     var admin  = adminCb && adminCb.checked ? 'sim' : 'nao';
     if(!FOLHA_CFG.classif[nome]) FOLHA_CFG.classif[nome] = {};
     FOLHA_CFG.classif[nome].area  = area;
-    FOLHA_CFG.classif[nome].canal = canal;
+    // Salva canal como array (multi). Se vazio, salva '—' pra compat legado
+    FOLHA_CFG.classif[nome].canal = canais.length ? canais : '—';
     FOLHA_CFG.classif[nome].admin = admin;
   });
 
@@ -5367,11 +5412,17 @@ async function openDreCfg(){
 
   // Folha por canal excluindo S13_PARC (parcela do 13o salário)
   // Find closest available month in DRE_FOLHA_RAW to the selected am
-  // Pre-build nome→canal lookup from FOLHA_CFG for performance
+  // Pre-build nome→canal lookup from FOLHA_CFG for performance (multi-canal: array de canais)
   var _folhaCanalLookup = {};
   Object.keys(FOLHA_CFG.classif).forEach(function(nome){
     var cfg = FOLHA_CFG.classif[nome];
-    if(cfg && cfg.canal && cfg.canal !== '—') _folhaCanalLookup[nome] = cfg.canal.toUpperCase();
+    if(!cfg || !cfg.canal) return;
+    var canais;
+    if(Array.isArray(cfg.canal)) canais = cfg.canal;
+    else if(cfg.canal !== '—') canais = [cfg.canal];
+    else canais = [];
+    canais = canais.map(function(c){ return String(c).toUpperCase(); }).filter(Boolean);
+    if(canais.length) _folhaCanalLookup[nome] = canais;
   });
 
   // Find the nome field key from the first row (cached)
@@ -5388,17 +5439,23 @@ async function openDreCfg(){
   function brl(v){ return Math.round(v); }
 
   // Calcula totais da folha por canal/área para o ano_mes selecionado
+  // Multi-canal: se pessoa pertence a N canais, soma 1/N do salário neste canal
   function folhaTotalCanal(canal, am){
     var canalUp = canal.toUpperCase();
     var _lkp = (typeof _folhaCanalLookup !== 'undefined' && _folhaCanalLookup) ? _folhaCanalLookup : {};
     var _nk  = (typeof _folhaNomeKey    !== 'undefined') ? _folhaNomeKey    : null;
     return DRE_FOLHA_RAW.filter(function(r){
       var nome = _nk ? String(r[_nk]).trim() : '';
-      var canalR = _lkp[nome] || '';
+      var personCanais = _lkp[nome];
+      if(!personCanais || personCanais.indexOf(canalUp) < 0) return false;
       var anomes = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
       var amRef2 = _folhaAmRef || am;
-      return canalR === canalUp && (!amRef2 || anomes===amRef2);
-    }).reduce(function(s,r){ return s + (parseFloat(r.valor||r.VALOR)||0); }, 0);
+      return (!amRef2 || anomes===amRef2);
+    }).reduce(function(s,r){
+      var nome = _nk ? String(r[_nk]).trim() : '';
+      var prorate = 1 / (_lkp[nome] || [1]).length;
+      return s + (parseFloat(r.valor||r.VALOR)||0) * prorate;
+    }, 0);
   }
   function folhaTotalAdm(am){
     // Usa DRE_FOLHA_RAW se carregado, senão FOLHA_RAW (módulo Folha)
@@ -5561,16 +5618,20 @@ async function openDreCfg(){
     var _lkp = (typeof _folhaCanalLookup !== 'undefined' && _folhaCanalLookup) ? _folhaCanalLookup : {};
     var _nk  = (typeof _folhaNomeKey    !== 'undefined') ? _folhaNomeKey    : null;
     var matched = 0;
+    // 1ª passada: filtra linhas que tem canal + am corretos
     var result = DRE_FOLHA_RAW.filter(function(r){
       var nome = _nk ? String(r[_nk]).trim() : '';
-      var canalR = _lkp[nome] || '';
+      var personCanais = _lkp[nome];
+      if(!personCanais || personCanais.indexOf(canalUp) < 0) return false;
       var anomes = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
       var amRef = _folhaAmRef || am;
-      var ok = canalR === canalUp && (!amRef || anomes===amRef);
+      var ok = (!amRef || anomes===amRef);
       if(ok) matched++;
       return ok;
     }).reduce(function(s,r){
       var keys = Object.keys(r);
+      var nome = _nk ? String(r[_nk]).trim() : '';
+      var prorate = 1 / (_lkp[nome] || [1]).length;
       // Diagnóstico (1 vez): mostra todas as colunas pra ajudar identificar 13°
       if(!_log13Done){
         _log13Done = true;
@@ -5585,14 +5646,14 @@ async function openDreCfg(){
         var found = keys.find(function(rk){ return rk.toUpperCase() === k; });
         if(found) totalVerbas += folhaNum(r[found]);
       });
-      if(totalVerbas > 0) return s + totalVerbas;
+      if(totalVerbas > 0) return s + totalVerbas * prorate;
       // Fallback: r.valor menos TODAS as colunas detectadas como 13°
       var total = parseFloat(r.valor||r.VALOR)||0;
       var total13 = 0;
       keys.forEach(function(k){
         if(is13Verba(k)) total13 += folhaNum(r[k]);
       });
-      return s + (total - total13);
+      return s + (total - total13) * prorate;
     }, 0);
 
     return result;
