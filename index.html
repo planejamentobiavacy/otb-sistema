@@ -38,6 +38,19 @@ body.impersonating #screenFolha,
 body.impersonating #screenBudget{
   top:42px;
 }
+
+/* Inputs editáveis em linhas-resumo coloridas (Receita Bruta Avacy, etc): visualmente integrados.
+   Hover/focus revelam a borda branca pra indicar que é editável */
+input.budget-cell-input[data-ss="1"]:hover{
+  background:rgba(255,255,255,.18) !important;
+  border-color:rgba(255,255,255,.6) !important;
+}
+input.budget-cell-input[data-ss="1"]:focus{
+  outline:none;
+  background:rgba(255,255,255,.28) !important;
+  border-color:rgba(255,255,255,.8) !important;
+  box-shadow:0 0 0 2px rgba(255,255,255,.35);
+}
 #screenLogin{background:var(--navy-dk);z-index:100;align-items:center;justify-content:center}
 #screenHome{background:var(--navy);z-index:90;flex-direction:column;align-items:center;justify-content:center;gap:32px}
 #screenOtb{background:var(--bg);z-index:80;flex-direction:column}
@@ -612,7 +625,7 @@ var TBLS = (function(){
     carteira:  localStorage.getItem('otb_tbl_carteira')  || 'otb_carteira',
     produto:   localStorage.getItem('otb_tbl_produto')   || 'otb_produto',
     venda_dre: localStorage.getItem('otb_tbl_venda_dre') || 'dw_otb_venda_dre',
-    frete_dre: localStorage.getItem('otb_tbl_frete_dre') || 'otb_frete_dre',
+    frete_dre: localStorage.getItem('otb_tbl_frete_dre') || 'dw_otb_frete_dre',
     despesa:   (localStorage.getItem('otb_tbl_despesa')==='otb_despesa'?(localStorage.removeItem('otb_tbl_despesa'),null):localStorage.getItem('otb_tbl_despesa')) || 'dw_otb_despesa',
     folha:     localStorage.getItem('otb_tbl_folha')     || 'otb_folha',
     canais:    localStorage.getItem('otb_tbl_canais')    || 'otb_canais',
@@ -6245,13 +6258,18 @@ function renderBudget(anoFilter){
         var hasOvr = BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[ovrKey] != null;
         var effective = hasOvr ? BUDGET_CFG.budgetOverrides[ovrKey] : otbVal;
         effectiveForYear = effective;
-        // Em modo summaryStyle, inputs ficam com fundo branco translúcido pra contrastar com a linha colorida
+        // Em summaryStyle (linha colorida verde/vermelho/azul): input transparente + texto branco
+        // Override (editado manualmente): leve tonalidade branca pra diferenciar do valor original
         var inputBg = ss
-          ? (hasOvr ? 'rgba(227,237,255,.95)' : 'rgba(255,255,255,.92)')
+          ? (hasOvr ? 'rgba(255,255,255,.22)' : 'transparent')
           : (hasOvr ? '#e3edff' : (otbVal>0 ? '#fffde7' : '#fff'));
-        var inputClr = hasOvr ? '#1a56c4' : (effective<0 ? '#c0181a' : '#0f1a3a');
-        var inputFw = ss ? '700' : (hasOvr ? '700' : '600');
-        var inputBorder = ss ? 'rgba(255,255,255,.5)' : '#d0d8ee';
+        var inputClr = ss
+          ? '#fff'  // texto branco sempre (combina com a linha colorida)
+          : (hasOvr ? '#1a56c4' : (effective<0 ? '#c0181a' : '#0f1a3a'));
+        var inputFw = ss ? (hasOvr ? '800' : '700') : (hasOvr ? '700' : '600');
+        var inputBorder = ss
+          ? (hasOvr ? 'rgba(255,255,255,.4)' : 'transparent')  // sem borda no estado neutro
+          : '#d0d8ee';
         var displayVal = effective ? 'R$ '+Math.round(effective).toLocaleString('pt-BR') : '';
         // Tooltip e label do botão revert: diferente quando linha é puramente manual (sem valor OTB)
         var hasOtbBase = otbVal > 0;
@@ -6261,18 +6279,18 @@ function renderBudget(anoFilter){
         var revertTip = hasOtbBase
           ? ('Restaurar valor da OTB (R$ '+Math.round(otbVal).toLocaleString('pt-BR')+')')
           : 'Limpar valor manual';
-        display = '<input type="text" class="budget-cell-input" '
+        display = '<input type="text" class="budget-cell-input"'+(ss?' data-ss="1"':'')+' '
           + 'data-ovrkey="'+escHtml(ovrKey)+'" data-otb="'+otbVal+'" '
           + 'value="'+escHtml(displayVal)+'" '
           + 'title="'+escHtml(tip)+'" '
           + 'onblur="budgetSaveOverride(this);setTimeout(function(){if(typeof renderBudget===\'function\')renderBudget(BUDGET_ANO_FILTER);},10);" '
           + 'onfocus="this.select()" '
-          + 'style="width:92px;padding:4px 6px;border:1px solid '+inputBorder+';border-radius:4px;text-align:center;font-size:12px;background:'+inputBg+';color:'+inputClr+';font-weight:'+inputFw+'">'
+          + 'style="width:92px;padding:4px 6px;border:1px solid '+inputBorder+';border-radius:4px;text-align:center;font-size:'+(ss?'13':'12')+'px;background:'+inputBg+';color:'+inputClr+';font-weight:'+inputFw+'">'
           + '<button type="button" class="budget-revert-btn" '
           + 'data-ovrkey="'+escHtml(ovrKey)+'" data-otb="'+otbVal+'" '
           + 'onclick="budgetRevertCell(this)" '
           + 'title="'+escHtml(revertTip)+'" '
-          + 'style="margin-left:2px;padding:2px 4px;border:1px solid '+inputBorder+';border-radius:4px;background:#fff;color:#1a56c4;cursor:pointer;font-size:9px;line-height:1;vertical-align:middle;'+(hasOvr?'':'visibility:hidden')+'">↺</button>';
+          + 'style="margin-left:2px;padding:2px 4px;border:1px solid '+(ss?'rgba(255,255,255,.45)':'#d0d8ee')+';border-radius:4px;background:'+(ss?'rgba(255,255,255,.22)':'#fff')+';color:'+(ss?'#fff':'#1a56c4')+';cursor:pointer;font-size:9px;line-height:1;vertical-align:middle;'+(hasOvr?'':'visibility:hidden')+'">↺</button>';
       } else if(future && simKey && val===null){
         // Mês futuro sem dado real: input simulável
         var simVal = BUDGET_CFG.sim[ym] && BUDGET_CFG.sim[ym][simKey] != null ? (BUDGET_CFG.sim[ym][simKey]*100).toFixed(1) : '';
