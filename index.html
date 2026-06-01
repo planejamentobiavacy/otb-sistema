@@ -5351,17 +5351,18 @@ async function openDreCfg(){
   if(!isAdmin()){ toast('🔒 Acesso restrito a administradores.','err'); return; }
   var body = document.getElementById('dreCfgBody');
   if(!body) return;
-  // Aguarda FOLHA_CFG antes de calcular salários por canal
-  if(!Object.keys(FOLHA_CFG.classif).length){
-    try{
-      var saved = await supaLoad(TBLS.save_folha, 'folha_classif');
-      if(saved && saved.classif) FOLHA_CFG.classif = saved.classif;
-    } catch(e){ console.warn('[DRE_CFG] erro ao carregar FOLHA_CFG:', e.message); }
-    // Re-renderiza o painel com dados corretos da Folha
-    // (necessário porque o primeiro render pode ter ocorrido antes do FOLHA_CFG carregar)
-    var cfgOverlay = document.getElementById('dreCfgOverlay');
-    if(cfgOverlay && cfgOverlay.style.display !== 'none') openDreCfg();
-  }
+  // Sempre recarrega FOLHA_CFG.classif (pra pegar mudanças feitas no Folha após a última carga)
+  try{
+    var fcSaved = await supaLoad(TBLS.save_folha, 'folha_classif');
+    if(fcSaved && fcSaved.classif){
+      FOLHA_CFG.classif = fcSaved.classif;
+      if(typeof clearFolhaSalCache==='function') clearFolhaSalCache();
+      // Diagnóstico: conta quantos estão marcados como admin
+      var admCount = Object.values(FOLHA_CFG.classif).filter(function(c){ return c.admin==='sim'; }).length;
+      var canalCount = Object.values(FOLHA_CFG.classif).filter(function(c){ return c.canal && c.canal!=='—'; }).length;
+      console.log('[DRE_CFG] FOLHA_CFG recarregado:', Object.keys(FOLHA_CFG.classif).length, 'pessoas | admin=sim:', admCount, '| com canal:', canalCount);
+    }
+  } catch(e){ console.warn('[DRE_CFG] erro ao recarregar FOLHA_CFG:', e.message); }
 
 
   // Folha por canal excluindo S13_PARC (parcela do 13o salário)
@@ -5408,6 +5409,16 @@ async function openDreCfg(){
     if(!src.length) return 0;
     // Se há pessoas marcadas como Admin no FOLHA_CFG, usa elas
     var hasAdminConfig = Object.values(FOLHA_CFG.classif||{}).some(function(c){ return c.admin==='sim'; });
+    var adminNames = hasAdminConfig
+      ? Object.keys(FOLHA_CFG.classif).filter(function(n){ return FOLHA_CFG.classif[n].admin==='sim'; })
+      : [];
+    console.log('[DRE Cfg] folhaTotalAdm — hasAdminConfig:', hasAdminConfig, '| nomes marcados admin:', adminNames.length, adminNames.length ? '| ex:' : '', adminNames.slice(0,3));
+    // Diagnóstico: compara nomes na fonte vs nomes em FOLHA_CFG
+    if(hasAdminConfig && src.length){
+      var sampleNames = src.slice(0, 20).map(function(r){ return folhaGetNome(r); });
+      var sampleMatches = sampleNames.filter(function(n){ return adminNames.indexOf(n)>=0; });
+      console.log('[DRE Cfg] folhaTotalAdm — amostra (20 1ªs linhas):', sampleNames.length, 'nomes |', sampleMatches.length, 'casaram com adminNames | ex DRE_FOLHA:', sampleNames.slice(0,3));
+    }
     var totalRows = 0, totalVal = 0;
     var filtered = src.filter(function(r){
       var nome = folhaGetNome(r);
@@ -5429,7 +5440,7 @@ async function openDreCfg(){
     });
     totalRows = filtered.length;
     totalVal = filtered.reduce(function(s,r){ return s + folhaTotal(r); }, 0);
-    console.log('[DRE Cfg] folhaTotalAdm — hasAdminConfig:', hasAdminConfig, '| linhas filtradas:', totalRows, '| total: R$', totalVal.toLocaleString('pt-BR',{maximumFractionDigits:2}));
+    console.log('[DRE Cfg] folhaTotalAdm — linhas filtradas:', totalRows, '| total: R$', totalVal.toLocaleString('pt-BR',{maximumFractionDigits:2}));
     return totalVal;
   }
   function despTotal(categoria, am){
