@@ -4034,6 +4034,21 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
 function dreCalcShare(sliceRows,allRows,canalCtx){
   var aSlice=dreAgg(sliceRows),aAll=dreAgg(allRows);
   var sRB=aAll.fat_v>0?aSlice.fat_v/aAll.fat_v:1,sQTD=aAll.qtd>0?aSlice.qtd/aAll.qtd:1;
+  // Auto-detecção de canal pra slices que pertencem APENAS a MARTINS ou RCA.
+  // Esses canais NÃO têm salário comercial (só comissão), então setamos canalCtx
+  // pra que a lógica do dreCalc zere os salários automaticamente.
+  if(!canalCtx && sliceRows && sliceRows.length){
+    var canaisNoSlice = {};
+    sliceRows.forEach(function(r){
+      var c = String(r.canal || r.CANAL || '').trim().toUpperCase();
+      if(c) canaisNoSlice[c] = true;
+    });
+    var canaisLista = Object.keys(canaisNoSlice);
+    // Só seta canalCtx se TODAS as linhas pertencem a UM único canal sem-salário
+    if(canaisLista.length === 1 && (canaisLista[0]==='MARTINS' || canaisLista[0]==='RCA')){
+      canalCtx = canaisLista[0];
+    }
+  }
   return dreCalc(aSlice,sRB,sQTD,canalCtx);
 }
 var dreNum=function(v){if(!v&&v!==0) return 0;var s=String(v).trim();if(s.includes(',')&&!s.includes('.')) return parseFloat(s.replace(',','.'))||0;if(s.includes(',')&&s.includes('.')) return parseFloat(s.replace(/\./g,'').replace(',','.'))||0;return parseFloat(s)||0;};
