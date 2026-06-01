@@ -3065,6 +3065,18 @@ async function loadDreFromSupabase(forceRaw){
     if(emptyEl)   emptyEl.style.display='none';
     dreShowProgress(0, 100);
 
+    // Carrega FOLHA_CFG.classif ANTES do DRE pra que folhaSalCanalAm tenha o lookup nome→canal
+    if(typeof FOLHA_CFG !== 'undefined' && (!FOLHA_CFG.classif || !Object.keys(FOLHA_CFG.classif).length)){
+      try{
+        var fcSaved = await supaLoad(TBLS.save_folha, 'folha_classif');
+        if(fcSaved && fcSaved.classif){
+          FOLHA_CFG.classif = fcSaved.classif;
+          if(typeof clearFolhaSalCache==='function') clearFolhaSalCache();
+          console.log('[DRE init] FOLHA_CFG.classif carregado:', Object.keys(fcSaved.classif).length, 'pessoas');
+        }
+      } catch(e){ console.warn('[DRE init] erro carregando FOLHA_CFG:', e.message); }
+    }
+
     var saved = await supaLoad(TBLS.save_dre, 'dre_current');
     if(saved && saved.config){
       // Limpa floating point noise ao restaurar config salva
@@ -4433,30 +4445,38 @@ function folhaTotal(r){
 // ── Cache para folhaSalCanalAm / folhaSalAdmAm ────────────────────────
 // Limpado quando DRE_FOLHA_RAW ou FOLHA_CFG.classif mudam (via clearFolhaSalCache)
 var _folhaSalCache = {
-  canalLookup: null,   // {nome: 'CLOSER'/'DEVELOPER'/...}
-  nomeKey: null,       // chave do campo "nome" em DRE_FOLHA_RAW
-  hasAdminCfg: null,   // boolean
-  sourceLen: -1,       // length da fonte usada — invalida cache se mudar
-  byCanalAm: {},       // {'CLOSER|202602': 43794, ...}
-  admByAm: {}          // {'202602': 184500, ...}
+  canalLookup: null,
+  nomeKey: null,
+  hasAdminCfg: null,
+  sourceLen: -1,
+  classifLen: -1,    // tamanho de FOLHA_CFG.classif — invalida cache se mudar
+  byCanalAm: {},
+  admByAm: {},
+  _diagDone: false   // log de diagnóstico (1ª vez)
 };
 function clearFolhaSalCache(){
   _folhaSalCache.canalLookup = null;
   _folhaSalCache.nomeKey = null;
   _folhaSalCache.hasAdminCfg = null;
   _folhaSalCache.sourceLen = -1;
+  _folhaSalCache.classifLen = -1;
   _folhaSalCache.byCanalAm = {};
   _folhaSalCache.admByAm = {};
+  _folhaSalCache._diagDone = false;
 }
 function _ensureFolhaSalLookups(src){
-  // Reset cache se fonte mudou
-  if(_folhaSalCache.sourceLen !== src.length){
+  var classifLen = (typeof FOLHA_CFG !== 'undefined' && FOLHA_CFG && FOLHA_CFG.classif)
+    ? Object.keys(FOLHA_CFG.classif).length : 0;
+  // Reset cache se fonte OU FOLHA_CFG.classif mudaram
+  if(_folhaSalCache.sourceLen !== src.length || _folhaSalCache.classifLen !== classifLen){
     _folhaSalCache.sourceLen = src.length;
+    _folhaSalCache.classifLen = classifLen;
     _folhaSalCache.canalLookup = null;
     _folhaSalCache.nomeKey = null;
     _folhaSalCache.hasAdminCfg = null;
     _folhaSalCache.byCanalAm = {};
     _folhaSalCache.admByAm = {};
+    _folhaSalCache._diagDone = false;
   }
   if(!_folhaSalCache.canalLookup){
     var lkp = {};
@@ -4477,6 +4497,19 @@ function _ensureFolhaSalLookups(src){
   if(_folhaSalCache.hasAdminCfg === null){
     _folhaSalCache.hasAdminCfg = !!(typeof FOLHA_CFG !== 'undefined' && FOLHA_CFG && FOLHA_CFG.classif
                                 && Object.values(FOLHA_CFG.classif).some(function(c){ return c.admin==='sim'; }));
+  }
+  // Diagnóstico (1 vez por reset de cache)
+  if(!_folhaSalCache._diagDone){
+    _folhaSalCache._diagDone = true;
+    var lkpKeys = Object.keys(_folhaSalCache.canalLookup||{});
+    console.log('[folhaSal] cache rebuild | DRE_FOLHA_RAW:', src.length, '| FOLHA_CFG.classif:', classifLen, '| nomeKey:', _folhaSalCache.nomeKey, '| pessoas com canal:', lkpKeys.length);
+    if(lkpKeys.length){
+      var canaisCount = {};
+      lkpKeys.forEach(function(n){ var c=_folhaSalCache.canalLookup[n]; canaisCount[c]=(canaisCount[c]||0)+1; });
+      console.log('[folhaSal] pessoas por canal:', canaisCount);
+    } else {
+      console.warn('[folhaSal] ⚠️ Nenhuma pessoa com canal definido em FOLHA_CFG.classif — salários comerciais virão zerados no DRE. Vá em Folha > Configurações e atribua canais às pessoas.');
+    }
   }
 }
 
