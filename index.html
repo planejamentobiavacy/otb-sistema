@@ -270,6 +270,14 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
 </head>
 <body>
 
+<!-- ══════════════════ IMPERSONATION BANNER ══════════════════ -->
+<div id="impersonateBanner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:linear-gradient(90deg,#7a2dad 0%,#b54fed 100%);color:#fff;padding:8px 16px;font-size:13px;font-weight:600;font-family:inherit;box-shadow:0 2px 12px rgba(122,45,173,.35);text-align:center;letter-spacing:.3px">
+  <span style="font-size:14px;margin-right:6px">👁️</span>
+  Visualizando como: <strong id="impersonateBannerEmail"></strong>
+  <span id="impersonateBannerAreas" style="font-weight:400;margin-left:8px;opacity:.85"></span>
+  <button onclick="stopImpersonating()" style="margin-left:14px;background:rgba(255,255,255,.2);border:1.5px solid rgba(255,255,255,.45);border-radius:5px;color:#fff;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">⤺ Voltar para Admin</button>
+</div>
+
 <!-- ══════════════════ LOGIN ══════════════════════ -->
 <div id="screenLogin">
   <div class="login-wrap">
@@ -380,7 +388,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
     </button>
   </div>
   <div class="home-btns">
-    <button class="home-btn" onclick="openConfig()">⚙️ Configurações</button>
+    <button class="home-btn" data-perm-admin onclick="openConfig()">⚙️ Configurações</button>
     <button class="home-btn" onclick="doLogout()">🚪 Sair</button>
   </div>
 </div>
@@ -449,8 +457,8 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn" onclick="openDreCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Config</button>
-      <button class="btn save" id="btnSaveDre" onclick="handleSaveDre(this)">💾 Salvar DRE</button>
+      <button class="btn" data-perm-admin onclick="openDreCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Config</button>
+      <button class="btn save" data-perm-edit id="btnSaveDre" onclick="handleSaveDre(this)">💾 Salvar DRE</button>
     </div>
   </header>
   <div class="dre-header-bar" id="dreTabsBar"></div>
@@ -475,7 +483,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn" onclick="openFolhaCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button>
+      <button class="btn" data-perm-admin onclick="openFolhaCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button>
       <button class="btn save" id="btnSaveFolha" onclick="handleSaveFolha(this)">💾 Salvar</button>
     </div>
   </header>
@@ -973,6 +981,15 @@ async function afterLogin(){
     var permSaved = await supaLoad(TBLS.save_dre, 'user_permissions');
     if(permSaved) USER_PERMISSIONS = permSaved;
   } catch(e){ console.warn('[permissions] erro ao carregar:', e.message); }
+  // Aplica regras visuais (esconde botões admin/edit pra não-admins)
+  applyPermissionsToUI();
+  // Verifica se o usuário tem acesso ao sistema
+  if(!isLoggedUserPermitted()){
+    toast('❌ Seu e-mail ('+CURRENT_USER_EMAIL+') não tem permissão para acessar o sistema. Contate o administrador.','err');
+    setTimeout(function(){ doLogout(); }, 3500);
+    return;
+  }
+  console.log('[permissions] usuário:', CURRENT_USER_EMAIL, '| admin:', isAdmin(), '| áreas:', getBudgetAreasPermitidas());
   // Carrega dre_cfg_params logo no login — garante que parâmetros estão disponíveis em qualquer tela
   try{
     var cfgEarly = await supaLoad(TBLS.save_dre, 'dre_cfg_params');
@@ -1079,6 +1096,7 @@ function toast(msg, type, dur){
 //  CONFIGURAÇÕES
 // ═══════════════════════════════════════════════════════
 function openConfig(){
+  if(!isAdmin()){ toast('🔒 Acesso restrito a administradores.','err'); return; }
   // Preenche user info
   if(_session && _session.user){
     document.getElementById('cfgUserInfo').textContent = 'Logado como: ' + _session.user.email;
@@ -1166,9 +1184,15 @@ function permRow(email, selectedAreas){
     var checked = selectedAreas.indexOf(a)>=0 ? ' checked' : '';
     return '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="'+a+'"'+checked+' style="cursor:pointer"> '+a+'</label>';
   }).join('');
+  // Não permite "Ver como" o admin real (você mesmo)
+  var canSeeAs = email !== CURRENT_USER_EMAIL;
+  var seeAsBtn = canSeeAs
+    ? '<button onclick="impersonateUser(\''+email+'\')" style="background:#f0e9fa;border:1px solid #b08fd0;color:#7a2dad;border-radius:4px;padding:2px 10px;font-size:11px;cursor:pointer;font-weight:600">👁️ Ver como</button>'
+    : '<span style="font-size:10px;color:#aaa;font-style:italic">(você)</span>';
   return '<div class="perm-row" data-email="'+email+'" style="background:#f7f9ff;border:1px solid #d0d8ee;border-radius:6px;padding:10px 12px;margin-bottom:8px">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
     +'<span style="font-size:12px;font-weight:700;color:#1a2547;flex:1">'+email+'</span>'
+    +seeAsBtn
     +'<button onclick="this.parentElement.parentElement.remove()" style="background:#fff0f0;border:1px solid #e0a0a0;color:#c0181a;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">✕ Remover</button>'
     +'</div>'
     +'<div style="display:flex;flex-wrap:wrap;gap:8px">'+areaChecks+'</div>'
@@ -3353,6 +3377,7 @@ function dreEnrichWithCanais(raw, canaisRaw, clusterRaw){
 var SNAP_CHUNK = 3500000; // ~3.5MB por chave — margem segura
 
 async function handleSaveDre(btn){
+  if(!canEdit()){ toast('🔒 Você não tem permissão para salvar.','err'); return; }
   var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
   try{
     // Verificação: se DRE_RAW tem filial_nf_serie mas DRE_FRETE_RAW está vazio,
@@ -4287,6 +4312,7 @@ async function handleSaveFolha(btn){
 
 // ─── FOLHA CONFIG ────────────────────────────────────────
 async function openFolhaCfg(){
+  if(!isAdmin()){ toast('🔒 Acesso restrito a administradores.','err'); return; }
   // Carrega cfg salva se ainda não carregou
   if(!Object.keys(FOLHA_CFG.classif).length){
     try{
@@ -4680,8 +4706,17 @@ function _folhaPopulateFilters(){
 }
 
 function _folhaFiltrar(){
+  // Restrição por área do usuário (líder vê só sua área)
+  var areasUsuario = getFolhaAreasPermitidas();
   return FOLHA_RAW.filter(function(r){
     var f = FOLHA_FILTROS;
+    // Filtro automático por área do usuário — antes dos filtros manuais
+    if(areasUsuario){
+      var rArea = folhaGetArea(r);
+      // normaliza pra comparação case-insensitive
+      var areasUC = areasUsuario.map(function(a){ return String(a).toUpperCase(); });
+      if(areasUC.indexOf(String(rArea).toUpperCase()) < 0) return false;
+    }
     if(f.situacao.length && !f.situacao.includes(folhaGetSituacao(r))) return false;
     if(f.tipo.length     && !f.tipo.includes(folhaGetTipo(r)))         return false;
     if(f.area.length     && !f.area.includes(folhaGetArea(r)))          return false;
@@ -4970,6 +5005,7 @@ async function dreForceReload(btn){
 var _dreCfgSelectedAm = '';
 
 async function openDreCfg(){
+  if(!isAdmin()){ toast('🔒 Acesso restrito a administradores.','err'); return; }
   var body = document.getElementById('dreCfgBody');
   if(!body) return;
   // Aguarda FOLHA_CFG antes de calcular salários por canal
@@ -5537,12 +5573,98 @@ var BUDGET_CFG = {
 };
 var USER_PERMISSIONS = {}; // { "email": { budgetAreas: ["E-comm/Mkt","Operações"] } } — null/empty = acesso total
 var CURRENT_USER_EMAIL = '';
+// Quando admin clica "Ver como X", esse valor é setado e tudo é renderizado como se fosse X
+// CURRENT_USER_EMAIL permanece intacto (sempre o admin real); mudanças aqui afetam apenas as checagens de permissão
+var IMPERSONATING_EMAIL = '';
 // Lista de e-mails com acesso admin (podem gerenciar permissões de outros usuários)
 // Adicione ou remova e-mails conforme necessário
 var ADMIN_EMAILS = [
-  'williamokiyama@avacy.com.br'
+  'williamokiyama@avacy.com.br',
+  'eduardomeyer@avacy.com.br'
 ];
-function isAdmin(){ return ADMIN_EMAILS.indexOf(CURRENT_USER_EMAIL) > -1; }
+// Retorna o e-mail "efetivo" — se admin está impersonando alguém, retorna o e-mail impersonado
+function getEffectiveUserEmail(){ return IMPERSONATING_EMAIL || CURRENT_USER_EMAIL; }
+// Verifica se está em modo "Ver como"
+function isImpersonating(){ return !!IMPERSONATING_EMAIL; }
+// Retorna o admin real (mesmo durante impersonation)
+function getRealUserEmail(){ return CURRENT_USER_EMAIL; }
+// Verifica se o e-mail REAL é admin (independente de impersonation)
+function isRealAdmin(){ return ADMIN_EMAILS.indexOf(CURRENT_USER_EMAIL) > -1; }
+function isAdmin(){ return ADMIN_EMAILS.indexOf(getEffectiveUserEmail()) > -1; }
+// Permissão geral: o usuário corrente pode acessar o sistema?
+// - admin → sim sempre
+// - se USER_PERMISSIONS vazio (nenhum usuário cadastrado) → sim (modo transição inicial)
+// - senão → só se houver entrada explícita em USER_PERMISSIONS pro e-mail
+function isLoggedUserPermitted(){
+  if(isAdmin()) return true;
+  var em = getEffectiveUserEmail();
+  if(!em) return true; // sem login, deixa passar (fluxo de login lida)
+  if(Object.keys(USER_PERMISSIONS).length === 0) return true; // modo transição
+  return !!USER_PERMISSIONS[em];
+}
+// Pode editar (Salvar, Configurar, Recarregar dados) — só admin REAL (impersonation não pode editar)
+function canEdit(){ return isRealAdmin() && !isImpersonating(); }
+// Áreas permitidas pro usuário atual (Budget E Folha usam a mesma lista)
+function getFolhaAreasPermitidas(){ return getBudgetAreasPermitidas(); }
+// ── Impersonation ("Ver como") — admin testa o sistema como outro usuário ──
+function impersonateUser(email){
+  if(!isRealAdmin()){ toast('🔒 Apenas admins podem usar Ver como.','err'); return; }
+  if(!email || email === CURRENT_USER_EMAIL){ toast('Selecione um e-mail diferente.','err'); return; }
+  IMPERSONATING_EMAIL = String(email).toLowerCase().trim();
+  // Re-aplica permissões e re-renderiza tudo
+  applyPermissionsToUI();
+  updateImpersonateBanner();
+  // Re-renderiza tela atual se houver
+  if(typeof renderBudget === 'function' && document.getElementById('screenBudget') && document.getElementById('screenBudget').classList.contains('screen-active')) renderBudget(BUDGET_ANO_FILTER);
+  if(typeof folhaRefresh === 'function' && document.getElementById('screenFolha') && document.getElementById('screenFolha').classList.contains('screen-active')) folhaRefresh();
+  if(typeof dreRender === 'function' && document.getElementById('screenDre') && document.getElementById('screenDre').classList.contains('screen-active')) dreRender();
+  // Fecha o painel de Configurações (admin estava nele pra clicar)
+  var cfg = document.getElementById('cfgOverlay'); if(cfg) cfg.style.display = 'none';
+  // Volta para Home (visão limpa pro teste)
+  showHome();
+  toast('👁️ Visualizando como '+IMPERSONATING_EMAIL);
+}
+function stopImpersonating(){
+  if(!IMPERSONATING_EMAIL) return;
+  var prev = IMPERSONATING_EMAIL;
+  IMPERSONATING_EMAIL = '';
+  applyPermissionsToUI();
+  updateImpersonateBanner();
+  // Re-renderiza tela atual
+  if(typeof renderBudget === 'function' && document.getElementById('screenBudget') && document.getElementById('screenBudget').classList.contains('screen-active')) renderBudget(BUDGET_ANO_FILTER);
+  if(typeof folhaRefresh === 'function' && document.getElementById('screenFolha') && document.getElementById('screenFolha').classList.contains('screen-active')) folhaRefresh();
+  if(typeof dreRender === 'function' && document.getElementById('screenDre') && document.getElementById('screenDre').classList.contains('screen-active')) dreRender();
+  toast('⤺ Voltou para admin ('+CURRENT_USER_EMAIL+')');
+}
+function updateImpersonateBanner(){
+  var banner = document.getElementById('impersonateBanner');
+  if(!banner) return;
+  if(IMPERSONATING_EMAIL){
+    banner.style.display = '';
+    document.getElementById('impersonateBannerEmail').textContent = IMPERSONATING_EMAIL;
+    var areas = (USER_PERMISSIONS[IMPERSONATING_EMAIL]&&USER_PERMISSIONS[IMPERSONATING_EMAIL].budgetAreas)||[];
+    document.getElementById('impersonateBannerAreas').textContent = areas.length ? '— Áreas: '+areas.join(', ') : '— Sem restrição de área';
+    // Empurra o conteúdo da página pra baixo (40px do banner)
+    document.body.style.paddingTop = '40px';
+  } else {
+    banner.style.display = 'none';
+    document.body.style.paddingTop = '';
+  }
+}
+
+// Após permissões carregadas, esconde botões de edição/configuração na UI
+function applyPermissionsToUI(){
+  // Botões de Configurações na home + DRE/Budget/Folha
+  document.querySelectorAll('[data-perm-admin]').forEach(function(el){
+    el.style.display = isAdmin() ? '' : 'none';
+  });
+  // Botões de edição (Salvar etc)
+  document.querySelectorAll('[data-perm-edit]').forEach(function(el){
+    el.style.display = canEdit() ? '' : 'none';
+  });
+  // Esconde home cards de quem não tem acesso (atualmente todos têm — leitura ok)
+  // Os filtros de área são aplicados dentro dos próprios módulos
+}
 
 var BUDGET_TIPOS = ['Aluguel','Benefícios','CD','CMV','Comissão','Conselho','Convênio','Educação','Empréstimo','Equipamentos','Eventos','FGTS','Frete','Impostos','INSS','Invest Mkt','Jurídico','Materiais de Consumo','Rescisão','Salários','Seguros','Sistemas','Viagens','Água/Luz/Internet'];
 var BUDGET_AREAS = ['Administrativo','Avacy','Comercial','Compras','E-comm/Mkt','Financeiro','Fiscal','Operações','RH','TI'];
@@ -5877,8 +5999,11 @@ var BUDGET_MESES_FILTER = []; // array de '01' a '12' (vazio = todos os meses)
 
 // ── Permissões de Budget por usuário ──────────────────
 function getBudgetAreasPermitidas(){
-  if(!CURRENT_USER_EMAIL) return null; // sem login = acesso total
-  var p = USER_PERMISSIONS[CURRENT_USER_EMAIL];
+  var em = getEffectiveUserEmail();
+  if(!em) return null; // sem login = acesso total
+  // Admin (efetivo) tem acesso total — mas se está impersonando, NÃO é admin
+  if(isAdmin()) return null;
+  var p = USER_PERMISSIONS[em];
   if(!p || !p.budgetAreas || !p.budgetAreas.length) return null; // sem restrição = acesso total
   return p.budgetAreas; // array de áreas permitidas
 }
@@ -6027,8 +6152,10 @@ function renderBudget(anoFilter){
       var effectiveForYear = null;
       // Modo editável (linha Receita Bruta AVACY etc) — célula vira input com revert
       // Se editable.lockRealized=true E o mês tem dados em DRE_RAW, renderiza valor estático (sem input)
+      // Se usuário não tem permissão de edição, também trava (mostra valor estático)
       var isLockedRealized = opts.editable && opts.editable.lockRealized && realizedMonths[ym];
-      if(opts.editable && opts.editable.keyPrefix && !isLockedRealized){
+      var isLockedNoEdit   = (typeof canEdit==='function') && !canEdit();
+      if(opts.editable && opts.editable.keyPrefix && !isLockedRealized && !isLockedNoEdit){
         var otbVal = parseFloat(val)||0;
         var ovrKey = opts.editable.keyPrefix+'|'+ym;
         var hasOvr = BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[ovrKey] != null;
@@ -6484,6 +6611,7 @@ function parseBrlInput(v){
 }
 // Salva/limpa override e atualiza UI da célula + linha total
 function budgetSaveOverride(input){
+  if(typeof canEdit==='function' && !canEdit()){ toast('🔒 Você não tem permissão para editar.','err'); input.value=input.getAttribute('value')||''; return; }
   var key = input.getAttribute('data-ovrkey');
   var otbRaw = parseFloat(input.getAttribute('data-otb'))||0;
   var typed = parseBrlInput(input.value);
@@ -6542,6 +6670,7 @@ function budgetRenderCellValue(input){
 
 // Restaura célula ao valor da tabela otb_despesa (remove override)
 function budgetRevertCell(btn){
+  if(typeof canEdit==='function' && !canEdit()){ toast('🔒 Você não tem permissão para editar.','err'); return; }
   var key = btn.getAttribute('data-ovrkey');
   if(!BUDGET_CFG.budgetOverrides || BUDGET_CFG.budgetOverrides[key] == null) return; // já está usando otb
   delete BUDGET_CFG.budgetOverrides[key];
@@ -6769,6 +6898,7 @@ function budgetAggregate(raw){
 }
 
 async function handleSaveBudget(btn){
+  if(!canEdit()){ toast('🔒 Você não tem permissão para salvar.','err'); return; }
   var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
   try{
     var snapshot = BUDGET_DESP_RAW.length ? budgetAggregate(BUDGET_DESP_RAW) : null;
@@ -6803,6 +6933,7 @@ async function budgetForceReload(btn){
 }
 
 function openBudgetCfg(){
+  if(!isAdmin()){ toast('🔒 Acesso restrito a administradores.','err'); return; }
   var body = document.getElementById('budgetCfgBody');
   if(!body) return;
 
@@ -7189,8 +7320,8 @@ async function saveBudgetCfg(btn){
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn" onclick="openBudgetCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button>
-      <button class="btn save" id="btnSaveBudget" onclick="handleSaveBudget(this)">💾 Salvar</button>
+      <button class="btn" data-perm-admin onclick="openBudgetCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button>
+      <button class="btn save" data-perm-edit id="btnSaveBudget" onclick="handleSaveBudget(this)">💾 Salvar</button>
     </div>
   </header>
   <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;padding:16px 20px;min-height:0" id="budgetBody">
