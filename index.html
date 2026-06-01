@@ -1569,6 +1569,7 @@ async function gcRecarregar(key, btn){
     }
     else if(key === 'folha'){
       FOLHA_RAW = state[key]; FOLHA_LOADED = true;
+      if(typeof clearFolhaSalCache==='function') clearFolhaSalCache();
       // Diagnóstico: lista os períodos encontrados
       var _pc = {};
       FOLHA_RAW.forEach(function(r){
@@ -3153,6 +3154,7 @@ async function loadDreFromSupabase(forceRaw){
         fetchAll(TBLS.frete_dre).catch(function(){ return []; })
       ]).then(function(res){
         DRE_FOLHA_RAW   = res[0];
+        if(typeof clearFolhaSalCache==='function') clearFolhaSalCache();
         DRE_DESP_RAW    = res[1];
         BUDGET_DESP_RAW = res[1]; // sincroniza para que "Base" no DRE Config funcione sem abrir Budget
         DRE_CANAIS_RAW  = res[2];
@@ -3183,6 +3185,7 @@ async function loadDreFromSupabase(forceRaw){
         fetchAll(TBLS.frete_dre).catch(function(){ return []; })
       ]);
       DRE_FOLHA_RAW   = aux[0];
+      if(typeof clearFolhaSalCache==='function') clearFolhaSalCache();
       DRE_DESP_RAW    = aux[1];
       BUDGET_DESP_RAW = aux[1]; // sincroniza para que "Base" no DRE Config funcione sem abrir Budget
       DRE_CANAIS_RAW  = aux[2];
@@ -4427,6 +4430,56 @@ function folhaTotal(r){
   return t;
 }
 
+// ── Cache para folhaSalCanalAm / folhaSalAdmAm ────────────────────────
+// Limpado quando DRE_FOLHA_RAW ou FOLHA_CFG.classif mudam (via clearFolhaSalCache)
+var _folhaSalCache = {
+  canalLookup: null,   // {nome: 'CLOSER'/'DEVELOPER'/...}
+  nomeKey: null,       // chave do campo "nome" em DRE_FOLHA_RAW
+  hasAdminCfg: null,   // boolean
+  sourceLen: -1,       // length da fonte usada — invalida cache se mudar
+  byCanalAm: {},       // {'CLOSER|202602': 43794, ...}
+  admByAm: {}          // {'202602': 184500, ...}
+};
+function clearFolhaSalCache(){
+  _folhaSalCache.canalLookup = null;
+  _folhaSalCache.nomeKey = null;
+  _folhaSalCache.hasAdminCfg = null;
+  _folhaSalCache.sourceLen = -1;
+  _folhaSalCache.byCanalAm = {};
+  _folhaSalCache.admByAm = {};
+}
+function _ensureFolhaSalLookups(src){
+  // Reset cache se fonte mudou
+  if(_folhaSalCache.sourceLen !== src.length){
+    _folhaSalCache.sourceLen = src.length;
+    _folhaSalCache.canalLookup = null;
+    _folhaSalCache.nomeKey = null;
+    _folhaSalCache.hasAdminCfg = null;
+    _folhaSalCache.byCanalAm = {};
+    _folhaSalCache.admByAm = {};
+  }
+  if(!_folhaSalCache.canalLookup){
+    var lkp = {};
+    if(typeof FOLHA_CFG !== 'undefined' && FOLHA_CFG && FOLHA_CFG.classif){
+      Object.keys(FOLHA_CFG.classif).forEach(function(nome){
+        var cfg = FOLHA_CFG.classif[nome];
+        if(cfg && cfg.canal && cfg.canal !== '—') lkp[nome] = String(cfg.canal).toUpperCase();
+      });
+    }
+    _folhaSalCache.canalLookup = lkp;
+  }
+  if(_folhaSalCache.nomeKey === null && src.length){
+    var keys = Object.keys(src[0]);
+    _folhaSalCache.nomeKey = keys.find(function(k){ return /^(nome|pessoa|name|employee)$/i.test(k); })
+                          || keys.find(function(k){ return /nome|pessoa|name/i.test(k); })
+                          || '';
+  }
+  if(_folhaSalCache.hasAdminCfg === null){
+    _folhaSalCache.hasAdminCfg = !!(typeof FOLHA_CFG !== 'undefined' && FOLHA_CFG && FOLHA_CFG.classif
+                                && Object.values(FOLHA_CFG.classif).some(function(c){ return c.admin==='sim'; }));
+  }
+}
+
 // ── Detecta colunas relacionadas ao 13º Salário (várias variações de nome) ──
 function _is13VerbaName(colName){
   var n = String(colName||'').toUpperCase();
@@ -4440,90 +4493,102 @@ function _is13VerbaName(colName){
 }
 
 // ── Total de Folha por canal (CLOSER/DEVELOPER/FARMER/HAVA/KA) em um am, excluindo 13º ──
-// Lê de DRE_FOLHA_RAW (preferencial) ou FOLHA_RAW (fallback do módulo Folha)
+// Lê de DRE_FOLHA_RAW (preferencial) ou FOLHA_RAW (fallback). Memoizado por (canal,am).
 function folhaSalCanalAm(canal, am){
   if(!canal || !am) return 0;
   var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
           : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW && FOLHA_RAW.length) ? FOLHA_RAW : [];
   if(!src.length) return 0;
   var canalUp = String(canal).toUpperCase();
-  // Lookup nome → canal (a partir de FOLHA_CFG.classif)
-  var lkp = {};
-  if(typeof FOLHA_CFG !== 'undefined' && FOLHA_CFG && FOLHA_CFG.classif){
-    Object.keys(FOLHA_CFG.classif).forEach(function(nome){
-      var cfg = FOLHA_CFG.classif[nome];
-      if(cfg && cfg.canal && cfg.canal !== '—') lkp[nome] = String(cfg.canal).toUpperCase();
-    });
-  }
-  // Identifica a chave do campo nome no payload
-  var nomeKey = (function(){
-    var keys = Object.keys(src[0]);
-    return keys.find(function(k){ return /^(nome|pessoa|name|employee)$/i.test(k); })
-        || keys.find(function(k){ return /nome|pessoa|name/i.test(k); });
-  })();
-  return src.filter(function(r){
+  var cacheKey = canalUp + '|' + am;
+  // Cache hit
+  if(_folhaSalCache.byCanalAm[cacheKey] !== undefined) return _folhaSalCache.byCanalAm[cacheKey];
+  _ensureFolhaSalLookups(src);
+  var lkp = _folhaSalCache.canalLookup;
+  var nomeKey = _folhaSalCache.nomeKey;
+  // Filtra linhas correspondentes (canal + am) e soma verbas (exc. 13º)
+  var verbasOK = FOLHA_VERBAS.filter(function(k){ return !_is13VerbaName(k); });
+  var total = 0;
+  for(var i=0;i<src.length;i++){
+    var r = src[i];
     var nome = nomeKey ? String(r[nomeKey]).trim() : '';
-    var canalR = lkp[nome] || '';
+    if(!lkp[nome] || lkp[nome] !== canalUp) continue;
     var anomes = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
-    return canalR === canalUp && anomes === am;
-  }).reduce(function(s,r){
+    if(anomes !== am) continue;
     var keys = Object.keys(r);
-    // Soma TODAS as verbas conhecidas (FOLHA_VERBAS) EXCETO as relacionadas ao 13°
-    var verbas = FOLHA_VERBAS.filter(function(k){ return !_is13VerbaName(k); });
     var totalVerbas = 0;
-    verbas.forEach(function(k){
+    for(var j=0;j<verbasOK.length;j++){
+      var k = verbasOK[j];
       var found = keys.find(function(rk){ return rk.toUpperCase() === k; });
       if(found) totalVerbas += folhaNum(r[found]);
-    });
-    if(totalVerbas > 0) return s + totalVerbas;
-    // Fallback: r.valor menos colunas detectadas como 13°
-    var total = parseFloat(r.valor||r.VALOR)||0;
-    var total13 = 0;
-    keys.forEach(function(k){ if(_is13VerbaName(k)) total13 += folhaNum(r[k]); });
-    return s + (total - total13);
-  }, 0);
+    }
+    if(totalVerbas > 0){
+      total += totalVerbas;
+    } else {
+      // Fallback: r.valor menos colunas detectadas como 13°
+      var rTotal = parseFloat(r.valor||r.VALOR)||0;
+      var total13 = 0;
+      for(var k2=0;k2<keys.length;k2++){
+        if(_is13VerbaName(keys[k2])) total13 += folhaNum(r[keys[k2]]);
+      }
+      total += (rTotal - total13);
+    }
+  }
+  _folhaSalCache.byCanalAm[cacheKey] = total;
+  return total;
 }
 
 // ── Total de Folha Administrativa em um am, excluindo 13º ──
+// Memoizado por am
 function folhaSalAdmAm(am){
   if(!am) return 0;
   var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
           : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW && FOLHA_RAW.length) ? FOLHA_RAW : [];
   if(!src.length) return 0;
-  var hasAdminCfg = false;
-  if(typeof FOLHA_CFG !== 'undefined' && FOLHA_CFG && FOLHA_CFG.classif){
-    hasAdminCfg = Object.values(FOLHA_CFG.classif).some(function(c){ return c.admin==='sim'; });
-  }
-  return src.filter(function(r){
-    var nome = folhaGetNome(r);
+  // Cache hit
+  if(_folhaSalCache.admByAm[am] !== undefined) return _folhaSalCache.admByAm[am];
+  _ensureFolhaSalLookups(src);
+  var hasAdminCfg = _folhaSalCache.hasAdminCfg;
+  var verbasOK = FOLHA_VERBAS.filter(function(k){ return !_is13VerbaName(k); });
+  var total = 0;
+  for(var i=0;i<src.length;i++){
+    var r = src[i];
     var anomes = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
-    if(anomes !== am) return false;
+    if(anomes !== am) continue;
+    var nome = folhaGetNome(r);
+    var include = false;
     if(hasAdminCfg){
-      return ((FOLHA_CFG.classif[nome]||{}).admin === 'sim');
+      include = ((FOLHA_CFG.classif[nome]||{}).admin === 'sim');
     } else {
       var cfg = FOLHA_CFG.classif[nome];
       if(cfg && cfg.area){
-        return String(cfg.area).toUpperCase() === 'ADMINISTRATIVO';
+        include = (String(cfg.area).toUpperCase() === 'ADMINISTRATIVO');
+      } else {
+        var area = String(r.area||r.AREA||'').toUpperCase();
+        include = !['CLOSER','DEVELOPER','FARMER','HAVA','KA'].some(function(c){ return area.includes(c); });
       }
-      // Fallback final: pelo campo area da linha — exclui canais comerciais
-      var area = String(r.area||r.AREA||'').toUpperCase();
-      return !['CLOSER','DEVELOPER','FARMER','HAVA','KA'].some(function(c){ return area.includes(c); });
     }
-  }).reduce(function(s,r){
+    if(!include) continue;
     var keys = Object.keys(r);
-    // Mesma lógica: soma verbas conhecidas, exclui 13°
-    var verbas = FOLHA_VERBAS.filter(function(k){ return !_is13VerbaName(k); });
     var totalVerbas = 0;
-    verbas.forEach(function(k){
+    for(var j=0;j<verbasOK.length;j++){
+      var k = verbasOK[j];
       var found = keys.find(function(rk){ return rk.toUpperCase() === k; });
       if(found) totalVerbas += folhaNum(r[found]);
-    });
-    if(totalVerbas > 0) return s + totalVerbas;
-    var total = parseFloat(r.valor||r.VALOR)||0;
-    var total13 = 0;
-    keys.forEach(function(k){ if(_is13VerbaName(k)) total13 += folhaNum(r[k]); });
-    return s + (total - total13);
-  }, 0);
+    }
+    if(totalVerbas > 0){
+      total += totalVerbas;
+    } else {
+      var rTotal = parseFloat(r.valor||r.VALOR)||0;
+      var total13 = 0;
+      for(var k2=0;k2<keys.length;k2++){
+        if(_is13VerbaName(keys[k2])) total13 += folhaNum(r[keys[k2]]);
+      }
+      total += (rTotal - total13);
+    }
+  }
+  _folhaSalCache.admByAm[am] = total;
+  return total;
 }
 
 async function loadFolhaFromSupabase(){
@@ -4680,6 +4745,7 @@ async function saveFolhaCfg(btn){
 
   try{
     await supaSave(TBLS.save_folha, 'folha_classif', { classif: FOLHA_CFG.classif, savedAt: new Date().toISOString() });
+    if(typeof clearFolhaSalCache==='function') clearFolhaSalCache();
     toast('✔ Classificações da Folha salvas');
     _folhaRenderAll(); // Re-renderiza com novas classificações
     closeFolhaCfg();
