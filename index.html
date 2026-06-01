@@ -38,10 +38,6 @@ body.impersonating #screenFolha,
 body.impersonating #screenBudget{
   top:42px;
 }
-/* Quando impersonando, o wrapper da tabela do Budget precisa descontar os 42px do banner roxo */
-body.impersonating #budgetBody > div[style*="overflow"]{
-  max-height:calc(100vh - 242px) !important;
-}
 #screenLogin{background:var(--navy-dk);z-index:100;align-items:center;justify-content:center}
 #screenHome{background:var(--navy);z-index:90;flex-direction:column;align-items:center;justify-content:center;gap:32px}
 #screenOtb{background:var(--bg);z-index:80;flex-direction:column}
@@ -6096,7 +6092,7 @@ function renderBudget(anoFilter){
     h += '<button onclick="budgetClearMeses()" style="padding:4px 9px;border:1.5px solid #c0181a;border-radius:14px;font-size:11px;font-weight:600;background:#fff;color:#c0181a;cursor:pointer;font-family:inherit;margin-left:4px" title="Limpar filtro de meses">✕ Limpar</button>';
   }
   h += '</div></div>';
-  h += '<div style="flex:1;min-height:0;overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 200px)"><table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:900px">';
+  h += '<div style="flex:1;min-height:0;overflow-x:auto;overflow-y:auto"><table style="width:100%;border-collapse:separate;border-spacing:0;font-size:12px;min-width:900px">';
   h += '<thead><tr>';
   h += '<th style="text-align:left;padding:8px 12px;background:#1a2547;color:#fff;font-size:11px;font-weight:700;letter-spacing:1px;position:sticky;left:0;top:0;z-index:5;min-width:220px;border-right:2px solid rgba(255,255,255,.2)">INDICADOR</th>';
   months.forEach(function(ym){
@@ -6388,6 +6384,14 @@ function renderBudget(anoFilter){
   // Filtra por permissão do usuário logado
   var _areasPermitidas = getBudgetAreasPermitidas();
   if(_areasPermitidas) areasUsadas = areasUsadas.filter(function(a){ return _areasPermitidas.indexOf(a) >= 0; });
+  // Auto-expand: se usuário tem restrição e só vê 1 área, expande automaticamente pra mostrar tipos
+  if(_areasPermitidas && areasUsadas.length === 1){
+    var _autoAreaUid = 'area_' + areasUsadas[0].replace(/\W+/g,'_');
+    // Só seta na primeira vez (respeita se usuário colapsar manualmente depois)
+    if(BUDGET_AREAS_EXPANDED[_autoAreaUid] !== false){
+      BUDGET_AREAS_EXPANDED[_autoAreaUid] = true;
+    }
+  }
 
   // totalDespesasGeral declarado antes para que EBITDA possa usar mesmo sem áreas
   var totalDespesasGeral = {};
