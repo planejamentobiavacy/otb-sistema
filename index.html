@@ -388,7 +388,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
     </div>
   </div>
   <div class="home-modules">
-    <button class="home-card otb" onclick="openOtb()">
+    <button class="home-card otb" data-perm-otb onclick="openOtb()">
       <div class="icon">📦</div>
       <div class="name">OTB</div>
       <div class="desc">Open to Buy<br>Estoque · Carteira · Simulação</div>
@@ -586,7 +586,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       </div>
       <div class="cfg-section" id="cfgPermSection" style="margin-bottom:0;display:none">
         <h3>🔐 Permissões de Budget por Usuário</h3>
-        <p style="font-size:11px;color:#7a8ab0;margin:0 0 12px">Deixe sem áreas marcadas para acesso total. Selecione as áreas que o usuário pode ver em Despesas. Marque "👑 Administrador" para promover a admin (edita configurações).</p>
+        <p style="font-size:11px;color:#7a8ab0;margin:0 0 12px">Configure o acesso de cada usuário ao sistema:<br>• <strong>Áreas</strong> (Budget/Folha): marque as áreas que o usuário pode ver. Vazio = acesso total às áreas.<br>• <strong>👑 Administrador</strong>: pode editar configurações, salvar dados e gerenciar usuários.<br>• <strong>📦 OTB</strong>: permite acesso ao módulo de Open to Buy. Admin sempre tem.</p>
         <div id="cfgPermRows"></div>
         <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input id="permNewEmail" type="email" placeholder="novo@email.com" style="flex:1;min-width:200px;padding:7px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:12px;font-family:inherit">
@@ -1140,7 +1140,8 @@ function openConfig(){
             var entry = USER_PERMISSIONS[email] || {};
             var areas = entry.budgetAreas || [];
             var admnFlag = entry.admin === true;
-            return permRow(email, areas, admnFlag);
+            var otbFlag = entry.otbAccess === true;
+            return permRow(email, areas, admnFlag, otbFlag);
           }).join('')
         : '<p style="font-size:11px;color:#aaa;margin:0">Nenhum usuário cadastrado — todos têm acesso total.</p>';
       document.getElementById('cfgPermRows').innerHTML = permHtml;
@@ -1208,7 +1209,7 @@ function openPermissions(){
   }, 100);
 }
 
-function permRow(email, selectedAreas, isAdminUser){
+function permRow(email, selectedAreas, isAdminUser, hasOtbAccess){
   var areaChecks = BUDGET_AREAS.map(function(a){
     var checked = selectedAreas.indexOf(a)>=0 ? ' checked' : '';
     return '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="'+a+'"'+checked+' style="cursor:pointer"> '+a+'</label>';
@@ -1226,10 +1227,16 @@ function permRow(email, selectedAreas, isAdminUser){
   var adminCheckHtml = '<label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:'+(superAdmin?'not-allowed':'pointer')+';padding:3px 8px;background:'+(isAdminUser||superAdmin?'#fff4e0':'#f0f3fa')+';border:1.5px solid '+(isAdminUser||superAdmin?'#e89c40':'#d0d8ee')+';border-radius:4px;font-weight:'+(isAdminUser||superAdmin?'700':'500')+';color:'+(isAdminUser||superAdmin?'#a55a00':'#0f1a3a')+'">'
     +'<input type="checkbox" class="perm-admin-cb" '+(isAdminUser||superAdmin?'checked':'')+' '+(superAdmin?'disabled':'')+' style="cursor:'+(superAdmin?'not-allowed':'pointer')+'">'
     +'👑 Administrador'+(superAdmin?' (Super)':'')+'</label>';
+  // OTB Access checkbox — admin sempre tem (disabled), demais escolhem
+  var otbEffective = isAdminUser || superAdmin || hasOtbAccess;
+  var otbCheckHtml = '<label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:'+(isAdminUser||superAdmin?'not-allowed':'pointer')+';padding:3px 8px;background:'+(otbEffective?'#e8f0ff':'#f0f3fa')+';border:1.5px solid '+(otbEffective?'#5a8fd0':'#d0d8ee')+';border-radius:4px;font-weight:'+(otbEffective?'700':'500')+';color:'+(otbEffective?'#1a4d8f':'#0f1a3a')+'" title="'+(isAdminUser||superAdmin?'Admin sempre tem acesso ao OTB':'Permite acesso ao módulo OTB')+'">'
+    +'<input type="checkbox" class="perm-otb-cb" '+(otbEffective?'checked':'')+' '+(isAdminUser||superAdmin?'disabled':'')+' style="cursor:'+(isAdminUser||superAdmin?'not-allowed':'pointer')+'">'
+    +'📦 OTB</label>';
   return '<div class="perm-row" data-email="'+email+'" data-super-admin="'+(superAdmin?'1':'0')+'" style="background:#f7f9ff;border:1px solid #d0d8ee;border-radius:6px;padding:10px 12px;margin-bottom:8px">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">'
     +'<span style="font-size:12px;font-weight:700;color:#1a2547;flex:1;min-width:200px">'+email+'</span>'
     +adminCheckHtml
+    +otbCheckHtml
     +seeAsBtn
     +removeBtn
     +'</div>'
@@ -1247,7 +1254,7 @@ function addPermRow(){
     var placeholder = container.querySelector('p');
     if(placeholder) placeholder.remove();
     var div = document.createElement('div');
-    div.innerHTML = permRow(email, [], false);
+    div.innerHTML = permRow(email, [], false, false);
     container.appendChild(div.firstChild);
   }
   document.getElementById('permNewEmail').value = '';
@@ -1274,14 +1281,14 @@ async function inviteUser(btn){
     });
     if(res.error) throw res.error;
     toast('📧 Magic link enviado para '+email+' — usuário clica no link para entrar.');
-    // Adiciona o e-mail na lista de permissões automaticamente (sem áreas/admin ainda)
+    // Adiciona o e-mail na lista de permissões automaticamente (sem áreas/admin/otb ainda)
     if(!document.querySelector('.perm-row[data-email="'+email+'"]')){
       var container = document.getElementById('cfgPermRows');
       if(container){
         var placeholder = container.querySelector('p');
         if(placeholder) placeholder.remove();
         var div = document.createElement('div');
-        div.innerHTML = permRow(email, [], false);
+        div.innerHTML = permRow(email, [], false, false);
         container.appendChild(div.firstChild);
       }
     }
@@ -1299,13 +1306,16 @@ async function savePermissions(btn){
   document.querySelectorAll('.perm-row').forEach(function(row){
     var email = row.getAttribute('data-email');
     var isSuper = row.getAttribute('data-super-admin') === '1';
-    var areas = Array.from(row.querySelectorAll('input[type=checkbox]:not(.perm-admin-cb):checked')).map(function(cb){ return cb.value; });
+    var areas = Array.from(row.querySelectorAll('input[type=checkbox]:not(.perm-admin-cb):not(.perm-otb-cb):checked')).map(function(cb){ return cb.value; });
     var adminCb = row.querySelector('.perm-admin-cb');
+    var otbCb = row.querySelector('.perm-otb-cb');
     var isAdminFlag = adminCb && adminCb.checked;
+    var hasOtb = otbCb && otbCb.checked;
     // Super-admins (hardcoded) não precisam ser salvos em USER_PERMISSIONS — exceto se tiverem áreas restritas
     if(isSuper && areas.length === 0) return; // não salva — gerenciado por ADMIN_EMAILS
     newPerms[email] = { budgetAreas: areas };
     if(isAdminFlag && !isSuper) newPerms[email].admin = true;
+    if(hasOtb && !isSuper && !isAdminFlag) newPerms[email].otbAccess = true; // admin tem OTB implícito
   });
   try{
     await supaSave(TBLS.save_dre, 'user_permissions', newPerms);
@@ -1663,6 +1673,10 @@ function showHome(){
 }
 
 function openOtb(){
+  if(typeof canAccessOtb==='function' && !canAccessOtb()){
+    toast('🔒 Você não tem permissão para acessar o OTB. Contate um administrador.','err');
+    return;
+  }
   showScreen('screenOtb');
   if(state.matrices && Object.keys(state.matrices).length > 0){
     renderTabs(); renderTable();
@@ -5729,6 +5743,15 @@ function isLoggedUserPermitted(){
 }
 // Pode editar (Salvar, Configurar, Recarregar dados) — só admin REAL (impersonation não pode editar)
 function canEdit(){ return isRealAdmin() && !isImpersonating(); }
+// Pode acessar o módulo OTB? Admin = sempre; demais = só se USER_PERMISSIONS[email].otbAccess === true
+function canAccessOtb(){
+  if(isAdmin()) return true;
+  var em = getEffectiveUserEmail();
+  if(!em) return true; // sem login = não bloqueia (login lida)
+  // Em modo "transição" (nenhum usuário cadastrado), libera
+  if(Object.keys(USER_PERMISSIONS).length === 0) return true;
+  return !!(USER_PERMISSIONS[em] && USER_PERMISSIONS[em].otbAccess);
+}
 // Áreas permitidas pro usuário atual (Budget E Folha usam a mesma lista)
 function getFolhaAreasPermitidas(){ return getBudgetAreasPermitidas(); }
 // ── Impersonation ("Ver como") — admin testa o sistema como outro usuário ──
@@ -5787,8 +5810,10 @@ function applyPermissionsToUI(){
   document.querySelectorAll('[data-perm-edit]').forEach(function(el){
     el.style.display = canEdit() ? '' : 'none';
   });
-  // Esconde home cards de quem não tem acesso (atualmente todos têm — leitura ok)
-  // Os filtros de área são aplicados dentro dos próprios módulos
+  // Card do OTB na home — esconde pra usuários sem permissão
+  document.querySelectorAll('[data-perm-otb]').forEach(function(el){
+    el.style.display = canAccessOtb() ? '' : 'none';
+  });
 }
 
 var BUDGET_TIPOS = ['Aluguel','Benefícios','CD','CMV','Comissão','Conselho','Convênio','Educação','Empréstimo','Equipamentos','Eventos','FGTS','Frete','Impostos','INSS','Invest Mkt','Jurídico','Materiais de Consumo','Rescisão','Salários','Seguros','Sistemas','Viagens','Água/Luz/Internet'];
