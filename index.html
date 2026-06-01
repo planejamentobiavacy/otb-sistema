@@ -573,12 +573,14 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       </div>
       <div class="cfg-section" id="cfgPermSection" style="margin-bottom:0;display:none">
         <h3>🔐 Permissões de Budget por Usuário</h3>
-        <p style="font-size:11px;color:#7a8ab0;margin:0 0 12px">Deixe sem áreas marcadas para acesso total. Selecione as áreas que o usuário pode ver em Despesas.</p>
+        <p style="font-size:11px;color:#7a8ab0;margin:0 0 12px">Deixe sem áreas marcadas para acesso total. Selecione as áreas que o usuário pode ver em Despesas. Marque "👑 Administrador" para promover a admin (edita configurações).</p>
         <div id="cfgPermRows"></div>
-        <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
-          <input id="permNewEmail" type="email" placeholder="novo@email.com" style="flex:1;padding:7px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:12px;font-family:inherit">
+        <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="permNewEmail" type="email" placeholder="novo@email.com" style="flex:1;min-width:200px;padding:7px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:12px;font-family:inherit">
           <button onclick="addPermRow()" style="padding:7px 14px;background:#1a2547;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600">+ Adicionar</button>
+          <button onclick="inviteUser(this)" title="Cria a conta no Supabase e envia e-mail de acesso" style="padding:7px 14px;background:#7a2dad;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:600">📧 Convidar (cria conta + envia e-mail)</button>
         </div>
+        <p style="font-size:10px;color:#a07a55;margin:6px 0 0;background:#fffaf0;border-left:3px solid #e89c40;padding:6px 10px;border-radius:4px">💡 <strong>Convidar</strong>: cria a conta no Supabase Auth e envia um magic link por e-mail. O usuário clica no link e entra direto — sem precisar de senha. Depois clica em "Esqueci minha senha" pra definir uma senha permanente.<br>⚠️ Lembre-se de também adicionar o e-mail acima e marcar as áreas, depois clicar em <strong>💾 Salvar Permissões</strong>.</p>
         <div style="margin-top:12px">
           <button id="btnSavePermissoes" onclick="savePermissions(this)" style="padding:8px 20px;background:#1a7c3e;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer;font-weight:700">💾 Salvar Permissões</button>
         </div>
@@ -1117,10 +1119,15 @@ function openConfig(){
       permSection.style.display = '';
       // Popula lista de usuários
       var permEmails = Object.keys(USER_PERMISSIONS).sort();
+      // Lista todos os usuários (incluindo super-admins hardcoded que não estão em USER_PERMISSIONS)
+      ADMIN_EMAILS.forEach(function(e){ if(permEmails.indexOf(e)<0) permEmails.push(e); });
+      permEmails.sort();
       var permHtml = permEmails.length
         ? permEmails.map(function(email){
-            var areas = (USER_PERMISSIONS[email]&&USER_PERMISSIONS[email].budgetAreas)||[];
-            return permRow(email, areas);
+            var entry = USER_PERMISSIONS[email] || {};
+            var areas = entry.budgetAreas || [];
+            var admnFlag = entry.admin === true;
+            return permRow(email, areas, admnFlag);
           }).join('')
         : '<p style="font-size:11px;color:#aaa;margin:0">Nenhum usuário cadastrado — todos têm acesso total.</p>';
       document.getElementById('cfgPermRows').innerHTML = permHtml;
@@ -1188,40 +1195,89 @@ function openPermissions(){
   }, 100);
 }
 
-function permRow(email, selectedAreas){
+function permRow(email, selectedAreas, isAdminUser){
   var areaChecks = BUDGET_AREAS.map(function(a){
     var checked = selectedAreas.indexOf(a)>=0 ? ' checked' : '';
     return '<label style="display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;white-space:nowrap"><input type="checkbox" value="'+a+'"'+checked+' style="cursor:pointer"> '+a+'</label>';
   }).join('');
-  // Não permite "Ver como" o admin real (você mesmo)
+  // Não permite "Ver como" o admin real (você mesmo) — nem remover super-admins
   var canSeeAs = email !== CURRENT_USER_EMAIL;
+  var superAdmin = isSuperAdmin(email);
   var seeAsBtn = canSeeAs
     ? '<button onclick="impersonateUser(\''+email+'\')" style="background:#f0e9fa;border:1px solid #b08fd0;color:#7a2dad;border-radius:4px;padding:2px 10px;font-size:11px;cursor:pointer;font-weight:600">👁️ Ver como</button>'
     : '<span style="font-size:10px;color:#aaa;font-style:italic">(você)</span>';
-  return '<div class="perm-row" data-email="'+email+'" style="background:#f7f9ff;border:1px solid #d0d8ee;border-radius:6px;padding:10px 12px;margin-bottom:8px">'
-    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
-    +'<span style="font-size:12px;font-weight:700;color:#1a2547;flex:1">'+email+'</span>'
+  var removeBtn = superAdmin
+    ? '<span style="font-size:10px;color:#aaa;font-style:italic;background:#fffbe6;border:1px solid #f0d875;color:#a07f00;border-radius:4px;padding:2px 8px" title="Super-admin não pode ser removido via UI">🔒 Super-admin</span>'
+    : '<button onclick="this.parentElement.parentElement.remove()" style="background:#fff0f0;border:1px solid #e0a0a0;color:#c0181a;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">✕ Remover</button>';
+  // Admin checkbox — desabilitado pra super-admin (já é admin pelo código)
+  var adminCheckHtml = '<label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:'+(superAdmin?'not-allowed':'pointer')+';padding:3px 8px;background:'+(isAdminUser||superAdmin?'#fff4e0':'#f0f3fa')+';border:1.5px solid '+(isAdminUser||superAdmin?'#e89c40':'#d0d8ee')+';border-radius:4px;font-weight:'+(isAdminUser||superAdmin?'700':'500')+';color:'+(isAdminUser||superAdmin?'#a55a00':'#0f1a3a')+'">'
+    +'<input type="checkbox" class="perm-admin-cb" '+(isAdminUser||superAdmin?'checked':'')+' '+(superAdmin?'disabled':'')+' style="cursor:'+(superAdmin?'not-allowed':'pointer')+'">'
+    +'👑 Administrador'+(superAdmin?' (Super)':'')+'</label>';
+  return '<div class="perm-row" data-email="'+email+'" data-super-admin="'+(superAdmin?'1':'0')+'" style="background:#f7f9ff;border:1px solid #d0d8ee;border-radius:6px;padding:10px 12px;margin-bottom:8px">'
+    +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">'
+    +'<span style="font-size:12px;font-weight:700;color:#1a2547;flex:1;min-width:200px">'+email+'</span>'
+    +adminCheckHtml
     +seeAsBtn
-    +'<button onclick="this.parentElement.parentElement.remove()" style="background:#fff0f0;border:1px solid #e0a0a0;color:#c0181a;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer">✕ Remover</button>'
+    +removeBtn
     +'</div>'
-    +'<div style="display:flex;flex-wrap:wrap;gap:8px">'+areaChecks+'</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:8px;padding-top:6px;border-top:1px dashed #d0d8ee">'+areaChecks+'</div>'
     +'</div>';
 }
 
 function addPermRow(){
   var email = document.getElementById('permNewEmail').value.trim().toLowerCase();
   if(!email) return;
+  if(!email.includes('@')){ toast('E-mail inválido','err'); return; }
   if(document.querySelector('.perm-row[data-email="'+email+'"]')){ toast('E-mail já existe','err'); return; }
   var container = document.getElementById('cfgPermRows');
   if(container){
-    // Remove placeholder text if present
     var placeholder = container.querySelector('p');
     if(placeholder) placeholder.remove();
     var div = document.createElement('div');
-    div.innerHTML = permRow(email, []);
+    div.innerHTML = permRow(email, [], false);
     container.appendChild(div.firstChild);
   }
   document.getElementById('permNewEmail').value = '';
+}
+
+// Convida usuário: cria conta no Supabase Auth + envia magic link (acesso sem senha inicial)
+async function inviteUser(btn){
+  if(!isRealAdmin()){ toast('🔒 Apenas admins podem convidar usuários.','err'); return; }
+  var email = document.getElementById('permNewEmail').value.trim().toLowerCase();
+  if(!email){ toast('Digite um e-mail no campo acima primeiro.','err'); return; }
+  if(!email.includes('@')){ toast('E-mail inválido.','err'); return; }
+
+  var orig = btn.textContent;
+  btn.disabled = true; btn.textContent = '⏳ Enviando...';
+  try{
+    // signInWithOtp envia magic link. Com shouldCreateUser:true, cria a conta se não existir.
+    // NÃO afeta a sessão do admin atual — o link é processado quando o NOVO usuário clica nele.
+    var res = await _supa.auth.signInWithOtp({
+      email: email,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: window.location.origin + window.location.pathname
+      }
+    });
+    if(res.error) throw res.error;
+    toast('📧 Magic link enviado para '+email+' — usuário clica no link para entrar.');
+    // Adiciona o e-mail na lista de permissões automaticamente (sem áreas/admin ainda)
+    if(!document.querySelector('.perm-row[data-email="'+email+'"]')){
+      var container = document.getElementById('cfgPermRows');
+      if(container){
+        var placeholder = container.querySelector('p');
+        if(placeholder) placeholder.remove();
+        var div = document.createElement('div');
+        div.innerHTML = permRow(email, [], false);
+        container.appendChild(div.firstChild);
+      }
+    }
+    document.getElementById('permNewEmail').value = '';
+  } catch(e){
+    toast('❌ Erro ao convidar: '+e.message,'err');
+    console.error('[inviteUser]', e);
+  }
+  btn.disabled = false; btn.textContent = orig;
 }
 
 async function savePermissions(btn){
@@ -1229,12 +1285,19 @@ async function savePermissions(btn){
   var newPerms = {};
   document.querySelectorAll('.perm-row').forEach(function(row){
     var email = row.getAttribute('data-email');
-    var areas = Array.from(row.querySelectorAll('input[type=checkbox]:checked')).map(function(cb){ return cb.value; });
+    var isSuper = row.getAttribute('data-super-admin') === '1';
+    var areas = Array.from(row.querySelectorAll('input[type=checkbox]:not(.perm-admin-cb):checked')).map(function(cb){ return cb.value; });
+    var adminCb = row.querySelector('.perm-admin-cb');
+    var isAdminFlag = adminCb && adminCb.checked;
+    // Super-admins (hardcoded) não precisam ser salvos em USER_PERMISSIONS — exceto se tiverem áreas restritas
+    if(isSuper && areas.length === 0) return; // não salva — gerenciado por ADMIN_EMAILS
     newPerms[email] = { budgetAreas: areas };
+    if(isAdminFlag && !isSuper) newPerms[email].admin = true;
   });
   try{
     await supaSave(TBLS.save_dre, 'user_permissions', newPerms);
     USER_PERMISSIONS = newPerms;
+    applyPermissionsToUI();
     toast('✔ Permissões salvas com sucesso');
   } catch(e){ toast('Erro ao salvar permissões: '+e.message,'err'); }
   btn.disabled=false; btn.textContent=orig;
@@ -5598,8 +5661,20 @@ function isImpersonating(){ return !!IMPERSONATING_EMAIL; }
 // Retorna o admin real (mesmo durante impersonation)
 function getRealUserEmail(){ return CURRENT_USER_EMAIL; }
 // Verifica se o e-mail REAL é admin (independente de impersonation)
-function isRealAdmin(){ return ADMIN_EMAILS.indexOf(CURRENT_USER_EMAIL) > -1; }
-function isAdmin(){ return ADMIN_EMAILS.indexOf(getEffectiveUserEmail()) > -1; }
+// Admin pode vir de duas fontes:
+//  1. ADMIN_EMAILS — hardcoded (super-admins) — não podem ser removidos via UI
+//  2. USER_PERMISSIONS[email].admin === true — admins criados via UI (gerenciáveis)
+function isRealAdmin(){
+  if(ADMIN_EMAILS.indexOf(CURRENT_USER_EMAIL) > -1) return true;
+  return !!(USER_PERMISSIONS[CURRENT_USER_EMAIL] && USER_PERMISSIONS[CURRENT_USER_EMAIL].admin);
+}
+function isAdmin(){
+  var em = getEffectiveUserEmail();
+  if(ADMIN_EMAILS.indexOf(em) > -1) return true;
+  return !!(USER_PERMISSIONS[em] && USER_PERMISSIONS[em].admin);
+}
+// Verifica se um e-mail é "super-admin" (hardcoded — não removível via UI)
+function isSuperAdmin(email){ return ADMIN_EMAILS.indexOf(String(email).toLowerCase()) > -1; }
 // Permissão geral: o usuário corrente pode acessar o sistema?
 // - admin → sim sempre
 // - se USER_PERMISSIONS vazio (nenhum usuário cadastrado) → sim (modo transição inicial)
