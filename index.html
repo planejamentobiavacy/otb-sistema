@@ -1512,7 +1512,24 @@ async function gcRecarregar(key, btn){
     toast('[OK] ' + TBLS[key] + ' recarregado: ' + state[key].length + ' linhas');
     if(st) st.textContent = state[key].length + ' linhas (' + TBLS[key] + ')';
     if(key === 'venda_dre'){
-      DRE_RAW = state[key]; DRE_LOADED = DRE_RAW.length>0; DRE_SNAPSHOT = false; dreBuildFreteLookup();
+      DRE_RAW = state[key]; DRE_LOADED = DRE_RAW.length>0; DRE_SNAPSHOT = false;
+      // ⚠️ Importante: frete precisa estar carregado ANTES da agregação, senão cf=0 pra todos
+      if(!DRE_FRETE_RAW || !DRE_FRETE_RAW.length){
+        console.log('[gcRecarregar] DRE_FRETE_RAW vazio — buscando dw_otb_frete_dre antes de agregar...');
+        gcShowLoadingBanner('Carregando frete antes de agregar...');
+        try{
+          DRE_FRETE_RAW = await fetchAll(TBLS.frete_dre, null, 'frete_dre', function(loaded, total){
+            gcUpdateLoadingBanner(TBLS.frete_dre, loaded, total);
+          });
+          console.log('[gcRecarregar] frete carregado:', DRE_FRETE_RAW.length, 'linhas');
+        } catch(e){
+          console.warn('[gcRecarregar] erro buscando frete:', e.message);
+          DRE_FRETE_RAW = [];
+          toast('⚠️ Não foi possível carregar dw_otb_frete_dre — custos de frete ficarão zerados', 'err');
+        }
+        gcHideLoadingBanner();
+      }
+      dreBuildFreteLookup();
       // Auto-agrega em memória se tabela for grande, para UI ficar responsiva
       if(DRE_RAW.length > 50000){
         gcShowLoadingBanner('Otimizando '+DRE_RAW.length.toLocaleString('pt-BR')+' linhas para visualização rápida...');
@@ -1528,7 +1545,18 @@ async function gcRecarregar(key, btn){
       }
       initDre();
     }
-    else if(key === 'frete_dre'){ DRE_FRETE_RAW = state[key]; dreBuildFreteLookup(); if(DRE_LOADED) initDre(); toast('↺ Frete atualizado — recalculando rateio...'); }
+    else if(key === 'frete_dre'){
+      DRE_FRETE_RAW = state[key];
+      dreBuildFreteLookup();
+      // Se DRE_RAW é snapshot (sem filial_nf_serie), avisa que precisa recarregar Venda DRE também
+      var hasNf = DRE_RAW && DRE_RAW.length && (DRE_RAW[0].filial_nf_serie || DRE_RAW[0].FILIAL_NF_SERIE);
+      if(DRE_LOADED && !hasNf){
+        toast('⚠️ Para aplicar o rateio de frete nos dados existentes, clique também em "↺ Recarregar" ao lado de Venda DRE','err');
+      } else if(DRE_LOADED){
+        initDre();
+        toast('↺ Frete atualizado — recalculando rateio...');
+      }
+    }
     else if(key === 'folha'){
       FOLHA_RAW = state[key]; FOLHA_LOADED = true;
       // Diagnóstico: lista os períodos encontrados
