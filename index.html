@@ -3656,11 +3656,12 @@ async function initDre(){
   var _vLookupInit = Object.assign({}, DRE_VENDEDOR_LOOKUP);
   DRE_RAW.forEach(function(r){
     var cod  = String(r.COD_VENDEDOR||r.cod_vendedor||'').trim();
-    var nome = String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||'').trim();
+    var nome = String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||r.vendedor||r.vd||'').trim();
     if(cod && nome && !_vLookupInit[cod]) _vLookupInit[cod] = nome;
   });
   var vendedorList=Array.from(new Set(DRE_RAW.map(function(r){
-    var nome=String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||'').trim();
+    // Inclui r.vendedor e r.vd (campos vindos do snapshot expandido)
+    var nome=String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||r.vendedor||r.vd||'').trim();
     if(!nome){var cod=String(r.COD_VENDEDOR||r.cod_vendedor||'').trim(); nome=_vLookupInit[cod]||cod;}
     return nome;
   }))).filter(Boolean).sort();
@@ -4129,10 +4130,15 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
     // Sem dados de canal (ex: view por fornecedor sem campo canal): distribui pelo shareRB
     rb_closer=rb_developer=rb_farmer=rb_martins=rb_rca=rb_dev*shareRB;
   }
-  // Salários: usa valor absoluto salvo (closer_abs etc) se disponível, senão % da RB
+  // Salários comerciais: SEMPRE vem da Folha (soma de verbas excluindo 13°) por canal e por mês.
+  // Soma todos os meses selecionados (não usa mais closer_abs/developer_abs etc do DRE_CFG_PARAMS).
   function getSalAbs(key, rb){
-    var absVals=[]; a.anomesList.forEach(function(am){ var p=DRE_CFG_PARAMS[am]; if(p&&p[key+'_abs']!=null) absVals.push(p[key+'_abs']); });
-    if(absVals.length){ return absVals.reduce(function(s,v){return s+v;},0)/absVals.length; }
+    var total = 0;
+    a.anomesList.forEach(function(am){
+      total += folhaSalCanalAm(key.toUpperCase(), am);
+    });
+    if(total > 0) return total;
+    // Fallback: % da RB (caso Folha não esteja carregada)
     return rb*getSalPct(key);
   }
   // Quando sem contexto de canal (fornecedor/transportadora): rateia pelo shareRB
@@ -4256,9 +4262,21 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
     });
     return total / a.anomesList.length;
   }
-  var sa_unit = getFixo('sal_adm', FIXOS_DEF.sal_adm);
+  // Salário Adm: SEMPRE vem da Folha (verbas excluindo 13°). Soma todos os meses selecionados.
+  var sa_unit = (function(){
+    var total = 0, hasFolha = false;
+    a.anomesList.forEach(function(am){
+      var v = folhaSalAdmAm(am);
+      if(v > 0) hasFolha = true;
+      total += v;
+    });
+    // Fallback ao default se Folha não traz dados (não usa mais DRE_CFG_PARAMS.sal_adm)
+    if(!hasFolha) return FIXOS_DEF.sal_adm * a.anomesList.length;
+    return total;
+  })();
   var dg_unit = getFixo('desp_gerais', FIXOS_DEF.desp_gerais);
   var cd_unit = getFixo('cd_mensal', FIXOS_DEF.cd_mensal);
+  // sa_unit já é a soma total dos meses; sa = sa_unit * shareRB (rateio por compartilhamento)
   var mcon=mc+rf_rec-cf-mkt,sa=sa_unit*shareRB,dg=dg_unit*shareRB,cd=cd_unit*shareQTD;
   // 13º + Férias Adm: usa pct13ferias_adm se configurado, senão fallback para pct13ferias
   var pct13Adm = (function(){
@@ -4407,6 +4425,105 @@ function folhaTotal(r){
   // Se soma deu zero e tem 'valor', usa valor como fallback
   if(t===0 && !FOLHA_VERBAS_SEL.length && r.valor!=null) return folhaNum(r.valor);
   return t;
+}
+
+// ── Detecta colunas relacionadas ao 13º Salário (várias variações de nome) ──
+function _is13VerbaName(colName){
+  var n = String(colName||'').toUpperCase();
+  if(n === 'S13_PARC' || n === 'S13' || n === 'D13' || n === 'F13') return true;
+  if(/DECIMO[\s_]?TERC/.test(n)) return true;
+  if(/^DEC[_\s]?TERC/.test(n)) return true;
+  if(/13[_\s]?SAL/.test(n)) return true;
+  if(/SAL[_\s]?13/.test(n)) return true;
+  if(/TRIZE/.test(n)) return true;
+  return false;
+}
+
+// ── Total de Folha por canal (CLOSER/DEVELOPER/FARMER/HAVA/KA) em um am, excluindo 13º ──
+// Lê de DRE_FOLHA_RAW (preferencial) ou FOLHA_RAW (fallback do módulo Folha)
+function folhaSalCanalAm(canal, am){
+  if(!canal || !am) return 0;
+  var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
+          : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW && FOLHA_RAW.length) ? FOLHA_RAW : [];
+  if(!src.length) return 0;
+  var canalUp = String(canal).toUpperCase();
+  // Lookup nome → canal (a partir de FOLHA_CFG.classif)
+  var lkp = {};
+  if(typeof FOLHA_CFG !== 'undefined' && FOLHA_CFG && FOLHA_CFG.classif){
+    Object.keys(FOLHA_CFG.classif).forEach(function(nome){
+      var cfg = FOLHA_CFG.classif[nome];
+      if(cfg && cfg.canal && cfg.canal !== '—') lkp[nome] = String(cfg.canal).toUpperCase();
+    });
+  }
+  // Identifica a chave do campo nome no payload
+  var nomeKey = (function(){
+    var keys = Object.keys(src[0]);
+    return keys.find(function(k){ return /^(nome|pessoa|name|employee)$/i.test(k); })
+        || keys.find(function(k){ return /nome|pessoa|name/i.test(k); });
+  })();
+  return src.filter(function(r){
+    var nome = nomeKey ? String(r[nomeKey]).trim() : '';
+    var canalR = lkp[nome] || '';
+    var anomes = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
+    return canalR === canalUp && anomes === am;
+  }).reduce(function(s,r){
+    var keys = Object.keys(r);
+    // Soma TODAS as verbas conhecidas (FOLHA_VERBAS) EXCETO as relacionadas ao 13°
+    var verbas = FOLHA_VERBAS.filter(function(k){ return !_is13VerbaName(k); });
+    var totalVerbas = 0;
+    verbas.forEach(function(k){
+      var found = keys.find(function(rk){ return rk.toUpperCase() === k; });
+      if(found) totalVerbas += folhaNum(r[found]);
+    });
+    if(totalVerbas > 0) return s + totalVerbas;
+    // Fallback: r.valor menos colunas detectadas como 13°
+    var total = parseFloat(r.valor||r.VALOR)||0;
+    var total13 = 0;
+    keys.forEach(function(k){ if(_is13VerbaName(k)) total13 += folhaNum(r[k]); });
+    return s + (total - total13);
+  }, 0);
+}
+
+// ── Total de Folha Administrativa em um am, excluindo 13º ──
+function folhaSalAdmAm(am){
+  if(!am) return 0;
+  var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
+          : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW && FOLHA_RAW.length) ? FOLHA_RAW : [];
+  if(!src.length) return 0;
+  var hasAdminCfg = false;
+  if(typeof FOLHA_CFG !== 'undefined' && FOLHA_CFG && FOLHA_CFG.classif){
+    hasAdminCfg = Object.values(FOLHA_CFG.classif).some(function(c){ return c.admin==='sim'; });
+  }
+  return src.filter(function(r){
+    var nome = folhaGetNome(r);
+    var anomes = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
+    if(anomes !== am) return false;
+    if(hasAdminCfg){
+      return ((FOLHA_CFG.classif[nome]||{}).admin === 'sim');
+    } else {
+      var cfg = FOLHA_CFG.classif[nome];
+      if(cfg && cfg.area){
+        return String(cfg.area).toUpperCase() === 'ADMINISTRATIVO';
+      }
+      // Fallback final: pelo campo area da linha — exclui canais comerciais
+      var area = String(r.area||r.AREA||'').toUpperCase();
+      return !['CLOSER','DEVELOPER','FARMER','HAVA','KA'].some(function(c){ return area.includes(c); });
+    }
+  }).reduce(function(s,r){
+    var keys = Object.keys(r);
+    // Mesma lógica: soma verbas conhecidas, exclui 13°
+    var verbas = FOLHA_VERBAS.filter(function(k){ return !_is13VerbaName(k); });
+    var totalVerbas = 0;
+    verbas.forEach(function(k){
+      var found = keys.find(function(rk){ return rk.toUpperCase() === k; });
+      if(found) totalVerbas += folhaNum(r[found]);
+    });
+    if(totalVerbas > 0) return s + totalVerbas;
+    var total = parseFloat(r.valor||r.VALOR)||0;
+    var total13 = 0;
+    keys.forEach(function(k){ if(_is13VerbaName(k)) total13 += folhaNum(r[k]); });
+    return s + (total - total13);
+  }, 0);
 }
 
 async function loadFolhaFromSupabase(){
@@ -5275,6 +5392,16 @@ async function openDreCfg(){
       +(refHtml ? '<span class="hint ref-val">'+refHtml+'</span>' : '')
       +'</div>';
   }
+  // Campo somente leitura — exibe valor calculado da Folha (sem input editável)
+  function readOnlyField(label, val, refHtml){
+    var displayVal = val ? 'R$ '+Math.round(val).toLocaleString('pt-BR') : 'R$ 0';
+    var color = val ? '#0a7c4e' : '#7a8ab0';
+    return '<div class="dre-cfg-field">'
+      +'<label>'+label+' <span style="font-size:9px;color:#7a8ab0;font-weight:400;font-style:italic">🔒 da Folha</span></label>'
+      +'<div style="padding:7px 10px;border:1.5px solid #d0d8ee;border-radius:6px;background:#f7f9ff;color:'+color+';font-size:13px;font-weight:700;text-align:right">'+displayVal+'</div>'
+      +(refHtml ? '<span class="hint ref-val">'+refHtml+'</span>' : '')
+      +'</div>';
+  }
 
   var am = selectedAm;
   console.log('[openDreCfg] am=',am,'getP(pct13ferias)=',getP('pct13ferias'),'DRE_CFG_PARAMS[am]=',DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].pct13ferias);
@@ -5306,6 +5433,19 @@ async function openDreCfg(){
   // Se não há canal RCA no DRE_RAW, deriva RB a partir da despesa de comissão ÷ % configurado
   var rbRca = rbRcaDireto > 0 ? rbRcaDireto
     : (despRca > 0 && getP('rca') > 0 ? Math.round(despRca / getP('rca')) : 0);
+  // Identifica colunas relacionadas ao 13° (várias variações de nome) — usado pra excluir do total
+  function is13Verba(colName){
+    var n = String(colName||'').toUpperCase();
+    // Patterns conhecidos: S13_PARC, DECIMO_TERCEIRO, DEC_TERC, 13_SAL, etc.
+    if(n === 'S13_PARC' || n === 'S13' || n === 'D13' || n === 'F13') return true;
+    if(/DECIMO[\s_]?TERC/.test(n)) return true;
+    if(/^DEC[_\s]?TERC/.test(n)) return true;
+    if(/13[_\s]?SAL/.test(n)) return true;
+    if(/SAL[_\s]?13/.test(n)) return true;
+    if(/TRIZE/.test(n)) return true;
+    return false;
+  }
+  var _log13Done = false;
   function folhaTotalCanalS13(canal, am){
     var canalUp = canal.toUpperCase();
     var _lkp = (typeof _folhaCanalLookup !== 'undefined' && _folhaCanalLookup) ? _folhaCanalLookup : {};
@@ -5314,7 +5454,6 @@ async function openDreCfg(){
     var result = DRE_FOLHA_RAW.filter(function(r){
       var nome = _nk ? String(r[_nk]).trim() : '';
       var canalR = _lkp[nome] || '';
-      // Use folhaGetPeriodo which handles all column name variants
       var anomes = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
       var amRef = _folhaAmRef || am;
       var ok = canalR === canalUp && (!amRef || anomes===amRef);
@@ -5322,17 +5461,28 @@ async function openDreCfg(){
       return ok;
     }).reduce(function(s,r){
       var keys = Object.keys(r);
-      var verbas = FOLHA_VERBAS.filter(function(k){ return k !== 'S13_PARC'; });
+      // Diagnóstico (1 vez): mostra todas as colunas pra ajudar identificar 13°
+      if(!_log13Done){
+        _log13Done = true;
+        var cols13 = keys.filter(function(k){ return is13Verba(k); });
+        console.log('[folhaTotalCanalS13] DRE_FOLHA_RAW colunas:', keys);
+        console.log('[folhaTotalCanalS13] colunas detectadas como 13°:', cols13);
+      }
+      // Soma TODAS as verbas conhecidas (FOLHA_VERBAS) EXCETO as relacionadas ao 13°
+      var verbas = FOLHA_VERBAS.filter(function(k){ return !is13Verba(k); });
       var totalVerbas = 0;
       verbas.forEach(function(k){
         var found = keys.find(function(rk){ return rk.toUpperCase() === k; });
         if(found) totalVerbas += folhaNum(r[found]);
       });
       if(totalVerbas > 0) return s + totalVerbas;
-      var s13key = keys.find(function(k){ return k.toUpperCase() === 'S13_PARC'; });
+      // Fallback: r.valor menos TODAS as colunas detectadas como 13°
       var total = parseFloat(r.valor||r.VALOR)||0;
-      var s13val = s13key ? parseFloat(r[s13key])||0 : 0;
-      return s + (total - s13val);
+      var total13 = 0;
+      keys.forEach(function(k){
+        if(is13Verba(k)) total13 += folhaNum(r[k]);
+      });
+      return s + (total - total13);
     }, 0);
 
     return result;
@@ -5423,25 +5573,16 @@ async function openDreCfg(){
       '👟 Custo unitário aplicado às qtd_grade_hava do mês')
     +'</div></div>'
 
-    // ── SALÁRIOS COMERCIAIS ──
+    // ── SALÁRIOS COMERCIAIS (somente leitura — vem da Folha) ──
     +'<div class="dre-cfg-sec">'
-    +'<div class="dre-cfg-sec-hd">💼 Salários Comerciais (R$ — valor absoluto mensal)</div>'
+    +'<div class="dre-cfg-sec-hd">💼 Salários Comerciais — Folha do mês ('+am+')</div>'
+    +'<div style="font-size:11px;color:#7a8ab0;padding:6px 14px 0;line-height:1.5">Valores calculados automaticamente da <strong>Folha</strong> de cada vendedor, somando todas as verbas <strong>exceto 13º Salário</strong>. Para alterar, ajuste a classificação na tela <strong>Folha</strong>.</div>'
     +'<div class="dre-cfg-grid">'
-    +fieldBrl('Sal. Closer (R$)', 'closer_abs',
-      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].closer_abs!=null)?DRE_CFG_PARAMS[am].closer_abs:(folhaCloserS13||0),
-      '👥 Verbas Folha (exc. 13º): '+(folhaCloserS13?fmt(folhaCloserS13):'R$ 0'))
-    +fieldBrl('Sal. Developer (R$)', 'developer_abs',
-      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].developer_abs!=null)?DRE_CFG_PARAMS[am].developer_abs:(folhaDeveloperS13||0),
-      '👥 Verbas Folha (exc. 13º): '+(folhaDeveloperS13?fmt(folhaDeveloperS13):'R$ 0'))
-    +fieldBrl('Sal. Farmer (R$)', 'farmer_abs',
-      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].farmer_abs!=null)?DRE_CFG_PARAMS[am].farmer_abs:(folhaFarmerS13||0),
-      '👥 Verbas Folha (exc. 13º): '+(folhaFarmerS13?fmt(folhaFarmerS13):'R$ 0'))
-    +fieldBrl('Sal. Hava (R$)', 'hava_abs',
-      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].hava_abs!=null)?DRE_CFG_PARAMS[am].hava_abs:(folhaHavaS13||0),
-      '👥 Verbas Folha (exc. 13º): '+(folhaHavaS13?fmt(folhaHavaS13):'R$ 0 — classifique pessoas como HAVA na Folha'))
-    +fieldBrl('Sal. KA (R$)', 'ka_abs',
-      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].ka_abs!=null)?DRE_CFG_PARAMS[am].ka_abs:(folhaKaS13||0),
-      '👥 Verbas Folha (exc. 13º): '+(folhaKaS13?fmt(folhaKaS13):'R$ 0 — classifique pessoas como KA na Folha'))
+    +readOnlyField('Sal. Closer (R$)',    folhaCloserS13,    'CLOSER — '+(folhaCloserS13?'verbas s/ 13° somadas':'nenhuma pessoa classificada'))
+    +readOnlyField('Sal. Developer (R$)', folhaDeveloperS13, 'DEVELOPER — '+(folhaDeveloperS13?'verbas s/ 13° somadas':'nenhuma pessoa classificada'))
+    +readOnlyField('Sal. Farmer (R$)',    folhaFarmerS13,    'FARMER — '+(folhaFarmerS13?'verbas s/ 13° somadas':'nenhuma pessoa classificada'))
+    +readOnlyField('Sal. Hava (R$)',      folhaHavaS13,      'HAVA — '+(folhaHavaS13?'verbas s/ 13° somadas':'classifique pessoas como HAVA na Folha'))
+    +readOnlyField('Sal. KA (R$)',        folhaKaS13,        'KA — '+(folhaKaS13?'verbas s/ 13° somadas':'classifique pessoas como KA na Folha'))
     +'</div>'    +'<div class="dre-cfg-grid" style="margin-top:12px;padding-top:12px;border-top:1px dashed #d0d8ee">'    +fieldPct('% 13º + Férias', 'pct13ferias', (function(){ var v=getP('pct13ferias'); return (!v||v<=0) ? 0.11 : v; })(),      '📐 Aplicado sobre o total de salários — resultado em 13º + Férias (-)'    )    +'</div></div>'
 
     // ── COMISSÕES ──
@@ -5473,9 +5614,9 @@ async function openDreCfg(){
     // ── FIXOS ──
     +'<div class="dre-cfg-sec">'
     +'<div class="dre-cfg-sec-hd">🏢 Despesas Fixas</div>'
+    +'<div style="font-size:11px;color:#7a8ab0;padding:6px 14px 0;line-height:1.5">Salário Adm calculado automaticamente da <strong>Folha</strong> (pessoas classificadas como ADMINISTRATIVO), somando verbas <strong>exceto 13º Salário</strong>.</div>'
     +'<div class="dre-cfg-grid">'
-    +fieldBrl('Salários Adm (R$)', 'sal_adm', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].sal_adm!=null)?DRE_CFG_PARAMS[am].sal_adm:FIXOS_DEF.sal_adm,
-      folhaAdm ? '👥 Folha ADM: '+fmt(folhaAdm) : '')
+    +readOnlyField('Salários Adm (R$)', folhaAdm, folhaAdm ? '👥 Folha ADM (verbas s/ 13°)' : 'Nenhuma pessoa marcada como ADM na Folha')
     +fieldBrl('Despesas Gerais (R$)', 'desp_gerais', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].desp_gerais!=null)?DRE_CFG_PARAMS[am].desp_gerais:FIXOS_DEF.desp_gerais,
       despGerais ? '💸 Base: '+fmt(despGerais) : '')
     +fieldBrl('CD — Centro de Dist. (R$)', 'cd_mensal', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].cd_mensal!=null)?DRE_CFG_PARAMS[am].cd_mensal:FIXOS_DEF.cd_mensal,
@@ -5557,10 +5698,11 @@ function applyDreCfg(){
       DRE_CONFIG[k][am] = val;
     });
     DRE_CFG_PARAMS[am].desp_mkt = gv('desp_mkt');
-    // Salários absolutos (closer_abs etc)
-    ['closer_abs','developer_abs','farmer_abs','hava_abs','ka_abs'].forEach(function(k){
-      var val = gv(k);
-      DRE_CFG_PARAMS[am][k] = val > 0 ? val : null;
+    // Salários comerciais (closer_abs etc) — NÃO são mais editáveis no DRE Config:
+    // o DRE puxa os valores diretamente da Folha (verbas excluindo 13°) por canal e mês.
+    // Limpa qualquer override antigo que possa estar armazenado.
+    ['closer_abs','developer_abs','farmer_abs','hava_abs','ka_abs','sal_adm'].forEach(function(k){
+      if(DRE_CFG_PARAMS[am][k] != null) delete DRE_CFG_PARAMS[am][k];
     });
     // Save pct13ferias as decimal
     var pct13val = gv('pct13ferias');
@@ -5586,18 +5728,17 @@ function applyDreCfg(){
   }
 
   if(am){
-    // Salva fixos por mês
+    // Salva fixos por mês (sal_adm NÃO é mais salvo — vem da Folha)
     var _mktVal = parseFloat(document.getElementById('dcf_desp_mkt')?document.getElementById('dcf_desp_mkt').value:0)||0;
     DRE_CFG_PARAMS[am].desp_mkt   = _mktVal;
-    DRE_CFG_PARAMS[am].sal_adm    = gv('sal_adm');
+    if(DRE_CFG_PARAMS[am].sal_adm != null) delete DRE_CFG_PARAMS[am].sal_adm;
     DRE_CFG_PARAMS[am].desp_gerais= gv('desp_gerais');
     DRE_CFG_PARAMS[am].cd_mensal  = gv('cd_mensal');
     DRE_CFG_PARAMS[am].custoGrade = gv('custoGrade');
     DRE_CFG_PARAMS[am].ajuste_cmv = gv('ajuste_cmv');
   } else {
-    // Sem mês: atualiza defaults globais
+    // Sem mês: atualiza defaults globais (sal_adm preservado pra fallback caso Folha não carregue)
     FIXOS_DEF.marketing   = gv('desp_mkt');
-    FIXOS_DEF.sal_adm     = gv('sal_adm');
     FIXOS_DEF.desp_gerais = gv('desp_gerais');
     FIXOS_DEF.cd_mensal   = gv('cd_mensal');
     DRE_CONFIG_DEFAULTS.custoGrade = gv('custoGrade');
