@@ -6311,7 +6311,9 @@ function renderBudget(anoFilter){
       }
       monthlyEffectiveVals.push(effectiveForYear);
       var color = ss ? '#fff' : ((typeof val==='number'&&val<0) ? '#c0181a' : (future?'#1a56c4':'#0f1a3a'));
-      var cellBg = ss ? grad : (future?'#f0f5ff':bg);
+      // Para summaryStyle: TD transparente para que o gradiente do <tr> flua continuamente
+      // Para outros: mantém o bg da célula (com tinta de mês futuro)
+      var cellBg = ss ? 'transparent' : (future?'#f0f5ff':bg);
       var cellBorderBottom = ss ? ss.gradStart : '#eef1f8';
       var cellPad = ss ? ('padding:'+pTop+' 8px') : 'padding:4px 8px';
       h += '<td style="text-align:center;'+cellPad+';background:'+cellBg+';font-weight:'+fw+';font-size:'+valueFontSize+';color:'+color+';border-bottom:1px solid '+cellBorderBottom+';white-space:nowrap">'+display+'</td>';
@@ -6415,7 +6417,7 @@ function renderBudget(anoFilter){
 
   // ── RECEITA ──
   secRow('Receita', '📈');
-  dataRow('Receita Bruta AVACY', function(ym){ return budgetAvacyFatVal(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_BRUTA_AVACY', lockRealized:true}, summaryStyle:{gradStart:'#0a7c4e', gradEnd:'#1eb574', icon:'📊'}});
+  dataRow('Receita Bruta AVACY', function(ym){ return budgetAvacyFatVal(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_BRUTA_AVACY', lockRealized:true}, summaryStyle:{gradStart:'#0a7c4e', gradEnd:'#0a7c4e', icon:'📊'}});
   // Receita PLANO Avacy — totalmente manual, valores salvos em BUDGET_CFG.budgetOverrides
   dataRow('Receita PLANO Avacy', function(ym){ return 0; }, {bold:true, editable:{keyPrefix:'RECEITA_PLANO_AVACY'}});
   // Diff x Plano = Receita Bruta − Plano (positivo = bateu/superou plano, negativo = abaixo)
@@ -6429,7 +6431,7 @@ function renderBudget(anoFilter){
   dataRow('PIS/COFINS %', function(ym){ return budgetDreMetric(ym,'piscofins_pct'); }, {sub:true, pct:true, simKey:'piscofins_pct'});
 
   // RECEITA LÍQUIDA (linha resumo verde)
-  summaryRow('Receita Líquida', '💵', '#0a7c4e', '#1eb574', function(ym){ return budgetReceitaLiquida(ym); });
+  summaryRow('Receita Líquida', '💵', '#0a7c4e', '#0a7c4e', function(ym){ return budgetReceitaLiquida(ym); });
   spacerRow();
 
   // ── CMV ──
