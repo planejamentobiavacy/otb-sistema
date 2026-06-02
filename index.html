@@ -6346,27 +6346,90 @@ var BUDGET_TIPOS = ['Aluguel','Benefícios','CD','CMV','Comissão','Conselho','C
 var BUDGET_AREAS = ['Administrativo','Avacy','Comercial','Compras','E-comm/Mkt','Financeiro','Fiscal','Operações','RH','TI'];
 function budgetFmtVal(v){ return v>=0?'R$ '+Math.round(v).toLocaleString('pt-BR'):'-R$ '+Math.round(Math.abs(v)).toLocaleString('pt-BR'); }
 
+// Helpers de progress overlay do Budget
+function _budgetShowLoading(show){
+  var el = document.getElementById('budgetLoading');
+  var body = document.getElementById('budgetBody');
+  if(el) el.style.display = show ? 'flex' : 'none';
+  if(body) body.style.display = show ? 'none' : '';
+}
+function _budgetSetProgress(pct, label, stepHtml){
+  var bar = document.getElementById('budgetProgBar');
+  var lbl = document.getElementById('budgetProgLabel');
+  var stp = document.getElementById('budgetProgSteps');
+  if(bar) bar.style.width = Math.max(0,Math.min(100,pct))+'%';
+  if(lbl && label) lbl.textContent = label;
+  if(stp && stepHtml) stp.innerHTML = stepHtml;
+}
+
 async function openBudget(){
   showScreen('screenBudget');
-  // Garante que FOLHA_RAW e FOLHA_CFG estão carregados para Salário Folha
-  if(!FOLHA_RAW.length && TBLS.folha){
-    try{ FOLHA_RAW = await fetchAll(TBLS.folha, null, null); FOLHA_LOADED = FOLHA_RAW.length>0; } catch(e){}
+  // Se já está tudo carregado, vai direto
+  var alreadyLoaded = DRE_LOADED && BUDGET_LOADED && FOLHA_RAW.length;
+  if(alreadyLoaded){ renderBudget(); return; }
+
+  _budgetShowLoading(true);
+  _budgetSetProgress(0, 'Iniciando...');
+  var t0 = Date.now();
+  var steps = [];
+  function step(name, dt){
+    steps.push({name: name, dt: dt});
+    var html = steps.map(function(s){
+      return '<div style="display:flex;justify-content:space-between;padding:2px 0">'
+        +'<span>✓ '+s.name+'</span><span style="color:#aab8d6">'+s.dt+'ms</span></div>';
+    }).join('');
+    _budgetSetProgress(undefined, undefined, html);
   }
-  if(!Object.keys(FOLHA_CFG.classif).length){
-    try{ var fc=await supaLoad(TBLS.save_folha,'folha_classif'); if(fc&&fc.classif) FOLHA_CFG.classif=fc.classif; } catch(e){}
+
+  try{
+    // 1) Folha (necessária pra Salário Folha por área) + classif folha (parallel)
+    if(!FOLHA_RAW.length || !Object.keys(FOLHA_CFG.classif).length){
+      _budgetSetProgress(10, 'Carregando folha de pagamento...');
+      var t1 = Date.now();
+      var folhaPromises = [];
+      if(!FOLHA_RAW.length && TBLS.folha) folhaPromises.push(fetchAll(TBLS.folha,null,null).then(function(r){FOLHA_RAW=r;FOLHA_LOADED=r.length>0;}));
+      if(!Object.keys(FOLHA_CFG.classif).length) folhaPromises.push(supaLoad(TBLS.save_folha,'folha_classif').then(function(fc){if(fc&&fc.classif)FOLHA_CFG.classif=fc.classif;}).catch(function(){}));
+      await Promise.all(folhaPromises);
+      step('Folha ('+FOLHA_RAW.length.toLocaleString('pt-BR')+' linhas)', Date.now()-t1);
+    }
+
+    // 2) DRE — usa snapshot se disponível (rápido, ~25k linhas) — em paralelo com Budget
+    _budgetSetProgress(30, 'Carregando vendas (DRE)...');
+    var t2 = Date.now();
+    var drePromise;
+    if(!DRE_LOADED && typeof loadDreFromSupabase === 'function'){
+      drePromise = loadDreFromSupabase().then(function(){
+        step('DRE ('+(DRE_RAW||[]).length.toLocaleString('pt-BR')+' linhas'+(DRE_SNAPSHOT?', snapshot':'')+')', Date.now()-t2);
+      });
+    } else {
+      drePromise = Promise.resolve();
+      step('DRE (já em memória)', 0);
+    }
+
+    // 3) Budget (despesas + config) — em paralelo com DRE
+    _budgetSetProgress(50, 'Carregando despesas e configurações...');
+    var t3 = Date.now();
+    var budgetPromise = (!BUDGET_LOADED ? loadBudget() : Promise.resolve()).then(function(){
+      step('Budget ('+(BUDGET_DESP_RAW||[]).length.toLocaleString('pt-BR')+' despesas)', Date.now()-t3);
+    });
+
+    // Aguarda os dois em paralelo
+    _budgetSetProgress(70, 'Aguardando dados...');
+    await Promise.all([drePromise, budgetPromise]);
+
+    _budgetSetProgress(90, 'Renderizando tabela...');
+    var t4 = Date.now();
+    renderBudget();
+    step('Render', Date.now()-t4);
+    _budgetSetProgress(100, 'Pronto');
+    console.log('[openBudget] total:', (Date.now()-t0)+'ms', steps);
+    setTimeout(function(){ _budgetShowLoading(false); }, 200);
+  } catch(e){
+    console.error('[openBudget] erro:', e);
+    _budgetSetProgress(0, '❌ Erro: '+e.message);
+    toast('Erro carregando Budget: '+e.message,'err');
+    setTimeout(function(){ _budgetShowLoading(false); }, 2000);
   }
-  // Garante que DRE_RAW está carregado — fonte dos "dados realizados" (Receita Bruta Avacy, etc.)
-  // E também usado pra detectar o ano default correto (sem isso, fallback pega ano máximo
-  // das projeções OTB que vão até 2030)
-  if(!DRE_LOADED && typeof loadDreFromSupabase === 'function'){
-    try{
-      console.log('[openBudget] DRE_RAW não carregado — buscando antes de renderizar Budget...');
-      await loadDreFromSupabase();
-      console.log('[openBudget] DRE_RAW carregado:', DRE_RAW.length, 'linhas');
-    } catch(e){ console.warn('[openBudget] erro carregando DRE:', e.message); }
-  }
-  if(!BUDGET_LOADED) await loadBudget();
-  renderBudget();
 }
 
 async function budgetForceReload(btn){
@@ -8079,6 +8142,12 @@ async function saveBudgetCfg(btn){
   </header>
   <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;padding:16px 20px;min-height:0" id="budgetBody">
     <div style="text-align:center;padding:80px;color:#7a8ab0;font-size:14px" id="budgetEmpty">Carregando dados...</div>
+  </div>
+  <div id="budgetLoading" class="dre-loading" style="display:none">
+    <div style="font-size:15px;font-weight:700;color:#1a2547">Carregando Budget...</div>
+    <div class="dre-prog-wrap"><div class="dre-prog-bar" id="budgetProgBar"></div></div>
+    <div class="dre-prog-label" id="budgetProgLabel">Conectando ao Supabase...</div>
+    <div id="budgetProgSteps" style="margin-top:14px;font-size:11px;color:#7a8ab0;text-align:left;max-width:380px;width:100%"></div>
   </div>
 </div>
 
