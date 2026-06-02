@@ -4061,8 +4061,15 @@ function dreCalcShare(sliceRows,allRows,canalCtx){
     var vendedoresLista = Object.keys(vendedoresNoSlice);
     if(vendedoresLista.length === 1){
       var vName = vendedoresLista[0];
-      if(typeof folhaPersonExistsInFolha === 'function' && folhaPersonExistsInFolha(vName)){
-        vendedorOverride = vName;
+      var resolvedV = (typeof folhaResolvePersonName === 'function') ? folhaResolvePersonName(vName) : null;
+      // Log diagnóstico (1x por vendedor único — evita spam)
+      if(typeof window !== 'undefined' && !window._dreSalDiag) window._dreSalDiag = {};
+      if(window._dreSalDiag && !window._dreSalDiag[vName]){
+        window._dreSalDiag[vName] = true;
+        console.log('[dreCalcShare] vendedor único:', vName, '| resolvido p/ Folha:', resolvedV||'❌ NÃO ENCONTRADO');
+      }
+      if(resolvedV){
+        vendedorOverride = resolvedV;
       }
     }
   }
@@ -4361,6 +4368,9 @@ var drePctD=function(v){var p=(v*100).toFixed(1)+'%';return v<0?'<span style="co
 function dreKpis(dArr,dLY){
   if(!dArr.length) return '';
   var d=dArr[dArr.length-1],mb_p=d.rl>0?(d.mb/d.rl*100).toFixed(1):0,mc_p=d.rl>0?(d.mcon/d.rl*100).toFixed(1):0,eb_p=d.rl>0?(d.ebt/d.rl*100).toFixed(1):0,cf_p=d.qtd>0?(d.cf/d.qtd).toFixed(1):'-',mg_p=(d.mg_prod*100).toFixed(1);
+  // % Devolução = dev/rb_gross | % Impostos = imp/rb
+  var dev_p = d.rb_gross>0 ? (d.dev/d.rb_gross*100).toFixed(1) : '0.0';
+  var imp_p = d.rb>0 ? (d.imp/d.rb*100).toFixed(1) : '0.0';
   function lyBlock(cur,lyVal,isAbs){
     if(!dLY||lyVal===null||lyVal===undefined) return '';
     var fmt=isAbs?dreBrlp:function(v){return(v*100).toFixed(1)+'%';};
@@ -4369,10 +4379,23 @@ function dreKpis(dArr,dLY){
     var arrow=delta>0.005?'▲':delta<-0.005?'▼':'-';
     return '<div style="display:flex;align-items:center;justify-content:center;gap:5px;margin-top:7px;padding-top:7px;border-top:1px dashed #d0d8ee"><span style="font-size:9px;font-weight:700;text-transform:uppercase;color:#7a8ab0">LY</span><span style="font-size:11px;font-weight:600;color:#7a8ab0">'+fmt(lyVal)+'</span><span style="font-size:11px;font-weight:700;padding:1px 5px;border-radius:3px;'+cls+'">'+arrow+' '+pct2+'%</span></div>';
   }
+  // lyBlockInverse: para métricas onde MENOR é melhor (Devolução, Impostos, Custo Frete)
+  // — verde quando cai, vermelho quando sobe
+  function lyBlockInverse(cur,lyVal,isAbs){
+    if(!dLY||lyVal===null||lyVal===undefined) return '';
+    var fmt=isAbs?dreBrlp:function(v){return(v*100).toFixed(1)+'%';};
+    var delta=lyVal!==0?(cur-lyVal)/Math.abs(lyVal):0,pct2=(delta*100).toFixed(1);
+    var cls=delta>0.005?'color:#c0181a;background:#fdeaea':delta<-0.005?'color:#0a7c4e;background:#e6f5ef':'color:#7a8ab0;background:#eef1f8';
+    var arrow=delta>0.005?'▲':delta<-0.005?'▼':'-';
+    return '<div style="display:flex;align-items:center;justify-content:center;gap:5px;margin-top:7px;padding-top:7px;border-top:1px dashed #d0d8ee"><span style="font-size:9px;font-weight:700;text-transform:uppercase;color:#7a8ab0">LY</span><span style="font-size:11px;font-weight:600;color:#7a8ab0">'+fmt(lyVal)+'</span><span style="font-size:11px;font-weight:700;padding:1px 5px;border-radius:3px;'+cls+'">'+arrow+' '+pct2+'%</span></div>';
+  }
   function card(label,val,sub,cls2,lyHtml){return'<div style="background:#fff;border:1.5px solid #d0d8ee;border-radius:8px;padding:12px 14px;box-shadow:0 2px 12px rgba(26,42,108,.10);border-top:3px solid '+cls2+';text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700;margin-bottom:6px">'+label+'</div><div style="font-size:20px;font-weight:800;color:#0f1a3a;line-height:1">'+val+'</div><div style="font-size:11px;color:#7a8ab0;margin-top:4px;font-weight:500">'+sub+'</div>'+(lyHtml||'')+'</div>';}
   // Cards: para não-admins, esconde os 2 últimos (EBITDA %, EBITDA R$) — visão para até Margem Contrib
   var _showEbitda = (typeof isAdmin === 'function') ? isAdmin() : true;
-  var baseCards = card('Receita Bruta s/ Dev',dreBrlp(d.rb_dev),'c/ Dev: '+dreBrlp(d.rb_gross),'#2352c8',lyBlock(d.rb_dev,dLY?dLY.rb_dev:null,true))+card('Custo Frete',dreBrlp(d.cf),'R$ '+cf_p+'/par','#2352c8',lyBlock(d.cf,dLY?dLY.cf:null,true))+card('Margem Produto',mg_p+'%','&nbsp;',+mg_p>25?'#0a7c4e':+mg_p>20?'#b07a00':'#c0181a',lyBlock(d.mg_prod,dLY?dLY.mg_prod:null,false))+card('Margem Bruta',mb_p+'%',dreBrlp(d.mb),+mb_p>22?'#0a7c4e':+mb_p>16?'#b07a00':'#c0181a',lyBlock(d.mb/d.rl,dLY&&dLY.rl>0?dLY.mb/dLY.rl:null,false))+card('Margem Contrib',mc_p+'%',dreBrlp(d.mcon),+mc_p>15?'#0a7c4e':+mc_p>10?'#b07a00':'#c0181a',lyBlock(d.mcon/d.rl,dLY&&dLY.rl>0?dLY.mcon/dLY.rl:null,false));
+  var baseCards = card('Receita Bruta s/ Dev',dreBrlp(d.rb_dev),'c/ Dev: '+dreBrlp(d.rb_gross),'#2352c8',lyBlock(d.rb_dev,dLY?dLY.rb_dev:null,true))
+    +card('% Devolução',dev_p+'%',dreBrlp(d.dev),+dev_p<3?'#0a7c4e':+dev_p<6?'#b07a00':'#c0181a',lyBlockInverse(d.rb_gross>0?d.dev/d.rb_gross:0, dLY&&dLY.rb_gross>0?dLY.dev/dLY.rb_gross:null, false))
+    +card('% Impostos',imp_p+'%',dreBrlp(d.imp),'#7a8ab0',lyBlockInverse(d.rb>0?d.imp/d.rb:0, dLY&&dLY.rb>0?dLY.imp/dLY.rb:null, false))
+    +card('Custo Frete',dreBrlp(d.cf),'R$ '+cf_p+'/par','#2352c8',lyBlock(d.cf,dLY?dLY.cf:null,true))+card('Margem Produto',mg_p+'%','&nbsp;',+mg_p>25?'#0a7c4e':+mg_p>20?'#b07a00':'#c0181a',lyBlock(d.mg_prod,dLY?dLY.mg_prod:null,false))+card('Margem Bruta',mb_p+'%',dreBrlp(d.mb),+mb_p>22?'#0a7c4e':+mb_p>16?'#b07a00':'#c0181a',lyBlock(d.mb/d.rl,dLY&&dLY.rl>0?dLY.mb/dLY.rl:null,false))+card('Margem Contrib',mc_p+'%',dreBrlp(d.mcon),+mc_p>15?'#0a7c4e':+mc_p>10?'#b07a00':'#c0181a',lyBlock(d.mcon/d.rl,dLY&&dLY.rl>0?dLY.mcon/dLY.rl:null,false));
   var ebitdaCards = _showEbitda
     ? card('EBITDA %',eb_p+'%','&nbsp;',+eb_p>4?'#0a7c4e':+eb_p>2?'#b07a00':'#c0181a',lyBlock(d.ebt/d.rl,dLY&&dLY.rl>0?dLY.ebt/dLY.rl:null,false))+card('EBITDA R$',dreBrlp(d.ebt),'&nbsp;',+eb_p>4?'#0a7c4e':+eb_p>2?'#b07a00':'#c0181a',lyBlock(d.ebt,dLY?dLY.ebt:null,true))
     : '';
@@ -4522,6 +4545,8 @@ function clearFolhaSalCache(){
   _folhaSalCache.byPersonCanalAm = {};
   _folhaSalCache.folhaNomesSet = null;
   _folhaSalCache._diagDone = false;
+  // Reset flag de diagnóstico de vendedor único
+  if(typeof window !== 'undefined') window._dreSalDiag = {};
 }
 function _ensureFolhaSalLookups(src){
   var classifLen = (typeof FOLHA_CFG !== 'undefined' && FOLHA_CFG && FOLHA_CFG.classif)
@@ -4642,34 +4667,64 @@ function folhaSalCanalAm(canal, am){
 }
 
 // Verifica se uma pessoa (por nome) existe na Folha (DRE_FOLHA_RAW)
+// Versão antiga (booleana) — mantida para compat
 function folhaPersonExistsInFolha(personName){
-  if(!personName) return false;
+  return folhaResolvePersonName(personName) !== null;
+}
+
+// Resolve o nome do vendedor (DRE) para o nome canônico na Folha.
+// 1. Match exato (normalizado: trim + uppercase + colapsa espaços)
+// 2. Match fuzzy: se TODAS as palavras do nome do DRE aparecem no nome da Folha (ou vice-versa)
+// Retorna o nome canônico (como está em DRE_FOLHA_RAW) ou null.
+function folhaResolvePersonName(personName){
+  if(!personName) return null;
   var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
           : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW && FOLHA_RAW.length) ? FOLHA_RAW : [];
-  if(!src.length) return false;
+  if(!src.length) return null;
   _ensureFolhaSalLookups(src);
-  // Constrói cache Set de nomes na 1ª chamada
+  // Cache: mapa normalizado→original
   if(!_folhaSalCache.folhaNomesSet){
-    var s = {};
+    var m = {};
     var nk = _folhaSalCache.nomeKey;
     for(var i=0;i<src.length;i++){
-      var n = nk ? String(src[i][nk]||'').trim().toUpperCase() : '';
-      if(n) s[n] = true;
+      var n = nk ? String(src[i][nk]||'').trim() : '';
+      if(!n) continue;
+      var norm = n.toUpperCase().replace(/\s+/g,' ').trim();
+      if(!m[norm]) m[norm] = n;
     }
-    _folhaSalCache.folhaNomesSet = s;
+    _folhaSalCache.folhaNomesSet = m;
   }
-  return !!_folhaSalCache.folhaNomesSet[String(personName).toUpperCase().trim()];
+  var lkp = _folhaSalCache.folhaNomesSet;
+  var nameNorm = String(personName).toUpperCase().replace(/\s+/g,' ').trim();
+  // 1. Exato
+  if(lkp[nameNorm]) return lkp[nameNorm];
+  // 2. Fuzzy: todas palavras do DRE no nome da Folha (ou contrário)
+  var nameWords = nameNorm.split(' ').filter(Boolean);
+  if(!nameWords.length) return null;
+  var folhaNames = Object.keys(lkp);
+  for(var j=0;j<folhaNames.length;j++){
+    var fname = folhaNames[j];
+    var fwords = fname.split(' ').filter(Boolean);
+    // DRE ⊆ Folha (ex: "WESLEY BRITO" ⊆ "WESLEY BRITO DE SOUZA")
+    if(nameWords.every(function(w){ return fwords.indexOf(w) >= 0; })) return lkp[fname];
+    // Folha ⊆ DRE (caso raro)
+    if(fwords.every(function(w){ return nameWords.indexOf(w) >= 0; })) return lkp[fname];
+  }
+  return null;
 }
 
 // Salário INDIVIDUAL de uma pessoa em um am específico, opcionalmente filtrado por canal.
 // Retorna o salário rateado pela quantidade de canais que a pessoa pertence (se canalRequired).
-// Memoizado por (personName,canal,am).
+// Memoizado por (personName,canal,am). Aceita nome aproximado (fuzzy match).
 function folhaSalIndividualAm(personName, am, canalRequired){
   if(!personName || !am) return 0;
   var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
           : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW && FOLHA_RAW.length) ? FOLHA_RAW : [];
   if(!src.length) return 0;
-  var nameUp = String(personName).toUpperCase().trim();
+  // Resolve nome canônico via fuzzy match
+  var resolvedName = folhaResolvePersonName(personName);
+  if(!resolvedName) return 0;
+  var nameUp = String(resolvedName).toUpperCase().replace(/\s+/g,' ').trim();
   var canalUp = canalRequired ? String(canalRequired).toUpperCase() : '';
   var cacheKey = nameUp + '|' + canalUp + '|' + am;
   if(_folhaSalCache.byPersonCanalAm[cacheKey] !== undefined) return _folhaSalCache.byPersonCanalAm[cacheKey];
@@ -4681,13 +4736,14 @@ function folhaSalIndividualAm(personName, am, canalRequired){
   for(var i=0;i<src.length;i++){
     var r = src[i];
     var nome = nomeKey ? String(r[nomeKey]).trim() : '';
-    if(String(nome).toUpperCase() !== nameUp) continue;
+    var nomeNorm = String(nome).toUpperCase().replace(/\s+/g,' ').trim();
+    if(nomeNorm !== nameUp) continue;
     var anomes = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
     if(anomes !== am) continue;
-    // Se canal exigido, verifica se pessoa pertence a esse canal — senão soma 0
+    // Se canal exigido, verifica se pessoa pertence a esse canal
     var prorate = 1;
     if(canalRequired){
-      var personCanais = lkp[nome];
+      var personCanais = lkp[nome] || lkp[resolvedName];
       if(!personCanais || personCanais.indexOf(canalUp) < 0){
         _folhaSalCache.byPersonCanalAm[cacheKey] = 0;
         return 0;
