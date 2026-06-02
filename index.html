@@ -4049,7 +4049,24 @@ function dreCalcShare(sliceRows,allRows,canalCtx){
       canalCtx = canaisLista[0];
     }
   }
-  return dreCalc(aSlice,sRB,sQTD,canalCtx);
+  // Detecta vendedor único no slice — se for vendedor cadastrado na Folha, usa salário INDIVIDUAL
+  // (mais preciso que rateio por shareRB). Aplica-se a vistas Vendedor/Cluster/Fornecedor/etc.
+  var vendedorOverride = null;
+  if(sliceRows && sliceRows.length){
+    var vendedoresNoSlice = {};
+    sliceRows.forEach(function(r){
+      var v = String(r.nome_vendedor || r.NOME_VENDEDOR || r.NOM_VENDEDOR || r.nom_vendedor || r.vendedor || r.vd || '').trim();
+      if(v) vendedoresNoSlice[v] = true;
+    });
+    var vendedoresLista = Object.keys(vendedoresNoSlice);
+    if(vendedoresLista.length === 1){
+      var vName = vendedoresLista[0];
+      if(typeof folhaPersonExistsInFolha === 'function' && folhaPersonExistsInFolha(vName)){
+        vendedorOverride = vName;
+      }
+    }
+  }
+  return dreCalc(aSlice,sRB,sQTD,canalCtx,vendedorOverride);
 }
 var dreNum=function(v){if(!v&&v!==0) return 0;var s=String(v).trim();if(s.includes(',')&&!s.includes('.')) return parseFloat(s.replace(',','.'))||0;if(s.includes(',')&&s.includes('.')) return parseFloat(s.replace(/\./g,'').replace(',','.'))||0;return parseFloat(s)||0;};
 function dreAgg(rows){
@@ -4084,7 +4101,7 @@ function dreAgg(rows){
   });
   return{fat,fat_v,dev,qtd,custo,icms,cofins,pis,fecpst,rec_frete:rf,custo_frete:cf,qtdGradeHava,anomesList,fat_v_canal};
 }
-function dreCalc(a,shareRB,shareQTD,canalCtx){
+function dreCalc(a,shareRB,shareQTD,canalCtx,vendedorOverride){
   shareRB=shareRB||1;shareQTD=shareQTD||1;
   var isCloser = canalCtx ? String(canalCtx).toUpperCase()==='CLOSER' : null; // null = unknown (mensal total)
   // Ajuste CMV: soma o valor configurado por mês (DRE_CFG_PARAMS[am].ajuste_cmv) para todos os meses da fatia atual
@@ -4160,9 +4177,18 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
     // Sem dados de canal (ex: view por fornecedor sem campo canal): distribui pelo shareRB
     rb_closer=rb_developer=rb_farmer=rb_martins=rb_rca=rb_dev*shareRB;
   }
-  // Salários comerciais: SEMPRE vem da Folha (soma de verbas excluindo 13°) por canal e por mês.
-  // Soma todos os meses selecionados (não usa mais closer_abs/developer_abs etc do DRE_CFG_PARAMS).
+  // Salários comerciais: SEMPRE vem da Folha.
+  // Se vendedorOverride (vendedor único no slice que existe na Folha): usa salário INDIVIDUAL
+  // dessa pessoa para o canal específico (com rateio se ela tem múltiplos canais).
+  // Senão: soma toda a Folha desse canal nos meses (rateio aplicado fora via _salShare).
   function getSalAbs(key, rb){
+    if(vendedorOverride){
+      var totalInd = 0;
+      a.anomesList.forEach(function(am){
+        totalInd += folhaSalIndividualAm(vendedorOverride, am, key.toUpperCase());
+      });
+      return totalInd;
+    }
     var total = 0;
     a.anomesList.forEach(function(am){
       total += folhaSalCanalAm(key.toUpperCase(), am);
@@ -4173,15 +4199,17 @@ function dreCalc(a,shareRB,shareQTD,canalCtx){
   }
   // Quando sem contexto de canal (fornecedor/transportadora): rateia pelo shareRB
   // _salShare: apply shareRB when in fornecedor/transportadora/cluster/regiao (shareRB<1 and no canalCtx)
+  // Se vendedorOverride, NÃO aplica share — getSalAbs já retorna valor exato individual
   var _salShare = (!canalCtxUC && shareRB < 1) ? shareRB : 1;
+  var _salShareEff = vendedorOverride ? 1 : _salShare;
   // Quando em contexto de canal: só aplica o salário do canal correspondente
-  var sv_closer   = (!canalCtxUC || canalCtxUC==='CLOSER')    ? getSalAbs('closer',   rb_closer)   * _salShare : 0;
-  var sv_developer= (!canalCtxUC || canalCtxUC==='DEVELOPER')  ? getSalAbs('developer',rb_developer) * _salShare : 0;
-  var sv_farmer   = (!canalCtxUC || canalCtxUC==='FARMER')     ? getSalAbs('farmer',   rb_farmer)   * _salShare : 0;
+  var sv_closer   = (!canalCtxUC || canalCtxUC==='CLOSER')    ? getSalAbs('closer',   rb_closer)   * _salShareEff : 0;
+  var sv_developer= (!canalCtxUC || canalCtxUC==='DEVELOPER')  ? getSalAbs('developer',rb_developer) * _salShareEff : 0;
+  var sv_farmer   = (!canalCtxUC || canalCtxUC==='FARMER')     ? getSalAbs('farmer',   rb_farmer)   * _salShareEff : 0;
   var rb_hava  = canalCtxUC==='HAVA' ? rb_dev : (!canalCtxUC ? rb_dev : 0);
   var rb_ka    = canalCtxUC==='KA'   ? rb_dev : (!canalCtxUC ? rb_dev : 0);
-  var sv_hava  = (!canalCtxUC || canalCtxUC==='HAVA') ? getSalAbs('hava', rb_hava) * _salShare : 0;
-  var sv_ka    = (!canalCtxUC || canalCtxUC==='KA')   ? getSalAbs('ka',   rb_ka)   * _salShare : 0;
+  var sv_hava  = (!canalCtxUC || canalCtxUC==='HAVA') ? getSalAbs('hava', rb_hava) * _salShareEff : 0;
+  var sv_ka    = (!canalCtxUC || canalCtxUC==='KA')   ? getSalAbs('ka',   rb_ka)   * _salShareEff : 0;
   // Comissões: só aplica ao canal correspondente
   // Em contexto sem canal (fornecedor/transportadora): já está em shareRB via rb_martins/rca
   var com_martins = (!canalCtxUC || canalCtxUC==='MARTINS') ? rb_martins*getSalPct('martins') : 0;
@@ -4342,7 +4370,13 @@ function dreKpis(dArr,dLY){
     return '<div style="display:flex;align-items:center;justify-content:center;gap:5px;margin-top:7px;padding-top:7px;border-top:1px dashed #d0d8ee"><span style="font-size:9px;font-weight:700;text-transform:uppercase;color:#7a8ab0">LY</span><span style="font-size:11px;font-weight:600;color:#7a8ab0">'+fmt(lyVal)+'</span><span style="font-size:11px;font-weight:700;padding:1px 5px;border-radius:3px;'+cls+'">'+arrow+' '+pct2+'%</span></div>';
   }
   function card(label,val,sub,cls2,lyHtml){return'<div style="background:#fff;border:1.5px solid #d0d8ee;border-radius:8px;padding:12px 14px;box-shadow:0 2px 12px rgba(26,42,108,.10);border-top:3px solid '+cls2+';text-align:center"><div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#7a8ab0;font-weight:700;margin-bottom:6px">'+label+'</div><div style="font-size:20px;font-weight:800;color:#0f1a3a;line-height:1">'+val+'</div><div style="font-size:11px;color:#7a8ab0;margin-top:4px;font-weight:500">'+sub+'</div>'+(lyHtml||'')+'</div>';}
-  return card('Receita Bruta s/ Dev',dreBrlp(d.rb_dev),'c/ Dev: '+dreBrlp(d.rb_gross),'#2352c8',lyBlock(d.rb_dev,dLY?dLY.rb_dev:null,true))+card('Custo Frete',dreBrlp(d.cf),'R$ '+cf_p+'/par','#2352c8',lyBlock(d.cf,dLY?dLY.cf:null,true))+card('Margem Produto',mg_p+'%','&nbsp;',+mg_p>25?'#0a7c4e':+mg_p>20?'#b07a00':'#c0181a',lyBlock(d.mg_prod,dLY?dLY.mg_prod:null,false))+card('Margem Bruta',mb_p+'%',dreBrlp(d.mb),+mb_p>22?'#0a7c4e':+mb_p>16?'#b07a00':'#c0181a',lyBlock(d.mb/d.rl,dLY&&dLY.rl>0?dLY.mb/dLY.rl:null,false))+card('Margem Contrib',mc_p+'%',dreBrlp(d.mcon),+mc_p>15?'#0a7c4e':+mc_p>10?'#b07a00':'#c0181a',lyBlock(d.mcon/d.rl,dLY&&dLY.rl>0?dLY.mcon/dLY.rl:null,false))+card('EBITDA %',eb_p+'%','&nbsp;',+eb_p>4?'#0a7c4e':+eb_p>2?'#b07a00':'#c0181a',lyBlock(d.ebt/d.rl,dLY&&dLY.rl>0?dLY.ebt/dLY.rl:null,false))+card('EBITDA R$',dreBrlp(d.ebt),'&nbsp;',+eb_p>4?'#0a7c4e':+eb_p>2?'#b07a00':'#c0181a',lyBlock(d.ebt,dLY?dLY.ebt:null,true));
+  // Cards: para não-admins, esconde os 2 últimos (EBITDA %, EBITDA R$) — visão para até Margem Contrib
+  var _showEbitda = (typeof isAdmin === 'function') ? isAdmin() : true;
+  var baseCards = card('Receita Bruta s/ Dev',dreBrlp(d.rb_dev),'c/ Dev: '+dreBrlp(d.rb_gross),'#2352c8',lyBlock(d.rb_dev,dLY?dLY.rb_dev:null,true))+card('Custo Frete',dreBrlp(d.cf),'R$ '+cf_p+'/par','#2352c8',lyBlock(d.cf,dLY?dLY.cf:null,true))+card('Margem Produto',mg_p+'%','&nbsp;',+mg_p>25?'#0a7c4e':+mg_p>20?'#b07a00':'#c0181a',lyBlock(d.mg_prod,dLY?dLY.mg_prod:null,false))+card('Margem Bruta',mb_p+'%',dreBrlp(d.mb),+mb_p>22?'#0a7c4e':+mb_p>16?'#b07a00':'#c0181a',lyBlock(d.mb/d.rl,dLY&&dLY.rl>0?dLY.mb/dLY.rl:null,false))+card('Margem Contrib',mc_p+'%',dreBrlp(d.mcon),+mc_p>15?'#0a7c4e':+mc_p>10?'#b07a00':'#c0181a',lyBlock(d.mcon/d.rl,dLY&&dLY.rl>0?dLY.mcon/dLY.rl:null,false));
+  var ebitdaCards = _showEbitda
+    ? card('EBITDA %',eb_p+'%','&nbsp;',+eb_p>4?'#0a7c4e':+eb_p>2?'#b07a00':'#c0181a',lyBlock(d.ebt/d.rl,dLY&&dLY.rl>0?dLY.ebt/dLY.rl:null,false))+card('EBITDA R$',dreBrlp(d.ebt),'&nbsp;',+eb_p>4?'#0a7c4e':+eb_p>2?'#b07a00':'#c0181a',lyBlock(d.ebt,dLY?dLY.ebt:null,true))
+    : '';
+  return baseCards + ebitdaCards;
 }
 function dreTabela(cols){
   var n=cols.length;
@@ -4383,6 +4417,12 @@ function dreTabela(cols){
   var sp=function(){return'<tr><td colspan="'+(n+1)+'" style="height:6px;background:#f0f3fa"></td></tr>';};
   var ebitdaRow='<tr class="row-ebitda" style="font-weight:800;font-size:16px;background:rgba(10,90,10,.08);border-top:3px solid #0a7c4e;border-bottom:3px solid #0a7c4e"><td style="'+_stickyBase+'background:'+_solidGreen+';text-align:left;padding:10px 14px;color:#084d2b;font-size:16px;font-weight:800">EBITDA</td>'+cols.map(function(c){var v=c.d.ebt;var cl=v<0?'color:#c0181a':'color:#084d2b';return'<td style="text-align:center;padding:10px 14px;font-size:16px;font-weight:800;color:'+cl.split(':')[1]+'">'+dreBrl(v)+'</td>';}).join('')+'</tr>';
   var ebitdaPct='<tr class="row-ebitda" style="font-size:16px;font-weight:800;background:rgba(10,90,10,.08);border-bottom:3px solid #0a7c4e"><td style="'+_stickyBase+'background:'+_solidGreen+';text-align:left;padding:10px 14px;color:#084d2b;font-size:16px;font-weight:800">EBITDA %</td>'+cols.map(function(c){var p=c.d.rl>0?(c.d.ebt/c.d.rl*100).toFixed(1)+'%':'-';var cl=c.d.ebt<0?'color:#c0181a':'color:#084d2b';return'<td style="text-align:center;padding:10px 14px;font-size:16px"><span style="'+cl+';font-weight:800;font-size:16px">'+p+'</span></td>';}).join('')+'</tr>';
+  // Para não-admins (líderes), corta o DRE em "Margem de Contribuição" — sem Despesas Fixas nem EBITDA
+  var _adminView = (typeof isAdmin === 'function') ? isAdmin() : true;
+  var afterMcon = _adminView
+    ? sp()+sec('🏢 DESPESAS FIXAS')+row('Salários Adm (-)',function(d){return dreBrl(d.sa);},'row-sub')+rowP('% Sal Adm',function(d){return drePct(d.sa,d.rl);})+row('13º + Férias Adm (-)',function(d){return dreBrl(d.sa13ferias||0);},'row-sub')+rowP('% 13º+Férias Adm',function(d){return drePct(d.sa13ferias||0,d.rl);})+row('Despesas Gerais (-)',function(d){return dreBrl(d.dg);},'row-sub')+rowP('% Desp Gerais',function(d){return drePct(d.dg,d.rl);})+row('CD (-)',function(d){return dreBrl(d.cd);},'row-sub')+rowP('% CD',function(d){return drePct(d.cd,d.rl);})
+    +sp()+sec('📊 EBITDA')+ebitdaRow+ebitdaPct
+    : '';
   return'<div class="dre-tbl-wrap">'+
   '<table class="dre-tbl">'+
   '<thead><tr>'+
@@ -4397,8 +4437,7 @@ function dreTabela(cols){
   +sp()+sec('🚚 FRETE')+row('Receita Frete (+)',function(d){return dreBrl(d.rf);},'row-sub')+row('Custo Frete (-)',function(d){return dreBrl(d.cf);},'row-sub')+rowP('% Frete / Rec Líq',function(d){return drePct(d.cf,d.rl);})+rowP('Frete / Par',function(d){return d.qtd>0?'R$ '+(d.cf/d.qtd).toFixed(2):'-';})
   +sp()+sec('📢 MARKETING')+row('Branding (-)',function(d){return dreBrl(d.mkt_branding!=null?d.mkt_branding:(d.mkt||0)/2);},'row-sub')+row('Leads Novos (-)',function(d){return dreBrl(d.mkt_leads!=null?d.mkt_leads:(d.mkt||0)/2);},'row-sub')+rowT('Total Marketing',function(d){return dreBrl(d.mkt||0);})+rowP('% Marketing',function(d){return drePct(d.mkt||0,d.rl);})
   +sp()+sec('💡 MARGEM DE CONTRIBUIÇÃO')+rowBig('Margem de Contribuição',function(d){return dreBrl(d.mcon);},16)+rowBigP('Margem Contrib %',function(d){return drePct(d.mcon,d.rl);},16)+rowP('Margem Contrib / Par',function(d){return d.qtd>0?'R$ '+(d.mcon/d.qtd).toFixed(2):'-';})
-  +sp()+sec('🏢 DESPESAS FIXAS')+row('Salários Adm (-)',function(d){return dreBrl(d.sa);},'row-sub')+rowP('% Sal Adm',function(d){return drePct(d.sa,d.rl);})+row('13º + Férias Adm (-)',function(d){return dreBrl(d.sa13ferias||0);},'row-sub')+rowP('% 13º+Férias Adm',function(d){return drePct(d.sa13ferias||0,d.rl);})+row('Despesas Gerais (-)',function(d){return dreBrl(d.dg);},'row-sub')+rowP('% Desp Gerais',function(d){return drePct(d.dg,d.rl);})+row('CD (-)',function(d){return dreBrl(d.cd);},'row-sub')+rowP('% CD',function(d){return drePct(d.cd,d.rl);})
-  +sp()+sec('📊 EBITDA')+ebitdaRow+ebitdaPct+'</tbody></table></div>';
+  +afterMcon+'</tbody></table></div>';
 }
 
 // ═══════════════════════════════════════════════════════
@@ -4464,10 +4503,13 @@ var _folhaSalCache = {
   nomeKey: null,
   hasAdminCfg: null,
   sourceLen: -1,
-  classifLen: -1,    // tamanho de FOLHA_CFG.classif — invalida cache se mudar
+  classifLen: -1,
   byCanalAm: {},
   admByAm: {},
-  _diagDone: false   // log de diagnóstico (1ª vez)
+  // Para lookup individual de salário por pessoa+canal+am
+  byPersonCanalAm: {},   // {'WESLEY BRITO|CLOSER|202602': 43794, ...}
+  folhaNomesSet: null,   // Set de nomes (uppercase) presentes em DRE_FOLHA_RAW
+  _diagDone: false
 };
 function clearFolhaSalCache(){
   _folhaSalCache.canalLookup = null;
@@ -4477,6 +4519,8 @@ function clearFolhaSalCache(){
   _folhaSalCache.classifLen = -1;
   _folhaSalCache.byCanalAm = {};
   _folhaSalCache.admByAm = {};
+  _folhaSalCache.byPersonCanalAm = {};
+  _folhaSalCache.folhaNomesSet = null;
   _folhaSalCache._diagDone = false;
 }
 function _ensureFolhaSalLookups(src){
@@ -4491,6 +4535,8 @@ function _ensureFolhaSalLookups(src){
     _folhaSalCache.hasAdminCfg = null;
     _folhaSalCache.byCanalAm = {};
     _folhaSalCache.admByAm = {};
+    _folhaSalCache.byPersonCanalAm = {};
+    _folhaSalCache.folhaNomesSet = null;
     _folhaSalCache._diagDone = false;
   }
   if(!_folhaSalCache.canalLookup){
@@ -4592,6 +4638,81 @@ function folhaSalCanalAm(canal, am){
     }
   }
   _folhaSalCache.byCanalAm[cacheKey] = total;
+  return total;
+}
+
+// Verifica se uma pessoa (por nome) existe na Folha (DRE_FOLHA_RAW)
+function folhaPersonExistsInFolha(personName){
+  if(!personName) return false;
+  var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
+          : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW && FOLHA_RAW.length) ? FOLHA_RAW : [];
+  if(!src.length) return false;
+  _ensureFolhaSalLookups(src);
+  // Constrói cache Set de nomes na 1ª chamada
+  if(!_folhaSalCache.folhaNomesSet){
+    var s = {};
+    var nk = _folhaSalCache.nomeKey;
+    for(var i=0;i<src.length;i++){
+      var n = nk ? String(src[i][nk]||'').trim().toUpperCase() : '';
+      if(n) s[n] = true;
+    }
+    _folhaSalCache.folhaNomesSet = s;
+  }
+  return !!_folhaSalCache.folhaNomesSet[String(personName).toUpperCase().trim()];
+}
+
+// Salário INDIVIDUAL de uma pessoa em um am específico, opcionalmente filtrado por canal.
+// Retorna o salário rateado pela quantidade de canais que a pessoa pertence (se canalRequired).
+// Memoizado por (personName,canal,am).
+function folhaSalIndividualAm(personName, am, canalRequired){
+  if(!personName || !am) return 0;
+  var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
+          : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW && FOLHA_RAW.length) ? FOLHA_RAW : [];
+  if(!src.length) return 0;
+  var nameUp = String(personName).toUpperCase().trim();
+  var canalUp = canalRequired ? String(canalRequired).toUpperCase() : '';
+  var cacheKey = nameUp + '|' + canalUp + '|' + am;
+  if(_folhaSalCache.byPersonCanalAm[cacheKey] !== undefined) return _folhaSalCache.byPersonCanalAm[cacheKey];
+  _ensureFolhaSalLookups(src);
+  var lkp = _folhaSalCache.canalLookup;
+  var nomeKey = _folhaSalCache.nomeKey;
+  var verbasOK = FOLHA_VERBAS.filter(function(k){ return !_is13VerbaName(k); });
+  var total = 0;
+  for(var i=0;i<src.length;i++){
+    var r = src[i];
+    var nome = nomeKey ? String(r[nomeKey]).trim() : '';
+    if(String(nome).toUpperCase() !== nameUp) continue;
+    var anomes = String(folhaGetPeriodo(r)||'').replace(/\D/g,'').slice(0,6);
+    if(anomes !== am) continue;
+    // Se canal exigido, verifica se pessoa pertence a esse canal — senão soma 0
+    var prorate = 1;
+    if(canalRequired){
+      var personCanais = lkp[nome];
+      if(!personCanais || personCanais.indexOf(canalUp) < 0){
+        _folhaSalCache.byPersonCanalAm[cacheKey] = 0;
+        return 0;
+      }
+      prorate = 1 / personCanais.length;
+    }
+    var keys = Object.keys(r);
+    var totalVerbas = 0;
+    for(var j=0;j<verbasOK.length;j++){
+      var k = verbasOK[j];
+      var found = keys.find(function(rk){ return rk.toUpperCase() === k; });
+      if(found) totalVerbas += folhaNum(r[found]);
+    }
+    if(totalVerbas > 0){
+      total += totalVerbas * prorate;
+    } else {
+      var rTotal = parseFloat(r.valor||r.VALOR)||0;
+      var total13 = 0;
+      for(var k2=0;k2<keys.length;k2++){
+        if(_is13VerbaName(keys[k2])) total13 += folhaNum(r[keys[k2]]);
+      }
+      total += (rTotal - total13) * prorate;
+    }
+  }
+  _folhaSalCache.byPersonCanalAm[cacheKey] = total;
   return total;
 }
 
@@ -4814,6 +4935,8 @@ function fcfgToggleCanal(btn){
 async function saveFolhaCfg(btn){
   var orig = btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
 
+  var saveCount = 0, adminCount = 0, canalCount = 0;
+  var sampleAdmins = [];
   // Lê todos os selects do modal
   document.querySelectorAll('#folhaCfgBody tr[data-nome]').forEach(function(row){
     var nome   = row.getAttribute('data-nome');
@@ -4834,15 +4957,23 @@ async function saveFolhaCfg(btn){
     // Salva canal como array (multi). Se vazio, salva '—' pra compat legado
     FOLHA_CFG.classif[nome].canal = canais.length ? canais : '—';
     FOLHA_CFG.classif[nome].admin = admin;
+    saveCount++;
+    if(admin === 'sim'){ adminCount++; if(sampleAdmins.length<5) sampleAdmins.push(nome); }
+    if(canais.length) canalCount++;
   });
+  console.log('[saveFolhaCfg] '+saveCount+' linhas processadas | admin=sim:', adminCount, '| com canal:', canalCount, '| ex admins:', sampleAdmins);
 
   try{
     await supaSave(TBLS.save_folha, 'folha_classif', { classif: FOLHA_CFG.classif, savedAt: new Date().toISOString() });
     if(typeof clearFolhaSalCache==='function') clearFolhaSalCache();
+    console.log('[saveFolhaCfg] ✔ Persistido no Supabase | total em FOLHA_CFG.classif:', Object.keys(FOLHA_CFG.classif).length);
     toast('✔ Classificações da Folha salvas');
     _folhaRenderAll(); // Re-renderiza com novas classificações
     closeFolhaCfg();
-  } catch(e){ toast('Erro ao salvar: '+e.message,'err'); }
+  } catch(e){
+    console.error('[saveFolhaCfg] ❌ Erro:', e.message);
+    toast('Erro ao salvar: '+e.message,'err');
+  }
   btn.disabled=false; btn.textContent=orig;
 }
 
