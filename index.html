@@ -6221,6 +6221,8 @@ var BUDGET_CFG = {
   tiposCD: {}, // tipos que entram em CD (Centro de Distribuição) no DRE
   // budgetOverrides[tipo|area|nomforKey|am] = valor manual (sobrescreve otb_despesa)
   budgetOverrides: {},
+  // folhaProjecao[area|nome|ym] = valor projetado de salário pra meses futuros (sem dados na Folha)
+  folhaProjecao: {},
   // sim: valores simulados por mês {ym: {icms_pct, piscofins_pct, mg_prod}}
   sim: {}
 };
@@ -6476,6 +6478,7 @@ async function loadBudget(forceRaw){
       if(savedClassif.tiposDespGerais) BUDGET_CFG.tiposDespGerais = savedClassif.tiposDespGerais;
       if(savedClassif.tiposCD) BUDGET_CFG.tiposCD = savedClassif.tiposCD;
       if(savedClassif.budgetOverrides) BUDGET_CFG.budgetOverrides = savedClassif.budgetOverrides;
+      if(savedClassif.folhaProjecao) BUDGET_CFG.folhaProjecao = savedClassif.folhaProjecao;
       if(savedClassif.sim) BUDGET_CFG.sim = savedClassif.sim;
       if(savedClassif.classif){
         // Merge: preserva entradas existentes, aplica por cima as salvas na chave dedicada
@@ -7148,7 +7151,9 @@ function renderBudget(anoFilter){
 
 
   // ── PRÉ-COMPUTA folhaByArea para uso no bloco de cada área ──
+  // Inclui Realizado (FOLHA_RAW) e Projeção (BUDGET_CFG.folhaProjecao) — projeção só usada quando não há realizado naquele ym/area
   var folhaByArea = {};
+  var folhaPessoasByArea = {};
   if(FOLHA_RAW && FOLHA_RAW.length){
     FOLHA_RAW.forEach(function(r){
       var nome = folhaGetNome(r);
@@ -7169,6 +7174,24 @@ function renderBudget(anoFilter){
       if(totalVerbas===0) totalVerbas=parseFloat(r.valor||r.VALOR)||0;
       if(!folhaByArea[area]) folhaByArea[area]={};
       folhaByArea[area][am_ym]=(folhaByArea[area][am_ym]||0)+totalVerbas;
+      if(!folhaPessoasByArea[area]) folhaPessoasByArea[area]={};
+      folhaPessoasByArea[area][nome]=1;
+    });
+  }
+  // Aplica projeções para meses SEM realizado (e que estão no escopo de meses do filtro)
+  if(BUDGET_CFG.folhaProjecao){
+    Object.keys(BUDGET_CFG.folhaProjecao).forEach(function(k){
+      var parts = k.split('|'); // area|nome|ym
+      if(parts.length !== 3) return;
+      var area = parts[0], nome = parts[1], ym = parts[2];
+      if(!months.includes(ym)) return;
+      var realizadoMes = (folhaByArea[area]||{})[ym]||0;
+      // Só conta projeção se NÃO há realizado naquele mês
+      if(realizadoMes > 0) return;
+      var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
+      if(isNaN(v)) return;
+      if(!folhaByArea[area]) folhaByArea[area]={};
+      folhaByArea[area][ym] = (folhaByArea[area][ym]||0) + v;
     });
   }
 
@@ -7270,6 +7293,66 @@ function renderBudget(anoFilter){
 }
 
 // ── Folha Detail Modal ──────────────────────────────────
+// Helper: chave do storage de projeção de salário folha
+function folhaProjKey(area, nome, ym){ return String(area||'').toUpperCase()+'|'+String(nome||'')+'|'+ym; }
+function folhaProjGet(area, nome, ym){
+  if(!BUDGET_CFG.folhaProjecao) return null;
+  var v = BUDGET_CFG.folhaProjecao[folhaProjKey(area,nome,ym)];
+  return (v != null && !isNaN(parseFloat(v))) ? parseFloat(v) : null;
+}
+function folhaProjSet(area, nome, ym, val){
+  if(!BUDGET_CFG.folhaProjecao) BUDGET_CFG.folhaProjecao = {};
+  var k = folhaProjKey(area,nome,ym);
+  if(val == null || val === '' || isNaN(parseFloat(val))){
+    delete BUDGET_CFG.folhaProjecao[k];
+  } else {
+    BUDGET_CFG.folhaProjecao[k] = parseFloat(val);
+  }
+}
+// Cache de pessoas/área e realizados — usado pra computar Salário Folha EFETIVO no main Budget
+var _folhaProjAreaCache = null;
+function _folhaProjAreaCacheBuild(){
+  _folhaProjAreaCache = {realByArea:{}, pessoasByArea:{}};
+  if(!FOLHA_RAW || !FOLHA_RAW.length) return;
+  FOLHA_RAW.forEach(function(r){
+    var nome = folhaGetNome(r);
+    var cfg  = FOLHA_CFG.classif[nome];
+    var area = (cfg && cfg.area ? cfg.area : folhaGetArea(r)).toUpperCase();
+    if(!area || area==='(SEM ÁREA)') return;
+    var am  = String(folhaGetPeriodo(r)||'').replace(/[^0-9]/g,'').slice(0,6);
+    if(am.length!==6) return;
+    var ym = am.slice(0,4)+'-'+am.slice(4,6);
+    var keys = Object.keys(r);
+    var verbas = FOLHA_VERBAS.filter(function(k){ return k!=='S13_PARC'; });
+    var totalVerbas = 0;
+    verbas.forEach(function(k){
+      var found=keys.find(function(rk){return rk.toUpperCase()===k;});
+      if(found) totalVerbas+=folhaNum(r[found]);
+    });
+    if(totalVerbas===0) totalVerbas=parseFloat(r.valor||r.VALOR)||0;
+    if(!_folhaProjAreaCache.realByArea[area]) _folhaProjAreaCache.realByArea[area]={};
+    _folhaProjAreaCache.realByArea[area][ym]=(_folhaProjAreaCache.realByArea[area][ym]||0)+totalVerbas;
+    if(!_folhaProjAreaCache.pessoasByArea[area]) _folhaProjAreaCache.pessoasByArea[area]={};
+    _folhaProjAreaCache.pessoasByArea[area][nome]=1;
+  });
+}
+function folhaAreaEfetivo(area, ym){
+  if(!_folhaProjAreaCache) _folhaProjAreaCacheBuild();
+  var areaUp = String(area||'').toUpperCase();
+  var realByArea = (_folhaProjAreaCache.realByArea[areaUp]||{});
+  var realVal = realByArea[ym] || 0;
+  if(realVal > 0) return realVal;
+  if(!BUDGET_CFG.folhaProjecao) return 0;
+  var pessoas = Object.keys(_folhaProjAreaCache.pessoasByArea[areaUp]||{});
+  var projTotal = 0;
+  pessoas.forEach(function(nome){
+    var v = folhaProjGet(areaUp, nome, ym);
+    if(v != null) projTotal += v;
+  });
+  return projTotal;
+}
+function folhaProjClearCache(){ _folhaProjAreaCache = null; }
+
 function openFolhaDetail(area, ano){
   var areaUp = (area||'').toUpperCase();
   var ml = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
@@ -7331,15 +7414,31 @@ function openFolhaDetail(area, ano){
   });
 
   var nomes = Object.keys(map).sort(function(a,b){return map[b].total-map[a].total;});
-  var months = Object.keys(monthSet).sort();
+  // Lista completa de meses do ano (se filtrado) ou só os com dados
+  var months;
+  if(ano){
+    months = [];
+    for(var _m=1; _m<=12; _m++) months.push(ano+'-'+String(_m).padStart(2,'0'));
+  } else {
+    months = Object.keys(monthSet).sort();
+  }
   var verbasLabels = window._folhaVerbasLabels||{};
+  // Para cada pessoa, identifica último mês com dados realizados (pra saber quais são "futuros")
+  function _lastRealMonth(nome){
+    var bm = map[nome].byMonth || {};
+    var ms = Object.keys(bm).filter(function(ym){ return bm[ym]>0; }).sort();
+    return ms.length ? ms[ms.length-1] : null;
+  }
 
   var thS = 'padding:7px 10px;text-align:center;font-size:10px;font-weight:700;min-width:90px';
-  var h = '<div style="font-size:11px;color:#7a8ab0;margin-bottom:10px">'+nomes.length+' colaboradores · '+months.length+' meses — '+areaUp+'</div>';
+  var h = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">';
+  h += '<div style="font-size:11px;color:#7a8ab0">'+nomes.length+' colaboradores · '+months.length+' meses — '+areaUp+'</div>';
+  h += '<button onclick="folhaProjReplicarTodos(\''+areaUp+'\',\''+(ano||'')+'\')" style="padding:6px 12px;border:1.5px solid #7b2d8b;border-radius:5px;background:#7b2d8b;color:#fff;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit" title="Preenche meses futuros vazios com a média dos últimos 3 meses realizados de cada pessoa">✨ Replicar Média 3M (Todos)</button>';
+  h += '</div>';
   h += '<div style="overflow:auto;max-height:60vh">';
-  h += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px">';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px" id="folhaDetTbl" data-area="'+escHtml(areaUp)+'" data-ano="'+escHtml(ano||'')+'">';
   h += '<thead><tr style="background:#1a2547;color:#fff;position:sticky;top:0">';
-  h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;position:sticky;left:0;background:#1a2547;z-index:2;min-width:220px">NOME</th>';
+  h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;position:sticky;left:0;background:#1a2547;z-index:2;min-width:240px">NOME</th>';
   months.forEach(function(ym){
     var y=ym.slice(0,4),mo=+ym.slice(5,7);
     h += '<th style="'+thS+'">'+ml[mo]+'/'+y.slice(2)+'</th>';
@@ -7354,17 +7453,49 @@ function openFolhaDetail(area, ano){
     var allVerbas = {};
     months.forEach(function(ym){ Object.keys(row.verbas[ym]||{}).forEach(function(k){ allVerbas[k]=1; }); });
     var hasVerbas = Object.keys(allVerbas).length > 0;
+    var _lastReal = _lastRealMonth(nome);
     // Main row with expand button (only show triangle if there ARE verbas)
-    h += '<tr style="background:'+bg+'">';
-    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;font-weight:600;color:#0f1a3a;position:sticky;left:0;background:'+bg+';z-index:1">';
+    h += '<tr style="background:'+bg+'" data-nome="'+escHtml(nome)+'">';
+    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;font-weight:600;color:#0f1a3a;position:sticky;left:0;background:'+bg+';z-index:1;display:flex;align-items:center">';
     if(hasVerbas){
       h += '<button data-uid="'+uid+'" class="folha-expand-btn" style="background:none;border:none;cursor:pointer;font-size:11px;color:#7b2d8b;margin-right:4px;padding:0">&#9654;</button>';
     } else {
       h += '<span style="display:inline-block;width:14px;margin-right:4px"></span>';
     }
-    h += escHtml(nome)+'</td>';
-    months.forEach(function(ym){ h += '<td style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center">'+fmtV(row.byMonth[ym])+'</td>'; });
-    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;text-align:center;font-weight:700;color:#1a2547;background:#f0f3fa">'+fmtV(row.total)+'</td>';
+    h += '<span style="flex:1">'+escHtml(nome)+'</span>';
+    h += '<button onclick="folhaProjReplicarLinha(this,\''+areaUp+'\',\''+escHtml(nome).replace(/'/g,"\\'")+'\')" title="Replica média dos últimos 3 meses realizados nos meses futuros vazios" style="margin-left:6px;padding:1px 6px;font-size:10px;font-weight:600;border:1.5px solid #7b2d8b;border-radius:4px;background:#fff;color:#7b2d8b;cursor:pointer">✨</button>';
+    h += '</td>';
+    var totalRealizado = 0, totalProj = 0;
+    months.forEach(function(ym){
+      var v = row.byMonth[ym] || 0;
+      var isFuture = !_lastReal || ym > _lastReal;
+      if(v > 0){
+        totalRealizado += v;
+        h += '<td style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center">'+fmtV(v)+'</td>';
+      } else if(isFuture){
+        var proj = folhaProjGet(areaUp, nome, ym);
+        if(proj != null) totalProj += proj;
+        var displayProj = proj != null ? 'R$ '+Math.round(proj).toLocaleString('pt-BR') : '';
+        var cellBg = proj != null ? '#e9e4fa' : '#faf6ff';
+        var cellClr = proj != null ? '#5a1d7a' : '#aab8d6';
+        h += '<td style="padding:3px 5px;border-bottom:1px solid #eef1f8;text-align:center">'
+          + '<input type="text" '
+          + 'data-area="'+escHtml(areaUp)+'" data-nome="'+escHtml(nome)+'" data-ym="'+ym+'" '
+          + 'value="'+escHtml(displayProj)+'" '
+          + 'placeholder="—" '
+          + 'onblur="folhaProjOnInputBlur(this)" '
+          + 'onfocus="this.select()" '
+          + 'style="width:88px;padding:3px 6px;border:1px dashed '+(proj!=null?'#7b2d8b':'#d0d8ee')+';border-radius:4px;text-align:center;font-size:11px;background:'+cellBg+';color:'+cellClr+';font-weight:'+(proj!=null?'700':'400')+'">'
+          + '</td>';
+      } else {
+        h += '<td style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center">'+fmtV(v)+'</td>';
+      }
+    });
+    var totalCombo = totalRealizado + totalProj;
+    var totalDisp = totalProj > 0 && totalRealizado > 0
+      ? fmtV(totalCombo) + '<div style="font-size:9px;color:#7b2d8b;font-weight:500">+'+Math.round(totalProj).toLocaleString('pt-BR')+' proj</div>'
+      : fmtV(totalCombo);
+    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;text-align:center;font-weight:700;color:#1a2547;background:#f0f3fa">'+totalDisp+'</td>';
     h += '</tr>';
     // Verba sub-rows (hidden by default) — uses tr+class so html stays valid
     Object.keys(allVerbas).forEach(function(k){
@@ -7385,14 +7516,22 @@ function openFolhaDetail(area, ano){
   nomes.forEach(function(n){_total++;var av={};months.forEach(function(ym){Object.keys(map[n].verbas[ym]||{}).forEach(function(k){av[k]=1;});});if(Object.keys(av).length)_withVerbas++;});
   console.log('[openFolhaDetail]',areaUp,ano||'all','— colaboradores:',_total,'| com verbas detalhadas:',_withVerbas);
 
-  // Total row
-  h += '<tr style="background:#1a2547;color:#fff;font-weight:700">';
+  // Total row (real + proj)
+  h += '<tr style="background:#1a2547;color:#fff;font-weight:700" id="folhaDetTotalRow">';
   h += '<td style="padding:7px 10px;position:sticky;left:0;background:#1a2547;z-index:1">TOTAL</td>';
   var grandTotal=0;
   months.forEach(function(ym){
-    var t=nomes.reduce(function(s,n){return s+(map[n].byMonth[ym]||0);},0);
-    grandTotal+=t;
-    h += '<td style="padding:7px 8px;text-align:center">'+fmtV(t)+'</td>';
+    var t = 0;
+    nomes.forEach(function(n){
+      var v = map[n].byMonth[ym] || 0;
+      if(v > 0){ t += v; }
+      else {
+        var p = folhaProjGet(areaUp, n, ym);
+        if(p != null) t += p;
+      }
+    });
+    grandTotal += t;
+    h += '<td style="padding:7px 8px;text-align:center" data-am="'+ym+'">'+fmtV(t)+'</td>';
   });
   h += '<td style="padding:7px 10px;text-align:center;background:#0f1a3a">'+fmtV(grandTotal)+'</td>';
   h += '</tr></tbody></table></div>';
@@ -7400,14 +7539,170 @@ function openFolhaDetail(area, ano){
   // Open in budget detail overlay
   var overlay = document.getElementById('budgetDetailOverlay');
   if(!overlay){ overlay=document.createElement('div'); overlay.id='budgetDetailOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(10,20,60,.55);z-index:1200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)'; overlay.onclick=function(e){if(e.target===this)this.style.display='none';}; document.body.appendChild(overlay); }
-  overlay.innerHTML = '<div style="background:#fff;border-radius:12px;box-shadow:0 24px 64px rgba(0,0,0,.4);width:min(1100px,96vw);max-height:90vh;overflow:hidden;display:flex;flex-direction:column">'
+  overlay.innerHTML = '<div style="background:#fff;border-radius:12px;box-shadow:0 24px 64px rgba(0,0,0,.4);width:min(1280px,96vw);max-height:90vh;overflow:hidden;display:flex;flex-direction:column">'
     +'<div style="padding:16px 20px;background:#1a2547;color:#fff;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'
-    +'<div><strong style="font-size:15px">👥 Salário Folha — '+escHtml(areaUp)+(ano?' ('+ano+')':'')+'</strong></div>'
-    +'<button onclick="document.getElementById(\'budgetDetailOverlay\').style.display=\'none\'" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:16px">×</button>'
+    +'<div><strong style="font-size:15px">👥 Salário Folha — '+escHtml(areaUp)+(ano?' ('+ano+')':'')+'</strong> <span style="font-size:11px;opacity:.7;margin-left:8px">📝 Inputs roxos pontilhados = meses futuros editáveis</span></div>'
+    +'<button onclick="document.getElementById(\'budgetDetailOverlay\').style.display=\'none\';if(typeof renderBudget===\'function\')renderBudget()" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:16px">×</button>'
     +'</div>'
     +'<div style="padding:16px 20px;overflow:auto;flex:1">'+h+'</div>'
     +'</div>';
   overlay.style.display='flex';
+}
+
+// ── Handlers de projeção de salário folha ─────────────────────
+// Replica média dos últimos 3 meses realizados de UMA pessoa nos meses futuros vazios
+function folhaProjReplicarLinha(btn, area, nome){
+  var tbl = document.getElementById('folhaDetTbl');
+  if(!tbl) return;
+  var row = tbl.querySelector('tr[data-nome="'+CSS.escape(nome)+'"]');
+  if(!row) return;
+  // Coleta valores realizados + lista de inputs (futuros)
+  var realizados = [];
+  var inputs = [];
+  row.querySelectorAll('td').forEach(function(td, idx){
+    if(idx === 0) return; // skip nome column
+    var inp = td.querySelector('input[data-ym]');
+    if(inp){
+      inputs.push(inp);
+    } else {
+      var txt = td.textContent.trim();
+      var match = txt.match(/-?R\$\s*([\d.]+(?:,\d+)?)/);
+      if(match){
+        var v = parseFloat(match[1].replace(/\./g,'').replace(',','.'));
+        if(!isNaN(v) && v > 0) realizados.push(v);
+      }
+    }
+  });
+  // Pega TOTAL (último td) — exclude ele
+  if(realizados.length) realizados.pop(); // remove o TOTAL que é o último
+  var last3 = realizados.slice(-3);
+  if(!last3.length){ toast('⚠ '+nome+' não tem meses realizados pra calcular média','err'); return; }
+  var media = last3.reduce(function(s,v){return s+v;},0) / last3.length;
+  var changed = 0;
+  inputs.forEach(function(inp){
+    folhaProjSet(inp.dataset.area, inp.dataset.nome, inp.dataset.ym, media);
+    inp.value = 'R$ '+Math.round(media).toLocaleString('pt-BR');
+    inp.style.background = '#e9e4fa';
+    inp.style.color = '#5a1d7a';
+    inp.style.borderColor = '#7b2d8b';
+    inp.style.fontWeight = '700';
+    changed++;
+  });
+  folhaProjClearCache();
+  folhaProjAtualizarTotal();
+  toast('✔ '+nome+': '+changed+' meses projetados com média de R$ '+Math.round(media).toLocaleString('pt-BR'));
+}
+
+// Replica média 3M pra TODAS as pessoas — só preenche inputs vazios
+function folhaProjReplicarTodos(area, ano){
+  var tbl = document.getElementById('folhaDetTbl');
+  if(!tbl){ toast('Tabela não encontrada','err'); return; }
+  var rows = tbl.querySelectorAll('tbody tr[data-nome]');
+  var totalChanged = 0, totalPpl = 0;
+  rows.forEach(function(row){
+    var nome = row.getAttribute('data-nome');
+    if(!nome) return;
+    var realizados = [];
+    var inputs = [];
+    row.querySelectorAll('td').forEach(function(td, idx){
+      if(idx === 0) return;
+      var inp = td.querySelector('input[data-ym]');
+      if(inp){ inputs.push(inp); }
+      else {
+        var txt = td.textContent.trim();
+        var match = txt.match(/-?R\$\s*([\d.]+(?:,\d+)?)/);
+        if(match){
+          var v = parseFloat(match[1].replace(/\./g,'').replace(',','.'));
+          if(!isNaN(v) && v > 0) realizados.push(v);
+        }
+      }
+    });
+    if(realizados.length) realizados.pop(); // remove TOTAL
+    var last3 = realizados.slice(-3);
+    if(!last3.length || !inputs.length) return;
+    var media = last3.reduce(function(s,v){return s+v;},0) / last3.length;
+    inputs.forEach(function(inp){
+      // NÃO sobrescreve valores já editados
+      if(inp.value && inp.value.trim() !== '') return;
+      folhaProjSet(inp.dataset.area, inp.dataset.nome, inp.dataset.ym, media);
+      inp.value = 'R$ '+Math.round(media).toLocaleString('pt-BR');
+      inp.style.background = '#e9e4fa';
+      inp.style.color = '#5a1d7a';
+      inp.style.borderColor = '#7b2d8b';
+      inp.style.fontWeight = '700';
+      totalChanged++;
+    });
+    totalPpl++;
+  });
+  folhaProjClearCache();
+  folhaProjAtualizarTotal();
+  toast('✔ '+totalPpl+' colaboradores · '+totalChanged+' projeções criadas');
+}
+
+// Handler de blur do input de projeção (parse + persist)
+function folhaProjOnInputBlur(inp){
+  var area = inp.dataset.area, nome = inp.dataset.nome, ym = inp.dataset.ym;
+  var raw = inp.value.trim();
+  if(!raw){
+    folhaProjSet(area, nome, ym, null);
+    inp.style.background = '#faf6ff';
+    inp.style.color = '#aab8d6';
+    inp.style.borderColor = '#d0d8ee';
+    inp.style.fontWeight = '400';
+  } else {
+    var n = parseBrlInput(raw);
+    if(n == null || isNaN(n)){ inp.value=''; folhaProjSet(area,nome,ym,null); folhaProjClearCache(); folhaProjAtualizarTotal(); return; }
+    folhaProjSet(area, nome, ym, n);
+    inp.value = 'R$ '+Math.round(n).toLocaleString('pt-BR');
+    inp.style.background = '#e9e4fa';
+    inp.style.color = '#5a1d7a';
+    inp.style.borderColor = '#7b2d8b';
+    inp.style.fontWeight = '700';
+  }
+  folhaProjClearCache();
+  folhaProjAtualizarTotal();
+}
+
+// Atualiza linha TOTAL do modal somando realizados + projeções
+function folhaProjAtualizarTotal(){
+  var tbl = document.getElementById('folhaDetTbl');
+  if(!tbl) return;
+  var totalRow = tbl.querySelector('#folhaDetTotalRow');
+  if(!totalRow) return;
+  var fmt = function(v){ return v<=0 ? '<span style="color:#ccc">—</span>' : 'R$ '+Math.round(v).toLocaleString('pt-BR'); };
+  var grandTotal = 0;
+  var cells = totalRow.querySelectorAll('td[data-am]');
+  cells.forEach(function(td){
+    var ym = td.getAttribute('data-am');
+    var t = 0;
+    tbl.querySelectorAll('tbody tr[data-nome]').forEach(function(r){
+      // Encontra o td correspondente a esse ym
+      var cellsR = r.querySelectorAll('td');
+      var colIdx = -1;
+      Array.from(totalRow.querySelectorAll('td[data-am]')).forEach(function(c, ix){
+        if(c.getAttribute('data-am') === ym) colIdx = ix;
+      });
+      if(colIdx < 0) return;
+      var tdCell = cellsR[colIdx + 1]; // +1 pelo NOME
+      if(!tdCell) return;
+      var inp = tdCell.querySelector('input[data-ym]');
+      if(inp){
+        var v = parseBrlInput(inp.value);
+        if(v != null) t += v;
+      } else {
+        var txt = tdCell.textContent.trim();
+        var m2 = txt.match(/-?R\$\s*([\d.]+(?:,\d+)?)/);
+        if(m2){
+          var vv = parseFloat(m2[1].replace(/\./g,'').replace(',','.'));
+          if(!isNaN(vv)) t += vv;
+        }
+      }
+    });
+    grandTotal += t;
+    td.innerHTML = fmt(t);
+  });
+  var lastTd = totalRow.lastElementChild;
+  if(lastTd) lastTd.innerHTML = fmt(grandTotal);
 }
 
 // ── Budget Detail Modal ─────────────────────────────────
@@ -7462,6 +7757,7 @@ function budgetSaveOverride(input){
       tiposDespGerais: BUDGET_CFG.tiposDespGerais||{},
       tiposCD: BUDGET_CFG.tiposCD||{},
       budgetOverrides: BUDGET_CFG.budgetOverrides||{},
+      folhaProjecao: BUDGET_CFG.folhaProjecao||{},
       sim: BUDGET_CFG.sim||{},
       savedAt: new Date().toISOString()
     })
@@ -7747,7 +8043,7 @@ async function handleSaveBudget(btn){
     };
     var kb = Math.round(JSON.stringify(payload).length/1024);
     // Salva classif em chave separada ANTES do payload (snapshot pode falhar)
-    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados||{}, tiposDespGerais: BUDGET_CFG.tiposDespGerais||{}, tiposCD: BUDGET_CFG.tiposCD||{}, budgetOverrides: BUDGET_CFG.budgetOverrides||{}, sim: BUDGET_CFG.sim||{}, savedAt: new Date().toISOString()});
+    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados||{}, tiposDespGerais: BUDGET_CFG.tiposDespGerais||{}, tiposCD: BUDGET_CFG.tiposCD||{}, budgetOverrides: BUDGET_CFG.budgetOverrides||{}, folhaProjecao: BUDGET_CFG.folhaProjecao||{}, sim: BUDGET_CFG.sim||{}, savedAt: new Date().toISOString()});
     await supaSave(TBLS.save_dre,'budget_cfg', payload);
     toast('✔ Budget salvo — snapshot de '+(snapshot?snapshot.length.toLocaleString('pt-BR'):0)+' linhas ('+kb+'KB), era '+BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' linhas brutas');
     // Badge
@@ -8095,7 +8391,7 @@ async function saveBudgetCfg(btn){
 
   try{
     // Salva em chave dedicada (sobrevive a regeneração de snapshot)
-    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados, tiposDespGerais: BUDGET_CFG.tiposDespGerais||{}, tiposCD: BUDGET_CFG.tiposCD||{}, budgetOverrides: BUDGET_CFG.budgetOverrides||{}, savedAt: new Date().toISOString()});
+    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados, tiposDespGerais: BUDGET_CFG.tiposDespGerais||{}, tiposCD: BUDGET_CFG.tiposCD||{}, budgetOverrides: BUDGET_CFG.budgetOverrides||{}, folhaProjecao: BUDGET_CFG.folhaProjecao||{}, savedAt: new Date().toISOString()});
     // Atualiza também budget_cfg para manter consistência
     await supaSave(TBLS.save_dre,'budget_cfg', BUDGET_CFG);
     invalidateBudgetClassifIndex();
