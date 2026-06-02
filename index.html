@@ -6816,10 +6816,22 @@ function renderBudget(anoFilter){
       btnHtml = '<button data-area="'+escHtml(fdArea)+'" data-ano="'+escHtml(String(fdAno))+'" onclick="openFolhaDetail(this.dataset.area,this.dataset.ano)" style="margin-left:8px;padding:1px 7px;font-size:10px;font-weight:600;border:1.5px solid #7b2d8b;border-radius:4px;background:#fff;color:#7b2d8b;cursor:pointer;vertical-align:middle">detalhes</button>';
     }
     var labelHtml = (ss && ss.icon ? ss.icon+' ' : '') + label;
+    // Se a linha tem botão de detalhes, torna a label clicável também (mesma ação que o botão)
+    var labelClickHandler = '';
+    var labelCursor = '';
+    if(detailBtn){
+      var dT = escHtml(detailBtn.tipo||''), dA = escHtml(detailBtn.area||''), dAn = escHtml(selectedAno||'');
+      labelClickHandler = ' onclick="openBudgetDetail(\''+dT.replace(/'/g,"\\'")+'\',\''+dA.replace(/'/g,"\\'")+'\',\''+dAn.replace(/'/g,"\\'")+'\')" title="Clique para ver detalhes por mês"';
+      labelCursor = ';cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-decoration-color:#aab8d6';
+    } else if(opts && opts.folhaDetailArea){
+      var fA = escHtml(opts.folhaDetailArea), fAn = escHtml(String(opts.selectedAno||''));
+      labelClickHandler = ' onclick="openFolhaDetail(\''+fA.replace(/'/g,"\\'")+'\',\''+fAn.replace(/'/g,"\\'")+'\')" title="Clique para ver detalhes por mês"';
+      labelCursor = ';cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-decoration-color:#aab8d6';
+    }
     var labelStyle = ss
       ? 'padding:'+pTop+' '+pl+';background:'+grad+';font-weight:'+fw+';font-size:'+labelFontSize+';color:#fff;letter-spacing:1px;text-transform:uppercase;border-bottom:1px solid '+ss.gradStart+';border-right:2px solid '+ss.gradStart+';position:sticky;left:0;z-index:1;display:flex;align-items:center;justify-content:space-between'
       : 'padding:6px '+pl+';background:'+bg+';font-weight:'+fw+';color:#0f1a3a;border-bottom:1px solid #eef1f8;border-right:2px solid #d0d8ee;position:sticky;left:0;z-index:1;display:flex;align-items:center;justify-content:space-between';
-    h += '<td style="'+labelStyle+'">'+toggleHtml+'<span style="flex:1">'+labelHtml+'</span>'+btnHtml+'</td>';
+    h += '<td style="'+labelStyle+'">'+toggleHtml+'<span style="flex:1'+labelCursor+'"'+labelClickHandler+'>'+labelHtml+'</span>'+btnHtml+'</td>';
     var monthlyEffectiveVals = []; // valores efetivos para somar na coluna ANO
     months.forEach(function(ym){
       var val = fn(ym);
