@@ -4078,20 +4078,28 @@ function dreCalcShare(sliceRows,allRows,canalCtx){
 var dreNum=function(v){if(!v&&v!==0) return 0;var s=String(v).trim();if(s.includes(',')&&!s.includes('.')) return parseFloat(s.replace(',','.'))||0;if(s.includes(',')&&s.includes('.')) return parseFloat(s.replace(/\./g,'').replace(',','.'))||0;return parseFloat(s)||0;};
 function dreAgg(rows){
   var fat=0,fat_v=0,dev=0,qtd=0,custo=0,icms=0,cofins=0,pis=0,fecpst=0,rf=0,cf=0,qtdGradeHava=0;
+  // Agregados específicos da HAVAIANAS — usados para calcular FOB só sobre essa marca
+  var custo_hava=0, fat_v_hava=0;
   rows.forEach(function(r){
     fat    += dreNum(r.faturamento       || r.FATURAMENTO       || 0);
     fat_v  += dreNum(r.faturamento_venda || r.FATURAMENTO_VENDA || r.faturamento || r.FATURAMENTO || 0);
     dev    += dreNum(r.devolucao_venda   || r.DEVOLUCAO_VENDA   || 0);
     qtd    += dreNum(r.qtd               || r.QTD               || 0);
-    custo  += dreNum(r.custo             || r.CUSTO             || 0);
+    var _custo = dreNum(r.custo || r.CUSTO || 0);
+    custo  += _custo;
     icms   += dreNum(r.icms              || r.ICMS              || 0);
     cofins += dreNum(r.cofins            || r.COFINS            || 0);
     pis    += dreNum(r.pis               || r.PIS               || 0);
     fecpst += dreNum(r.fecpst            || r.FECPST            || 0);
     rf     += dreNum(r.rec_frete         || r.REC_FRETE         || 0);
-    // custo_frete: helper aplica zero-transp + rateio via filial_nf_serie + fallback
     cf     += dreCalcCustoFrete(r);
     qtdGradeHava += dreNum(r.qtd_grade_hava || r.QTD_GRADE_HAVA || 0);
+    // Se a linha é HAVAIANAS, acumula em separado pra cálculo do FOB
+    var _forn = String(r.fornecedor || r.FORNECEDOR || '').toUpperCase().trim();
+    if(_forn.indexOf('HAVAIANA') >= 0){
+      custo_hava += _custo;
+      fat_v_hava += dreNum(r.faturamento_venda || r.FATURAMENTO_VENDA || r.faturamento || r.FATURAMENTO || 0);
+    }
   });
   var _aSet={};
   rows.forEach(function(r){
@@ -4106,7 +4114,7 @@ function dreAgg(rows){
     if(!c) return;
     fat_v_canal[c]=(fat_v_canal[c]||0)+dreNum(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO||0);
   });
-  return{fat,fat_v,dev,qtd,custo,icms,cofins,pis,fecpst,rec_frete:rf,custo_frete:cf,qtdGradeHava,anomesList,fat_v_canal};
+  return{fat,fat_v,dev,qtd,custo,icms,cofins,pis,fecpst,rec_frete:rf,custo_frete:cf,qtdGradeHava,anomesList,fat_v_canal,custo_hava,fat_v_hava};
 }
 function dreCalc(a,shareRB,shareQTD,canalCtx,vendedorOverride){
   shareRB=shareRB||1;shareQTD=shareQTD||1;
@@ -4157,7 +4165,9 @@ function dreCalc(a,shareRB,shareQTD,canalCtx,vendedorOverride){
     return isNaN(result) ? _def : result;
   }
   var fobAvg=getSalPct('fob');
-  var fob=rl*fobAvg;
+  // FOB é aplicado APENAS sobre o custo líquido das vendas HAVAIANAS no slice
+  // (não sobre RL total — antes estava errado, aplicando em todos os fornecedores)
+  var fob=(a.custo_hava||0)*fobAvg;
   var gradeUnit=getFixo('custoGrade', DRE_CONFIG_DEFAULTS.custoGrade||0);  var grade=(a.qtdGradeHava||0)*gradeUnit;
   // Salários comerciais: % aplicado sobre a RB de cada canal específico
   // Se temos fat_v_canal (view mensal agregada), usamos o fat de cada canal
