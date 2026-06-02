@@ -4165,9 +4165,10 @@ function dreCalc(a,shareRB,shareQTD,canalCtx,vendedorOverride){
     return isNaN(result) ? _def : result;
   }
   var fobAvg=getSalPct('fob');
-  // FOB é aplicado APENAS sobre o custo líquido das vendas HAVAIANAS no slice
-  // (não sobre RL total — antes estava errado, aplicando em todos os fornecedores)
-  var fob=(a.custo_hava||0)*fobAvg;
+  // FOB é aplicado APENAS sobre o CUSTO BRUTO das vendas HAVAIANAS no slice
+  // (custo bruto = custo líquido / 0.79, mesma conversão usada em CMV Bruto)
+  var custoHavaBruto = (a.custo_hava||0) > 0 ? (a.custo_hava||0) / 0.79 : 0;
+  var fob = custoHavaBruto * fobAvg;
   var gradeUnit=getFixo('custoGrade', DRE_CONFIG_DEFAULTS.custoGrade||0);  var grade=(a.qtdGradeHava||0)*gradeUnit;
   // Salários comerciais: % aplicado sobre a RB de cada canal específico
   // Se temos fat_v_canal (view mensal agregada), usamos o fat de cada canal
@@ -5948,8 +5949,8 @@ async function openDreCfg(){
     +'<div class="dre-cfg-sec">'
     +'<div class="dre-cfg-sec-hd">📦 FOB & Ajustes</div>'
     +'<div class="dre-cfg-grid">'
-    +fieldPct('FOB (% Custo Líquido)', 'fob', getP('fob'),
-      '👟 <strong>Aplicado apenas aos produtos Havaianas</strong> — calculado sobre o custo líquido das vendas Havaianas no mês')
+    +fieldPct('FOB (% Custo Bruto)', 'fob', getP('fob'),
+      '👟 <strong>Aplicado apenas aos produtos Havaianas</strong> — calculado sobre o <strong>custo bruto</strong> das vendas Havaianas no mês (custo líquido ÷ 0,79)')
     +fieldBrl('Ajuste CMV (R$)', 'ajuste_cmv',
       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].ajuste_cmv!=null)?DRE_CFG_PARAMS[am].ajuste_cmv:0,
       'Valor que será adicionado ao CMV (-) do DRE neste mês')
