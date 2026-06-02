@@ -7685,9 +7685,29 @@ function openBudgetDetail(tipo, area, ano){
 
   h += '</tbody></table></div>';
 
+  // openFolhaDetail sobrescreve o innerHTML do overlay, destruindo budgetDetailTitle e budgetDetailBody.
+  // Restaura a estrutura se necessário.
+  var overlay = document.getElementById('budgetDetailOverlay');
+  if(!overlay){
+    console.error('[openBudgetDetail] overlay #budgetDetailOverlay não encontrado no DOM');
+    return;
+  }
+  if(!document.getElementById('budgetDetailTitle') || !document.getElementById('budgetDetailBody')){
+    overlay.innerHTML =
+      '<div class="dre-cfg-box" style="width:min(1200px,96vw)">'
+      +'<div class="dre-cfg-hd">'
+      +  '<div><h2>📊 Detalhes por Fornecedor</h2><small id="budgetDetailTitle"></small></div>'
+      +  '<button class="dre-cfg-close" onclick="closeBudgetDetail()">×</button>'
+      +'</div>'
+      +'<div style="padding:16px 20px" id="budgetDetailBody"></div>'
+      +'<div class="dre-cfg-ft">'
+      +  '<button class="btn" onclick="closeBudgetDetail()" style="background:#f0f3fa;border-color:#d0d8ee;color:#0f1a3a">Fechar</button>'
+      +'</div>'
+      +'</div>';
+  }
   document.getElementById('budgetDetailTitle').textContent = title;
   document.getElementById('budgetDetailBody').innerHTML = h;
-  document.getElementById('budgetDetailOverlay').style.display = 'flex';
+  overlay.style.display = 'flex';
 }
 
 function closeBudgetDetail(){
