@@ -6359,6 +6359,33 @@ async function openBudget(){
   renderBudget();
 }
 
+async function budgetForceReload(btn){
+  var orig = btn ? btn.textContent : '';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Atualizando...'; }
+  try{
+    // Limpa flags e estado pra forçar reload completo da base
+    BUDGET_LOADED = false;
+    BUDGET_DESP_RAW = [];
+    BUDGET_RAW = [];
+    // Limpa também a Folha pra dados consistentes (salário Folha por área)
+    if(typeof FOLHA_LOADED !== 'undefined'){ FOLHA_LOADED = false; FOLHA_RAW = []; }
+    // Limpa cache de salário
+    if(typeof clearFolhaSalCache === 'function') clearFolhaSalCache();
+    // Recarrega Folha (precede Budget pra que a coluna Salário Folha apareça correta)
+    if(typeof TBLS !== 'undefined' && TBLS.folha){
+      try{ FOLHA_RAW = await fetchAll(TBLS.folha, null, null); FOLHA_LOADED = FOLHA_RAW.length>0; } catch(e){ console.warn('[budgetForceReload] erro Folha:', e.message); }
+    }
+    // forceRaw=true ignora snapshot e busca a base direto
+    await loadBudget(true);
+    renderBudget(typeof BUDGET_ANO_FILTER !== 'undefined' ? BUDGET_ANO_FILTER : null);
+    toast('✔ Dados do Budget atualizados');
+  } catch(e){
+    console.error('[budgetForceReload] erro:', e);
+    toast('Erro ao atualizar: '+e.message,'err');
+  }
+  if(btn){ btn.disabled = false; btn.textContent = orig; }
+}
+
 async function loadBudget(forceRaw){
   var meta = document.getElementById('budgetHeaderMeta');
   if(meta) meta.textContent = 'Carregando...';
@@ -8023,6 +8050,7 @@ async function saveBudgetCfg(btn){
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn" id="btnBudgetRefresh" onclick="budgetForceReload(this)" title="Recarrega os dados do Supabase" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">🔄 Atualizar</button>
       <button class="btn" data-perm-admin onclick="openBudgetCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button>
       <button class="btn save" data-perm-edit id="btnSaveBudget" onclick="handleSaveBudget(this)">💾 Salvar</button>
     </div>
