@@ -6355,6 +6355,16 @@ async function openBudget(){
   if(!Object.keys(FOLHA_CFG.classif).length){
     try{ var fc=await supaLoad(TBLS.save_folha,'folha_classif'); if(fc&&fc.classif) FOLHA_CFG.classif=fc.classif; } catch(e){}
   }
+  // Garante que DRE_RAW está carregado — fonte dos "dados realizados" (Receita Bruta Avacy, etc.)
+  // E também usado pra detectar o ano default correto (sem isso, fallback pega ano máximo
+  // das projeções OTB que vão até 2030)
+  if(!DRE_LOADED && typeof loadDreFromSupabase === 'function'){
+    try{
+      console.log('[openBudget] DRE_RAW não carregado — buscando antes de renderizar Budget...');
+      await loadDreFromSupabase();
+      console.log('[openBudget] DRE_RAW carregado:', DRE_RAW.length, 'linhas');
+    } catch(e){ console.warn('[openBudget] erro carregando DRE:', e.message); }
+  }
   if(!BUDGET_LOADED) await loadBudget();
   renderBudget();
 }
@@ -6731,9 +6741,21 @@ function renderBudget(anoFilter){
 
   // Year filter
   var anos = Array.from(new Set(allMonths.map(function(ym){ return ym.split('-')[0]; }))).sort();
-  // Default: most recent year from DRE (reliable), fallback to last in list
-  var dreYears = Array.from(new Set(DRE_RAW.map(function(r){return String(r.ano||r.ANO||'');}))).filter(function(y){return y>='2015'&&y<='2030';}).sort();
-  var defaultAno = dreYears.length ? dreYears[dreYears.length-1] : (anos.length ? anos[anos.length-1] : '');
+  // Default: ano mais recente COM dados realizados (DRE_RAW ou BUDGET_DESP_RAW)
+  // — evita pegar anos que só têm projeção OTB (que vai até 2030)
+  var realizedYears = {};
+  (DRE_RAW||[]).forEach(function(r){
+    var y = String(r.ano||r.ANO||''); if(y>='2015'&&y<='2030') realizedYears[y]=true;
+  });
+  (BUDGET_DESP_RAW||[]).forEach(function(r){
+    var ym = String(r.anomes||r.ANOMES||''); if(ym.length>=4){ var y=ym.slice(0,4); if(y>='2015'&&y<='2030') realizedYears[y]=true; }
+  });
+  var realizedList = Object.keys(realizedYears).sort();
+  var nowYear = String(new Date().getFullYear());
+  // Prioridade: 1) ano corrente se tem dados; 2) ano mais recente com dados; 3) último em allMonths
+  var defaultAno = realizedList.indexOf(nowYear) >= 0 ? nowYear
+                : (realizedList.length ? realizedList[realizedList.length-1]
+                : (anos.length ? anos[anos.length-1] : ''));
   var selectedAno = BUDGET_ANO_FILTER || defaultAno || '';
   // Filtra meses por ano selecionado E pela lista BUDGET_MESES_FILTER (se houver)
   var months = allMonths.filter(function(ym){
