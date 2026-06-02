@@ -3681,7 +3681,20 @@ async function initDre(){
     return nome;
   }))).filter(Boolean).sort();
   var selVend=function(id){return dreMs(id,'Vendedor',vendedorList,130);};
-  var fBar=function(ids){return '<div style="display:flex;align-items:flex-end;gap:10px;padding:10px 0 14px;flex-wrap:wrap">'+ids.join('')+'</div>';};
+  // Barra de filtros com botão de expandir/retrair
+  // Estado global: DRE_FILTROS_EXPANDED (default: expanded). Reseta a cada render do tab.
+  if(typeof window.DRE_FILTROS_EXPANDED === 'undefined') window.DRE_FILTROS_EXPANDED = true;
+  var fBar=function(ids){
+    var exp = window.DRE_FILTROS_EXPANDED;
+    return '<div style="padding:10px 0 14px">'
+      +'<button onclick="dreToggleFiltros()" class="dre-filtros-toggle" style="padding:4px 12px;border:1.5px solid #d0d8ee;border-radius:14px;background:#f7f9ff;color:#1a2547;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;margin-bottom:'+(exp?'8px':'0')+'" title="Expandir / retrair filtros">'
+        +'<span class="dre-filtros-toggle-icon">'+(exp?'▼':'▶')+'</span>'
+        +'<span>🔍 Filtros</span>'
+        +'<span class="dre-filtros-count" style="background:'+(exp?'#d0d8ee':'#1a56c4')+';color:'+(exp?'#1a2547':'#fff')+';padding:1px 7px;border-radius:8px;font-size:10px;font-weight:700">'+(ids.length)+'</span>'
+      +'</button>'
+      +'<div class="dre-filtros-content" style="display:'+(exp?'flex':'none')+';align-items:flex-end;gap:10px;flex-wrap:wrap">'+ids.join('')+'</div>'
+    +'</div>';
+  };
   document.getElementById('drePanels').innerHTML=
     '<div id="drePanel-mensal" style="display:flex">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-mensal'),selQ('dre-q-mensal'),selMes('dre-mes-mensal'),selCanal('dre-canal-mensal'),selCluster('dre-cluster-mensal'),selRegiao('dre-reg-mensal'),selForn('dre-forn-mensal'),selTransp('dre-transp-mensal'),selVend('dre-vend-mensal')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-mensal" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px"></div></div>'+'<div id="dreTable-mensal"></div></div>'+
     '<div id="drePanel-canal" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-canal'),selQ('dre-q-canal'),selMes('dre-mes-canal'),selCluster('dre-cluster-canal'),selRegiao('dre-reg-canal'),selForn('dre-forn-canal'),selTransp('dre-transp-canal'),selVend('dre-vend-canal')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-canal" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px"></div></div>'+'<div id="dreTable-canal"></div></div>'+
@@ -3693,8 +3706,27 @@ async function initDre(){
   dreSwitchTab('mensal');
 }
 
+// Toggle de expansão da barra de filtros do DRE
+function dreToggleFiltros(){
+  window.DRE_FILTROS_EXPANDED = !window.DRE_FILTROS_EXPANDED;
+  document.querySelectorAll('.dre-filtros-content').forEach(function(el){
+    el.style.display = window.DRE_FILTROS_EXPANDED ? 'flex' : 'none';
+  });
+  document.querySelectorAll('.dre-filtros-toggle-icon').forEach(function(el){
+    el.textContent = window.DRE_FILTROS_EXPANDED ? '▼' : '▶';
+  });
+  // Ajusta margem do botão (sem filtros visíveis = sem margem)
+  document.querySelectorAll('.dre-filtros-toggle').forEach(function(btn){
+    btn.style.marginBottom = window.DRE_FILTROS_EXPANDED ? '8px' : '0';
+  });
+  // Ajusta cor do badge (azul quando retraído pra chamar mais atenção)
+  document.querySelectorAll('.dre-filtros-count').forEach(function(el){
+    el.style.background = window.DRE_FILTROS_EXPANDED ? '#d0d8ee' : '#1a56c4';
+    el.style.color = window.DRE_FILTROS_EXPANDED ? '#1a2547' : '#fff';
+  });
+}
+
 function dreSwitchTab(tab){
-  DRE_TAB=tab;
   document.querySelectorAll('[id^="drePanel-"]').forEach(function(p){
     p.style.display=p.id==='drePanel-'+tab?'flex':'none';
   });
