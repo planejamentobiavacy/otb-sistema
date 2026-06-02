@@ -7151,9 +7151,13 @@ function renderBudget(anoFilter){
 
 
   // ── PRÉ-COMPUTA folhaByArea para uso no bloco de cada área ──
-  // Inclui Realizado (FOLHA_RAW) e Projeção (BUDGET_CFG.folhaProjecao) — projeção só usada quando não há realizado naquele ym/area
+  // Inclui Realizado (FOLHA_RAW) e Projeção (BUDGET_CFG.folhaProjecao)
+  // A projeção de UMA pessoa em um mês só é aplicada se essa pessoa NÃO tem realizado naquele mês.
+  // (Outras pessoas da mesma área podem ter realizado — não importa)
   var folhaByArea = {};
   var folhaPessoasByArea = {};
+  // Set de (area|nome|ym) com realizado — usado pra decidir se projeção entra
+  var _realPersonSet = {};
   if(FOLHA_RAW && FOLHA_RAW.length){
     FOLHA_RAW.forEach(function(r){
       var nome = folhaGetNome(r);
@@ -7176,23 +7180,30 @@ function renderBudget(anoFilter){
       folhaByArea[area][am_ym]=(folhaByArea[area][am_ym]||0)+totalVerbas;
       if(!folhaPessoasByArea[area]) folhaPessoasByArea[area]={};
       folhaPessoasByArea[area][nome]=1;
+      // Marca pessoa+mês como tendo realizado (só se valor > 0)
+      if(totalVerbas > 0) _realPersonSet[area+'|'+nome+'|'+am_ym] = 1;
     });
   }
-  // Aplica projeções para meses SEM realizado (e que estão no escopo de meses do filtro)
+  // Aplica projeções por pessoa: só conta se essa pessoa NÃO tem realizado naquele ym
   if(BUDGET_CFG.folhaProjecao){
+    var _projDiag = {applied:0, skipped:0, byArea:{}};
     Object.keys(BUDGET_CFG.folhaProjecao).forEach(function(k){
       var parts = k.split('|'); // area|nome|ym
       if(parts.length !== 3) return;
       var area = parts[0], nome = parts[1], ym = parts[2];
       if(!months.includes(ym)) return;
-      var realizadoMes = (folhaByArea[area]||{})[ym]||0;
-      // Só conta projeção se NÃO há realizado naquele mês
-      if(realizadoMes > 0) return;
+      // Se ESSA pessoa tem realizado nesse mês, não soma projeção
+      if(_realPersonSet[area+'|'+nome+'|'+ym]){ _projDiag.skipped++; return; }
       var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
-      if(isNaN(v)) return;
+      if(isNaN(v) || v <= 0) return;
       if(!folhaByArea[area]) folhaByArea[area]={};
       folhaByArea[area][ym] = (folhaByArea[area][ym]||0) + v;
+      _projDiag.applied++;
+      _projDiag.byArea[area] = (_projDiag.byArea[area]||0) + v;
     });
+    if(_projDiag.applied || _projDiag.skipped){
+      console.log('[Budget] projeções de Folha aplicadas:', _projDiag.applied, '| ignoradas (já tinha realizado):', _projDiag.skipped, '| total R$ por área:', _projDiag.byArea);
+    }
   }
 
   // ── DESPESAS CLASSIFICADAS — agrupado por Área > Tipo ──
