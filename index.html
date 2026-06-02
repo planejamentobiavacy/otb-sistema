@@ -5938,7 +5938,8 @@ async function openDreCfg(){
     +'<div class="dre-cfg-sec">'
     +'<div class="dre-cfg-sec-hd">📦 FOB & Ajustes</div>'
     +'<div class="dre-cfg-grid">'
-    +fieldPct('FOB (% Custo Líquido)', 'fob', getP('fob'))
+    +fieldPct('FOB (% Custo Líquido)', 'fob', getP('fob'),
+      '👟 <strong>Aplicado apenas aos produtos Havaianas</strong> — calculado sobre o custo líquido das vendas Havaianas no mês')
     +fieldBrl('Ajuste CMV (R$)', 'ajuste_cmv',
       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].ajuste_cmv!=null)?DRE_CFG_PARAMS[am].ajuste_cmv:0,
       'Valor que será adicionado ao CMV (-) do DRE neste mês')
