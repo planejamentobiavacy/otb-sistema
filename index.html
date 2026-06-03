@@ -3659,6 +3659,8 @@ async function initDre(){
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
   var tabsDefs=[{id:'mensal',label:'📅 Todos os Meses'},{id:'canal',label:'📡 Canal'},{id:'cluster',label:'🗂 Cluster'},{id:'regiao',label:'📍 Região'},{id:'fornecedor',label:'🏭 Fornecedor'},{id:'transportadora',label:'🚚 Transportadora'},{id:'vendedor',label:'🧑‍💼 Vendedor'}];
   var bar=document.getElementById('dreTabsBar'); bar.innerHTML='';
+  // Default: filtros retraídos (define ANTES de montar o botão global e os painéis para evitar inconsistência)
+  if(typeof window.DRE_FILTROS_EXPANDED === 'undefined') window.DRE_FILTROS_EXPANDED = false;
   // Botão Filtros à esquerda das abas — economiza espaço vertical
   (function(){
     var exp = window.DRE_FILTROS_EXPANDED !== false;
@@ -3705,8 +3707,7 @@ async function initDre(){
   }))).filter(Boolean).sort();
   var selVend=function(id){return dreMs(id,'Vendedor',vendedorList,130);};
   // Barra de filtros com botão de expandir/retrair
-  // Estado global: DRE_FILTROS_EXPANDED (default: expanded). Reseta a cada render do tab.
-  if(typeof window.DRE_FILTROS_EXPANDED === 'undefined') window.DRE_FILTROS_EXPANDED = true;
+  // O estado window.DRE_FILTROS_EXPANDED já foi inicializado acima (default: retraído).
   var fBar=function(ids){
     var exp = window.DRE_FILTROS_EXPANDED;
     // Botão de toggle agora vive na barra de abas (à esquerda); aqui ficam só os dropdowns
@@ -8394,9 +8395,15 @@ function budgetCfgRow(k, i, c, saved, tipoOpts, areaOpts, selStyle, inpStyle, fm
   var bg = i%2===0?'#fff':'#f7f9ff';
   var rid = prefix+'_'+i;
   var kEsc = k.replace(/"/g,'&quot;');
+  // Escape para uso dentro de onclick="...('K')": JS-escape (\ ') depois HTML-escape (& ")
+  var kOc = String(k).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/&/g,'&amp;').replace(/"/g,'&quot;');
   var h = '<tr style="background:'+bg+'">';
   h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#0f1a3a;font-weight:600;max-width:180px">'+escHtml(c.nomfor)+'</td>';
-  h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#0f1a3a;font-size:11px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escHtml(c.hist||'')+'">'+(c.hist?escHtml(c.hist):'<span style="color:#ccc">—</span>')+'</td>';
+  h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#0f1a3a;font-size:11px;max-width:300px" title="'+escHtml(c.hist||'')+'">'
+     + '<div style="display:flex;align-items:center;gap:6px;min-width:0">'
+     +   '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0">'+(c.hist?escHtml(c.hist):'<span style=\"color:#ccc\">—</span>')+'</span>'
+     +   '<button type="button" onclick="openBudgetCfgRowDetail(\''+kOc+'\')" title="Ver todos os lançamentos da base para esta linha" style="background:#eef2fc;border:1px solid #c8d2eb;color:#1a2547;border-radius:4px;padding:2px 8px;font-size:10px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0;white-space:nowrap">📄 Detalhes</button>'
+     + '</div></td>';
   h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#1a2547;font-weight:700;text-align:right;white-space:nowrap">'+fmtVal(c.total)+'</td>';
   h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8">';
   h += '<select id="bcfg_tipo_'+rid+'" data-key="'+kEsc+'" style="'+selStyle+'">';
@@ -8422,6 +8429,106 @@ function budgetCfgRow(k, i, c, saved, tipoOpts, areaOpts, selStyle, inpStyle, fm
 
 function closeBudgetCfg(){
   document.getElementById('budgetCfgOverlay').style.display='none';
+}
+
+// ── Modal: detalhes dos lançamentos brutos de uma linha (Fornecedor + Hist) ──
+function openBudgetCfgRowDetail(k){
+  if(!Array.isArray(BUDGET_DESP_RAW)) return;
+  var parts  = String(k||'').split('|');
+  var nomfor = (parts[0]||'').trim();
+  var hist   = parts.slice(1).join('|').trim(); // hist pode conter '|' em casos raros
+  // Filtra os lançamentos da base que casam exatamente com a combinação
+  var records = BUDGET_DESP_RAW.filter(function(r){
+    var rN = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
+    var rH = String(r.e2_hist||r.E2_HIST||'').trim();
+    return rN === nomfor && rH === hist;
+  });
+  // Soma total dos valores
+  var pickValor = function(r){
+    return parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||r.e2_valor||r.E2_VALOR||r.value||r.VALUE||r.vlr||r.VLR||r.e2_valto||r.E2_VALTO)||0;
+  };
+  var totalValor = records.reduce(function(s,r){ return s+pickValor(r); }, 0);
+  var fmtVal = (typeof budgetFmtVal === 'function') ? budgetFmtVal : function(v){ return 'R$ '+Math.round(v||0).toLocaleString('pt-BR'); };
+
+  // União de todos os campos presentes nos registros
+  var fieldSet = {};
+  records.forEach(function(r){ Object.keys(r).forEach(function(f){ fieldSet[f] = true; }); });
+  var fields = Object.keys(fieldSet).sort();
+
+  // Cria (ou reusa) o overlay — z-index acima do budgetCfgOverlay (9999)
+  var overlay = document.getElementById('bcfgRowDetailOverlay');
+  if(!overlay){
+    overlay = document.createElement('div');
+    overlay.id = 'bcfgRowDetailOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10001;display:none;align-items:flex-start;justify-content:center;padding-top:40px;overflow-y:auto';
+    overlay.onclick = function(e){ if(e.target===this) closeBudgetCfgRowDetail(); };
+    document.body.appendChild(overlay);
+  }
+
+  // Header do modal
+  var subtitle = '<strong>'+escHtml(nomfor||'—')+'</strong>'
+               + ' · ' + escHtml(hist||'(sem histórico)')
+               + ' · ' + records.length + ' lançamento' + (records.length===1?'':'s')
+               + ' · ' + fmtVal(totalValor);
+
+  var hHtml = '<div style="background:#fff;border-radius:10px;width:min(1180px,96vw);box-shadow:0 24px 64px rgba(0,0,0,.3);overflow:hidden;margin-bottom:40px;display:flex;flex-direction:column;max-height:88vh" onclick="event.stopPropagation()">';
+  hHtml += '<div style="background:linear-gradient(90deg,#0f1830,#1a2547);color:#fff;padding:14px 20px;display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-shrink:0">';
+  hHtml += '<div><h2 style="font-size:15px;font-weight:700;margin:0">📄 Detalhes da Base</h2><small style="font-size:11px;opacity:.85;display:block;margin-top:3px">'+subtitle+'</small></div>';
+  hHtml += '<button style="background:transparent;border:1px solid rgba(255,255,255,.25);color:#fff;width:28px;height:28px;cursor:pointer;border-radius:3px;font-size:16px;line-height:1;font-family:inherit;flex-shrink:0" onclick="closeBudgetCfgRowDetail()">×</button>';
+  hHtml += '</div>';
+
+  // Body com tabela de lançamentos
+  hHtml += '<div style="padding:14px 18px;overflow:auto;flex:1;min-height:0">';
+  if(!records.length){
+    hHtml += '<div style="padding:30px;text-align:center;color:#7a8ab0;font-size:13px;font-style:italic">Nenhum lançamento encontrado na base para esta combinação.</div>';
+  } else {
+    var thStyle = 'position:sticky;top:0;z-index:2;background:#1a2547;color:#fff;padding:6px 9px;font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;text-align:left;white-space:nowrap';
+    hHtml += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:600px">';
+    hHtml += '<thead><tr>';
+    hHtml += '<th style="'+thStyle+'">#</th>';
+    hHtml += '<th style="'+thStyle+'">DATA</th>';
+    hHtml += '<th style="'+thStyle+';text-align:right">VALOR</th>';
+    // Campos restantes (oculta nomfor/hist/valor que já estão acima ou no resumo)
+    var skipFields = {e2_nomfor:1,E2_NOMFOR:1,e2_hist:1,E2_HIST:1};
+    fields.forEach(function(f){
+      if(skipFields[f]) return;
+      hHtml += '<th style="'+thStyle+'">'+escHtml(f)+'</th>';
+    });
+    hHtml += '</tr></thead><tbody>';
+    records.forEach(function(r, idx){
+      var bg = idx%2===0 ? '#fff' : '#f7f9ff';
+      var rawDate = (typeof budgetDespAm === 'function') ? budgetDespAm(r) : '';
+      var dateFmt = (rawDate && rawDate.length===6) ? (rawDate.slice(0,4)+'-'+rawDate.slice(4,6)) : (rawDate||'—');
+      var cellStyle = 'padding:5px 9px;border-bottom:1px solid #eef1f8;white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis';
+      hHtml += '<tr style="background:'+bg+'">';
+      hHtml += '<td style="'+cellStyle+';color:#7a8ab0;font-weight:600">'+(idx+1)+'</td>';
+      hHtml += '<td style="'+cellStyle+'">'+escHtml(dateFmt)+'</td>';
+      hHtml += '<td style="'+cellStyle+';text-align:right;font-weight:700;color:#1a2547">'+fmtVal(pickValor(r))+'</td>';
+      fields.forEach(function(f){
+        if(skipFields[f]) return;
+        var v = r[f];
+        var vStr = (v===null||v===undefined) ? '' : String(v);
+        hHtml += '<td style="'+cellStyle+'" title="'+escHtml(vStr)+'">'+escHtml(vStr)+'</td>';
+      });
+      hHtml += '</tr>';
+    });
+    hHtml += '</tbody></table>';
+  }
+  hHtml += '</div>';
+
+  // Footer
+  hHtml += '<div style="padding:10px 18px;border-top:1px solid #eef1f8;display:flex;justify-content:flex-end;gap:8px;background:#f7f9ff;flex-shrink:0">';
+  hHtml += '<button class="btn" onclick="closeBudgetCfgRowDetail()" style="background:#f0f3fa;border-color:#d0d8ee;color:#0f1a3a;font-size:12px">Fechar</button>';
+  hHtml += '</div>';
+  hHtml += '</div>';
+
+  overlay.innerHTML = hHtml;
+  overlay.style.display = 'flex';
+}
+
+function closeBudgetCfgRowDetail(){
+  var ov = document.getElementById('bcfgRowDetailOverlay');
+  if(ov) ov.style.display = 'none';
 }
 
 async function saveBudgetCfg(btn){
