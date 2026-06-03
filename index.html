@@ -4548,7 +4548,7 @@ var FOLHA_VERBAS=[
   'FGTS','TERCEIROS','INSS','RAT'
 ];
 // Verbas selecionadas para soma — [] = todas
-var FOLHA_VERBAS_SEL = [];
+var FOLHA_VERBAS_SEL = [], FOLHA_VERBAS_NONE = false;
 
 function folhaNum(v){if(!v&&v!==0) return 0;if(typeof v==='number') return v;var s=String(v).trim().replace(/\./g,'').replace(',','.');var n=parseFloat(s);return isNaN(n)?0:n;}
 function folhaBrl(v){return Math.round(v).toLocaleString('pt-BR');}
@@ -4570,6 +4570,8 @@ function folhaGetNome(r){return folhaGetField(r,['pessoa','NOME','NOME_FUNCIONAR
 function folhaGetTipo(r){return folhaGetField(r,['TIPO','TIPO_CONTRATO','VINCULO','tipo'])||'';}
 function folhaGetSituacao(r){return folhaGetField(r,['SITUACAO','STATUS','situacao'])||'';}
 function folhaTotal(r){
+  // Estado "Nenhuma verba" — não soma nada
+  if(FOLHA_VERBAS_NONE) return 0;
   // Se tem coluna 'valor' e não há seleção de verbas específicas, usa diretamente
   var verbas = FOLHA_VERBAS_SEL.length ? FOLHA_VERBAS_SEL : FOLHA_VERBAS;
   // Se nenhuma verba selecionada e tem coluna valor direta, usa ela
@@ -5176,8 +5178,10 @@ function fmsBuildVerbas(verbas){
   if(clearBtn) clearBtn.addEventListener('click', function(e){
     e.stopPropagation();
     FOLHA_VERBAS_SEL = [];
-    drop.querySelectorAll('input[type=checkbox]').forEach(function(c){ c.checked=false; });
-    var allCb = drop.querySelector('input[data-all]'); if(allCb) allCb.checked=true;
+    FOLHA_VERBAS_NONE = false;
+    var list = document.getElementById('fmsList_verbas');
+    var avail = window._folhaVerbasDisponiveis||FOLHA_VERBAS;
+    if(list) list.innerHTML = fmsVerbasList(avail);
     fmsVerbaUpdateBtn(); _folhaRenderAll();
   });
   fmsVerbaUpdateBtn();
@@ -5185,12 +5189,13 @@ function fmsBuildVerbas(verbas){
 
 function fmsVerbasList(verbas){
   var labels = window._folhaVerbasLabels || {};
-  var allSel = FOLHA_VERBAS_SEL.length===0; // nenhuma = todas selecionadas
-  var allChk = allSel ? 'checked' : '';
+  var noneSel = !!FOLHA_VERBAS_NONE;                            // estado "Nenhuma"
+  var allSel  = !noneSel && FOLHA_VERBAS_SEL.length===0;        // estado "Todas implícito"
+  var allChk  = allSel ? 'checked' : '';
   var h = '<label class="fms-item all"><input type="checkbox" data-all="verbas" '+allChk+'> Todas</label>';
   verbas.forEach(function(k){
-    // Quando "Todas" está ativo, todas aparecem marcadas (para poder desmarcar individualmente)
-    var chk = (allSel || FOLHA_VERBAS_SEL.includes(k)) ? 'checked' : '';
+    // Marca a verba se: estamos em "Todas implícito" OU ela está explicitamente selecionada
+    var chk = (!noneSel && (allSel || FOLHA_VERBAS_SEL.includes(k))) ? 'checked' : '';
     h += '<label class="fms-item"><input type="checkbox" data-verba="'+k+'" '+chk+'>&nbsp;'+(labels[k]||k)+'</label>';
   });
   return h;
@@ -5200,6 +5205,7 @@ function fmsVerbaUpdateBtn(){
   var btn = document.getElementById('fmsBtn_verbas');
   if(!btn) return;
   var avail = window._folhaVerbasDisponiveis||FOLHA_VERBAS;
+  if(FOLHA_VERBAS_NONE){ btn.textContent='Nenhuma'; btn.classList.add('active'); return; }
   var n = FOLHA_VERBAS_SEL.length;
   if(n === 0 || n === avail.length){ btn.textContent='Todas'; btn.classList.remove('active'); }
   else if(n === 1){ btn.textContent=(window._folhaVerbasLabels||{})[FOLHA_VERBAS_SEL[0]]||FOLHA_VERBAS_SEL[0]; btn.classList.add('active'); }
@@ -5215,24 +5221,32 @@ document.addEventListener('change', function(e){
   // Verbas filter
   if(el.hasAttribute('data-verba')){
     var k = el.getAttribute('data-verba');
-    var wasAll = FOLHA_VERBAS_SEL.length===0;
-    if(wasAll && !el.checked){
-      // Was "Todas" active — now unchecking one: select all except this one
-      FOLHA_VERBAS_SEL = (window._folhaVerbasDisponiveis||FOLHA_VERBAS).filter(function(x){ return x!==k; });
-    } else if(el.checked){
-      if(!FOLHA_VERBAS_SEL.includes(k)) FOLHA_VERBAS_SEL.push(k);
-      // If all are now selected, revert to "Todas" (empty = all)
-      var avail = window._folhaVerbasDisponiveis||FOLHA_VERBAS;
-      if(FOLHA_VERBAS_SEL.length === avail.length) FOLHA_VERBAS_SEL = [];
+    var avail = window._folhaVerbasDisponiveis||FOLHA_VERBAS;
+    if(el.checked){
+      if(FOLHA_VERBAS_NONE){
+        // Saindo do estado "Nenhuma": passa a ter só esta selecionada
+        FOLHA_VERBAS_NONE = false;
+        FOLHA_VERBAS_SEL = [k];
+      } else if(FOLHA_VERBAS_SEL.length === 0){
+        // Estado "Todas implícito" — marcar de novo não muda nada
+      } else {
+        if(!FOLHA_VERBAS_SEL.includes(k)) FOLHA_VERBAS_SEL.push(k);
+        if(FOLHA_VERBAS_SEL.length === avail.length) FOLHA_VERBAS_SEL = []; // todas → volta para implícito
+      }
     } else {
-      FOLHA_VERBAS_SEL = FOLHA_VERBAS_SEL.filter(function(x){ return x!==k; });
+      if(FOLHA_VERBAS_SEL.length === 0 && !FOLHA_VERBAS_NONE){
+        // Estado "Todas implícito" → desmarcar uma deixa todas menos essa
+        FOLHA_VERBAS_SEL = avail.filter(function(x){ return x!==k; });
+      } else {
+        FOLHA_VERBAS_SEL = FOLHA_VERBAS_SEL.filter(function(x){ return x!==k; });
+        // Última verba desmarcada → estado "Nenhuma"
+        if(FOLHA_VERBAS_SEL.length === 0) FOLHA_VERBAS_NONE = true;
+      }
     }
     var drop = document.getElementById('fmsDrop_verbas');
-    var allCb = drop ? drop.querySelector('input[data-all]') : null;
-    if(allCb) allCb.checked = FOLHA_VERBAS_SEL.length===0;
     // Refresh list so checkboxes reflect state
     var list = document.getElementById('fmsList_verbas');
-    var avail2 = window._folhaVerbasDisponiveis||FOLHA_VERBAS;
+    var avail2 = avail;
     var q = drop ? (drop.querySelector('.fms-search')||{}).value||'' : '';
     var filtered2 = !q ? avail2 : avail2.filter(function(v){ return v.includes(q.toUpperCase())||(window._folhaVerbasLabels&&(window._folhaVerbasLabels[v]||'').toUpperCase().includes(q.toUpperCase())); });
     if(list) list.innerHTML = fmsVerbasList(filtered2);
@@ -5240,16 +5254,16 @@ document.addEventListener('change', function(e){
   }
   if(el.hasAttribute('data-all') && el.getAttribute('data-all')==='verbas'){
     var avail3 = window._folhaVerbasDisponiveis||FOLHA_VERBAS;
-    var drop2   = document.getElementById('fmsDrop_verbas');
-    var list2   = document.getElementById('fmsList_verbas');
+    var drop2  = document.getElementById('fmsDrop_verbas');
+    var list2  = document.getElementById('fmsList_verbas');
     if(el.checked){
-      // Marcar "Todas" → marca todas individualmente (para poder desmarcar uma a uma)
-      FOLHA_VERBAS_SEL = avail3.slice();
-      if(drop2) drop2.querySelectorAll('input[data-verba]').forEach(function(c){ c.checked=true; });
-    } else {
-      // Desmarcar "Todas" → limpa seleção (volta ao estado Todas implícito = sem filtro)
+      // Marcar "Todas" → estado "Todas implícito" (SEL vazio, NONE false)
       FOLHA_VERBAS_SEL = [];
-      if(drop2) drop2.querySelectorAll('input[data-verba]').forEach(function(c){ c.checked=false; });
+      FOLHA_VERBAS_NONE = false;
+    } else {
+      // Desmarcar "Todas" → estado "Nenhuma"
+      FOLHA_VERBAS_SEL = [];
+      FOLHA_VERBAS_NONE = true;
     }
     if(list2) list2.innerHTML = fmsVerbasList(avail3);
     fmsVerbaUpdateBtn(); _folhaRenderAll(); return;
