@@ -7784,7 +7784,8 @@ function renderBudget(anoFilter){
   secRow('Receita', '📈');
   dataRow('Receita Bruta AVACY', function(ym){ return budgetAvacyFatVal(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_BRUTA_AVACY', lockRealized:true}, summaryStyle:{gradStart:'#0a7c4e', gradEnd:'#0a7c4e', icon:'📊'}});
   // Receita PLANO Avacy — totalmente manual, valores salvos em BUDGET_CFG.budgetOverrides
-  dataRow('Receita PLANO Avacy', function(ym){ return 0; }, {bold:true, editable:{keyPrefix:'RECEITA_PLANO_AVACY'}});
+  // A função retorna o valor salvo para que não-admin (modo leitura) também enxergue o plano.
+  dataRow('Receita PLANO Avacy', function(ym){ return budgetReceitaPlano(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_PLANO_AVACY'}});
   // Diff x Plano = Receita Bruta − Plano (positivo = bateu/superou plano, negativo = abaixo)
   dataRow('Diff x Plano', function(ym){ return budgetDiffPlano(ym); }, {sub:true});
   // Var Plano = Bruta/Plano - 1 (positivo = realizado superou plano)
