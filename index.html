@@ -4535,6 +4535,7 @@ function dreTabela(cols){
 // ═══════════════════════════════════════════════════════
 var FOLHA_RAW=[], FOLHA_LOADED=false, FOLHA_ABA='area';
 var FOLHA_FILTROS={situacao:[],tipo:[],area:[],nome:[],ano:[]}; // [] = todos
+var FOLHA_FILTROS_NONE={situacao:false,tipo:false,area:false,nome:false,ano:false}; // true = nenhum (mostra zero)
 // Configurações de classificação por pessoa (override de área e canal)
 var FOLHA_CFG={ classif:{} }; // { 'NOME_PESSOA': { area:'Comercial', canal:'Closer' } }
 var FOLHA_CANAIS = ['—','Farmer','Developer','Closer','Hava','KA'];
@@ -5141,10 +5142,12 @@ function fmsBuild(key, vals){
 
 function fmsListHtml(key, vals){
   var sel = FOLHA_FILTROS[key] || [];
-  var allChecked = sel.length === 0;
-  var h = '<label class="fms-item all"><input type="checkbox" data-all="1" data-key="'+key+'" '+(allChecked?'checked':'')+'>  Todos</label>';
+  var noneSel = !!FOLHA_FILTROS_NONE[key];                 // estado "Nenhum"
+  var allSel  = !noneSel && sel.length === 0;              // estado "Todos implícito"
+  var h = '<label class="fms-item all"><input type="checkbox" data-all="1" data-key="'+key+'" '+(allSel?'checked':'')+'>  Todos</label>';
   vals.forEach(function(v){
-    var chk = sel.includes(v) ? 'checked' : '';
+    // Marca o item se: "Todos implícito" OU explicitamente selecionado
+    var chk = (!noneSel && (allSel || sel.includes(v))) ? 'checked' : '';
     h += '<label class="fms-item"><input type="checkbox" data-key="'+key+'" value="'+escHtml(v)+'" '+chk+'>&nbsp;'+escHtml(v)+'</label>';
   });
   return h;
@@ -5294,17 +5297,21 @@ function fmsToggle(key){
 }
 
 function fmsToggleAll(key, cb){
-  var drop = document.getElementById('fmsDrop_'+key);
   var allVals = _fmsData[key] || [];
   if(cb.checked){
-    // Marcar "Todos" → marca todos individualmente (para poder desmarcar um por um)
-    FOLHA_FILTROS[key] = allVals.slice(); // cópia de todos os valores
-    if(drop) drop.querySelectorAll('input[type=checkbox][value]').forEach(function(c){ c.checked=true; });
-  } else {
-    // Desmarcar "Todos" → desmarca todos (nenhum filtro ativo = volta ao estado Todos implícito)
+    // Marcar "Todos" → estado "Todos implícito" (SEL vazio, NONE false)
     FOLHA_FILTROS[key] = [];
-    if(drop) drop.querySelectorAll('input[type=checkbox][value]').forEach(function(c){ c.checked=false; });
+    FOLHA_FILTROS_NONE[key] = false;
+  } else {
+    // Desmarcar "Todos" → estado "Nenhum" (não mostra nada)
+    FOLHA_FILTROS[key] = [];
+    FOLHA_FILTROS_NONE[key] = true;
   }
+  // Re-render para refletir todos os checkboxes individuais
+  var list = document.getElementById('fmsList_'+key);
+  var q = (document.getElementById('fmsSrch_'+key)||{}).value||'';
+  var vals = !q ? allVals : allVals.filter(function(v){ return v.toUpperCase().includes(q.toUpperCase()); });
+  if(list) list.innerHTML = fmsListHtml(key, vals);
   fmsUpdateBtn(key); _folhaRenderAll();
 }
 
@@ -5313,28 +5320,43 @@ function fmsChange(key){
   var checked = [];
   if(drop) drop.querySelectorAll('input[type=checkbox][value]:checked').forEach(function(c){ checked.push(c.value); });
   var allVals = _fmsData[key] || [];
-  // Se todos estão marcados individualmente = equivale a "Todos" (sem filtro)
-  FOLHA_FILTROS[key] = (checked.length === allVals.length) ? [] : checked;
-  // Update "Todos" checkbox — marcado quando nenhum ou todos individuais marcados
-  var allCb = drop ? drop.querySelector('.fms-item.all input') : null;
-  if(allCb) allCb.checked = checked.length === 0 || checked.length === allVals.length;
+  // Determina o estado final
+  if(checked.length === allVals.length){
+    // Todos individuais marcados → "Todos implícito"
+    FOLHA_FILTROS[key] = [];
+    FOLHA_FILTROS_NONE[key] = false;
+  } else if(checked.length === 0){
+    // Nenhum marcado → estado "Nenhum"
+    FOLHA_FILTROS[key] = [];
+    FOLHA_FILTROS_NONE[key] = true;
+  } else {
+    // Subconjunto explícito
+    FOLHA_FILTROS[key] = checked;
+    FOLHA_FILTROS_NONE[key] = false;
+  }
+  // Re-render para manter checkboxes consistentes (especialmente a opção "Todos")
+  var list = document.getElementById('fmsList_'+key);
+  var q = (document.getElementById('fmsSrch_'+key)||{}).value||'';
+  var vals = !q ? allVals : allVals.filter(function(v){ return v.toUpperCase().includes(q.toUpperCase()); });
+  if(list) list.innerHTML = fmsListHtml(key, vals);
   fmsUpdateBtn(key); _folhaRenderAll();
 }
 
 function fmsClear(key){
   FOLHA_FILTROS[key] = [];
-  var drop = document.getElementById('fmsDrop_'+key);
-  if(drop){
-    drop.querySelectorAll('input[type=checkbox]').forEach(function(c){ c.checked=false; });
-    var allCb = drop.querySelector('.fms-item.all input');
-    if(allCb) allCb.checked = true;
-  }
+  FOLHA_FILTROS_NONE[key] = false;
+  var list = document.getElementById('fmsList_'+key);
+  var allVals = _fmsData[key] || [];
+  var q = (document.getElementById('fmsSrch_'+key)||{}).value||'';
+  var vals = !q ? allVals : allVals.filter(function(v){ return v.toUpperCase().includes(q.toUpperCase()); });
+  if(list) list.innerHTML = fmsListHtml(key, vals);
   fmsUpdateBtn(key); _folhaRenderAll();
 }
 
 function fmsUpdateBtn(key){
   var btn = document.getElementById('fmsBtn_'+key);
   if(!btn) return;
+  if(FOLHA_FILTROS_NONE[key]){ btn.textContent='Nenhum'; btn.classList.add('active'); return; }
   var sel = FOLHA_FILTROS[key] || [];
   var allVals = _fmsData[key] || [];
   if(sel.length === 0 || sel.length === allVals.length){ btn.textContent='Todos'; btn.classList.remove('active'); }
@@ -5381,6 +5403,8 @@ function _folhaFiltrar(){
   var areasUsuario = getFolhaAreasPermitidas();
   return FOLHA_RAW.filter(function(r){
     var f = FOLHA_FILTROS;
+    // Estado "Nenhum" em qualquer filtro → não inclui nada
+    if(FOLHA_FILTROS_NONE.situacao || FOLHA_FILTROS_NONE.tipo || FOLHA_FILTROS_NONE.area || FOLHA_FILTROS_NONE.nome || FOLHA_FILTROS_NONE.ano) return false;
     // Filtro automático por área do usuário — antes dos filtros manuais
     if(areasUsuario){
       var rArea = folhaGetArea(r);
