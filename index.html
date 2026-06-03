@@ -1802,6 +1802,10 @@ async function loadOtbFromSupabase(){
           buildMargProdFromDre();
         }).catch(function(){});
       }
+      // ── Carrega dados brutos em background pra liberar o drill-down por categoria ──
+      // O snapshot só guarda as matrizes consolidadas; categoria-específica (ex: ALPARG/CHINEL)
+      // precisa varrer as linhas brutas. Sem isso, qualquer aba de categoria mostra zero.
+      _loadOtbRawTablesBackground();
     } else {
       // Nenhum dado salvo: carrega tabelas brutas
       await reloadAllOtbTables();
@@ -1809,6 +1813,32 @@ async function loadOtbFromSupabase(){
   } catch(e){
     console.warn('Erro ao carregar OTB:', e.message);
   }
+}
+
+// Carrega dados brutos (estoque, venda, carteira) em background pra habilitar drill-down por categoria.
+// O snapshot do OTB só guarda as matrizes consolidadas; categoria-específica precisa das linhas brutas.
+// Sem isso, abrir uma categoria (ex: ALPARG/CHINEL) mostra todos zeros porque aggForCat varre arrays vazios.
+var _otbRawBgLoaded = false;
+function _loadOtbRawTablesBackground(){
+  if(_otbRawBgLoaded) return; // já carregou nesta sessão
+  _otbRawBgLoaded = true;
+  var tasks = [];
+  if(!state.stk   || !state.stk.length)   tasks.push(fetchAll(TBLS.stk,      null, 'stk').then(function(r){ state.stk = r; }).catch(function(e){ console.warn('[OTB bg] stk falhou:', e.message); }));
+  if(!state.cart  || !state.cart.length)  tasks.push(fetchAll(TBLS.carteira, null, 'carteira').then(function(r){ state.cart = r; }).catch(function(e){ console.warn('[OTB bg] cart falhou:', e.message); }));
+  if(!state.venda || !state.venda.length) tasks.push(fetchAll(TBLS.venda,    null, 'venda').then(function(r){ state.venda = r; }).catch(function(e){ console.warn('[OTB bg] venda falhou:', e.message); }));
+  if(!tasks.length){ try{ updateOtbStatus(); }catch(e){} return; }
+  console.log('[OTB bg] carregando '+tasks.length+' tabela(s) bruta(s) em background…');
+  Promise.all(tasks).then(function(){
+    console.log('[OTB bg] tabelas brutas carregadas — drill-down por categoria ativo.');
+    try{ updateOtbStatus(); }catch(e){}
+    // Re-renderiza se o usuário estiver no OTB e numa categoria específica
+    var onOtb = document.getElementById('screenOtb') && document.getElementById('screenOtb').classList.contains('screen-active');
+    if(onOtb && typeof renderTable === 'function'){
+      var cat = state.activeCategory||'TODAS';
+      var sup = state.activeSupplier||'';
+      if(cat !== 'TODAS' && sup !== 'AVACY') renderTable();
+    }
+  });
 }
 
 async function reloadAllOtbTables(){
