@@ -7175,20 +7175,49 @@ function budgetSetSim(ym, key, rawVal){
   var v = parseFloat(rawVal);
   if(!isNaN(v) && v >= 0) BUDGET_CFG.sim[ym][key] = v / 100;
   else delete BUDGET_CFG.sim[ym][key];
-  // Auto-salva após 1s de inatividade
+  // Auto-salva após 1s de inatividade — SEM re-renderizar enquanto usuário está digitando
   if(window._budgetSimSaveTimer) clearTimeout(window._budgetSimSaveTimer);
   window._budgetSimSaveTimer = setTimeout(async function(){
     try{
       await supaSave(TBLS.save_dre,'budget_classif', {
         classif: BUDGET_CFG.classif,
         tiposIgnorados: BUDGET_CFG.tiposIgnorados,
+        tiposDespGerais: BUDGET_CFG.tiposDespGerais||{},
+        tiposCD: BUDGET_CFG.tiposCD||{},
+        budgetOverrides: BUDGET_CFG.budgetOverrides||{},
+        folhaProjecao: BUDGET_CFG.folhaProjecao||{},
         sim: BUDGET_CFG.sim,
         savedAt: new Date().toISOString()
       });
       invalidateBudgetClassifIndex();
-      renderBudget();
+      // Só renderiza se o usuário NÃO estiver focado num input (evita perder o que está digitando)
+      _budgetRenderWhenIdle();
     } catch(e){ console.warn('[budgetSetSim] save error:', e.message); }
-  }, 1000);
+  }, 1500);
+}
+
+// Re-renderiza o Budget só quando o usuário não está editando algo.
+// Se algum input estiver focado, espera o blur pra renderizar.
+function _budgetRenderWhenIdle(){
+  var active = document.activeElement;
+  var isEditing = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
+  if(!isEditing){
+    renderBudget();
+    return;
+  }
+  // Aguarda blur do input atual e depois renderiza (com pequeno delay pra usuário trocar de input sem render no meio)
+  var rerender = function(){
+    setTimeout(function(){
+      var stillActive = document.activeElement;
+      if(stillActive && (stillActive.tagName === 'INPUT' || stillActive.tagName === 'TEXTAREA')){
+        // Usuário foi pra outro input — agenda de novo
+        _budgetRenderWhenIdle();
+      } else {
+        renderBudget();
+      }
+    }, 250);
+  };
+  active.addEventListener('blur', rerender, {once: true});
 }
 
 function budgetGetMonths(){
