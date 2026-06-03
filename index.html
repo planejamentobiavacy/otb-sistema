@@ -1822,22 +1822,59 @@ var _otbRawBgLoaded = false;
 function _loadOtbRawTablesBackground(){
   if(_otbRawBgLoaded) return; // já carregou nesta sessão
   _otbRawBgLoaded = true;
-  var tasks = [];
-  if(!state.stk   || !state.stk.length)   tasks.push(fetchAll(TBLS.stk,      null, 'stk').then(function(r){ state.stk = r; }).catch(function(e){ console.warn('[OTB bg] stk falhou:', e.message); }));
-  if(!state.cart  || !state.cart.length)  tasks.push(fetchAll(TBLS.carteira, null, 'carteira').then(function(r){ state.cart = r; }).catch(function(e){ console.warn('[OTB bg] cart falhou:', e.message); }));
-  if(!state.venda || !state.venda.length) tasks.push(fetchAll(TBLS.venda,    null, 'venda').then(function(r){ state.venda = r; }).catch(function(e){ console.warn('[OTB bg] venda falhou:', e.message); }));
-  if(!tasks.length){ try{ updateOtbStatus(); }catch(e){} return; }
-  console.log('[OTB bg] carregando '+tasks.length+' tabela(s) bruta(s) em background…');
-  Promise.all(tasks).then(function(){
-    console.log('[OTB bg] tabelas brutas carregadas — drill-down por categoria ativo.');
-    try{ updateOtbStatus(); }catch(e){}
-    // Re-renderiza se o usuário estiver no OTB e numa categoria específica
-    var onOtb = document.getElementById('screenOtb') && document.getElementById('screenOtb').classList.contains('screen-active');
-    if(onOtb && typeof renderTable === 'function'){
-      var cat = state.activeCategory||'TODAS';
-      var sup = state.activeSupplier||'';
-      if(cat !== 'TODAS' && sup !== 'AVACY') renderTable();
+
+  // Re-render se o usuário estiver vendo uma categoria que depende de dados brutos
+  function _maybeRerender(){
+    try { updateOtbStatus(); } catch(e){}
+    var screen = document.getElementById('screenOtb');
+    var onOtb = screen && screen.classList.contains('screen-active');
+    if(!onOtb || typeof renderTable !== 'function') return;
+    var cat = state.activeCategory||'TODAS';
+    var sup = state.activeSupplier||'';
+    if(cat !== 'TODAS' && sup !== 'AVACY') renderTable();
+  }
+
+  // Indicador visível no topo da tela do OTB ("Carregando dados brutos... 0/3")
+  function _setBgIndicator(done, total, finished){
+    var bar = document.getElementById('otbBgLoadBar');
+    if(finished){ if(bar) bar.remove(); return; }
+    if(!bar){
+      bar = document.createElement('div');
+      bar.id = 'otbBgLoadBar';
+      bar.style.cssText = 'position:fixed;top:62px;right:14px;z-index:50;background:#1a2547;color:#fff;padding:7px 14px;border-radius:18px;font-size:11px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px;font-family:inherit';
+      bar.innerHTML = '<span style="font-size:13px">⏳</span><span id="otbBgLoadText"></span>';
+      document.body.appendChild(bar);
     }
+    var t = document.getElementById('otbBgLoadText');
+    if(t) t.textContent = 'Carregando dados brutos pra drill-down por categoria — '+done+'/'+total+' tabela(s)';
+  }
+
+  // Wrapper: faz fetch + atualiza progresso
+  function _bgFetch(table, hint, assign, counter){
+    return fetchAll(table, null, hint).then(function(rows){
+      assign(rows);
+      counter.done++;
+      _setBgIndicator(counter.done, counter.total, false);
+      _maybeRerender();
+    }).catch(function(e){
+      console.warn('[OTB bg] '+hint+' falhou:', e.message);
+      counter.done++;
+      _setBgIndicator(counter.done, counter.total, false);
+    });
+  }
+
+  var tasks = [];
+  var counter = { done: 0, total: 0 };
+  if(!state.cart  || !state.cart.length)  { counter.total++; tasks.push({ table: TBLS.carteira, hint: 'carteira', assign: function(r){ state.cart = r; } }); }
+  if(!state.venda || !state.venda.length) { counter.total++; tasks.push({ table: TBLS.venda,    hint: 'venda',    assign: function(r){ state.venda = r; } }); }
+  if(!state.stk   || !state.stk.length)   { counter.total++; tasks.push({ table: TBLS.stk,      hint: 'stk',      assign: function(r){ state.stk = r; } }); }
+  if(!tasks.length){ _maybeRerender(); return; }
+  console.log('[OTB bg] carregando '+counter.total+' tabela(s) bruta(s) em background…');
+  _setBgIndicator(0, counter.total, false);
+  // Dispara todos em paralelo; cada um atualiza status/render ao terminar
+  Promise.all(tasks.map(function(t){ return _bgFetch(t.table, t.hint, t.assign, counter); })).then(function(){
+    console.log('[OTB bg] todas as tabelas brutas carregadas — drill-down por categoria 100% ativo.');
+    _setBgIndicator(counter.total, counter.total, true);
   });
 }
 
