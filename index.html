@@ -3780,7 +3780,10 @@ async function initDre(){
     if(t.id===DRE_TAB) btn.classList.add('active');
     btn.onclick=function(){dreSwitchTab(t.id);}; bar.appendChild(btn);
   });
-  var selAno=function(id){return dreMs(id,'Ano',[{val:'TODOS',lbl:'Todos'}].concat(anos.map(function(a){return{val:a,lbl:a};})),80);};
+  // Default: ano atual (se existir na lista de anos com dados). Usuário pode desmarcar pra ver todos.
+  var _dreDefaultAno = String(new Date().getFullYear());
+  var _dreAnoDefaults = anos.indexOf(_dreDefaultAno) >= 0 ? [_dreDefaultAno] : [];
+  var selAno=function(id){return dreMs(id,'Ano',[{val:'TODOS',lbl:'Todos'}].concat(anos.map(function(a){return{val:a,lbl:a};})),80,_dreAnoDefaults);};
   var selMes=function(id){return dreMs(id,'Mês',meses.map(function(m){return{val:m,lbl:ml(m)};}),80);};
   var selCanal=function(id){return dreMs(id,'Canal',canais,100);};
   var clusters=['TODOS'].concat(DRE_RAW.map(function(r){return r.cluster||r.CLUSTER||'';}).filter(Boolean).filter(function(v,i,a){return a.indexOf(v)===i;}).sort());
@@ -3863,22 +3866,26 @@ function dreSwitchTab(tab){
 }
 
 // ── DRE Multi-select helper ───────────────────────────────
-function dreMs(id, label, opts, minW){
+function dreMs(id, label, opts, minW, defaults){
   minW = minW||90;
+  defaults = defaults || [];
   var items = opts.map(function(o){
     var val = typeof o==='object'?o.val:o;
     var lbl = typeof o==='object'?o.lbl:o;
+    var checked = defaults.indexOf(String(val))>=0 ? ' checked' : '';
     // Use data-id to avoid quote issues in onchange
     return '<label class="dre-ms-item" onclick="event.stopPropagation()">'
-      +'<input type="checkbox" class="dre-ms-cb" data-id="'+id+'" value="'+val+'" onchange="dreGvMs(this.getAttribute(String.fromCharCode(100,97,116,97,45,105,100)))">'
+      +'<input type="checkbox" class="dre-ms-cb" data-id="'+id+'" value="'+val+'"'+checked+' onchange="dreGvMs(this.getAttribute(String.fromCharCode(100,97,116,97,45,105,100)))">'
       +'<span>'+lbl+'</span></label>';
   }).join('');
+  // Label inicial: se tem defaults pré-marcados, mostra os valores; caso contrário "Todos"
+  var initLbl = defaults.length ? defaults.join(', ') : 'Todos';
   // Build btn onclick using concatenation to avoid quote nesting
   var btnClick = 'dreToggleMs(this.previousElementSibling.id.replace(String.fromCharCode(45,98,116,110),' + "''"+'))';
   return '<div class="dre-ms" id="'+id+'-wrap">'
     +'<div class="dre-ms-label">'+label+'</div>'
     +'<div class="dre-ms-btn" id="'+id+'-btn" data-msid="'+id+'" onclick="dreToggleMs(this.dataset.msid)" style="min-width:'+minW+'px">'
-      +'<span class="dre-ms-val" id="'+id+'-val">Todos</span>'
+      +'<span class="dre-ms-val" id="'+id+'-val">'+initLbl+'</span>'
       +'<span class="dre-ms-arrow">&#9660;</span>'
     +'</div>'
     +'<div class="dre-ms-drop" id="'+id+'-drop">'+items+'</div>'
@@ -5490,7 +5497,16 @@ function _folhaPopulateFilters(){
   fmsBuild('area',     uv(folhaGetArea));
   fmsBuild('nome',     uv(folhaGetNome));
   var anos={};FOLHA_RAW.forEach(function(r){var p=folhaGetPeriodo(r);if(p&&String(p).length>=4)anos[String(p).replace(/\D/g,'').slice(0,4)]=true;});
-  fmsBuild('ano', Object.keys(anos).sort());
+  var _anosList = Object.keys(anos).sort();
+  // Default: ano atual marcado (se existir nos dados) — só na primeira inicialização da sessão
+  if(!window._folhaAnoDefaultApplied){
+    var _atual = String(new Date().getFullYear());
+    if(_anosList.indexOf(_atual)>=0 && (!FOLHA_FILTROS.ano || !FOLHA_FILTROS.ano.length) && !FOLHA_FILTROS_NONE.ano){
+      FOLHA_FILTROS.ano = [_atual];
+    }
+    window._folhaAnoDefaultApplied = true;
+  }
+  fmsBuild('ano', _anosList);
   // Verbas: detecta quais colunas existem no raw
   var verbasDisponiveis = FOLHA_VERBAS.filter(function(k){
     var sample = FOLHA_RAW[0]; if(!sample) return false;
@@ -8245,6 +8261,8 @@ function budgetRecalcRowTotal(input){
 
 function openBudgetDetail(tipo, area, ano){
   var ml=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  // Permissão: só admin pode editar os valores manuais nas células do modal. Não-admin vê tudo read-only.
+  var _canEditDetail = (typeof canEdit==='function') ? canEdit() : true;
   // Aggregate: fornecedor → { total, byMonth }
   // Constrói índice reverso: nomfor normalizado → classif (suporta chave antiga e nova)
   var _classifIndex = {};
@@ -8311,6 +8329,9 @@ function openBudgetDetail(tipo, area, ano){
   var fmtV = function(v){ if(!v) return '<span style="color:#ccc">—</span>'; return v<0?'<span style="color:#c0181a">-R$'+Math.round(Math.abs(v)).toLocaleString('pt-BR')+'</span>':'R$'+Math.round(v).toLocaleString('pt-BR'); };
 
   var h = '<div style="font-size:11px;color:#7a8ab0;margin-bottom:10px">'+fns.length+' fornecedores · '+months.length+' meses · ordenado por maior valor total</div>';
+  if(!_canEditDetail){
+    h += '<div style="background:#fff7e6;border:1px solid #e6b774;color:#7a4a00;padding:7px 12px;border-radius:6px;margin-bottom:10px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:6px">🔒 <span>Modo somente leitura — apenas administradores podem editar valores manuais nesta tela.</span></div>';
+  }
   h += '<div style="overflow:auto;max-height:60vh">';
   h += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px">';
   h += '<thead><tr style="background:#1a2547;color:#fff;position:sticky;top:0">';
@@ -8346,21 +8367,29 @@ function openBudgetDetail(tipo, area, ano){
       var clr = hasOvr ? '#1a56c4' : (effective<0 ? '#c0181a' : '#0f1a3a');
       var fw = hasOvr ? '700' : '500';
       var displayVal = effective ? 'R$ '+Math.round(effective).toLocaleString('pt-BR') : '';
-      h += '<td style="padding:3px 5px;border-bottom:1px solid #eef1f8;text-align:center;white-space:nowrap">'
-        + '<input type="text" class="budget-cell-input" '
-        + 'data-ovrkey="'+escHtml(ovrKey)+'" data-otb="'+otbVal+'" '
-        + 'value="'+escHtml(displayVal)+'" '
-        + 'title="'+escHtml(tipHints.join(' • '))+'" '
-        + 'onblur="budgetSaveOverride(this)" '
-        + 'onfocus="this.select()" '
-        + 'style="width:88px;padding:4px 6px;border:1px solid #d0d8ee;border-radius:4px;text-align:center;font-size:11px;background:'+bg+';color:'+clr+';font-weight:'+fw+'">'
-        + '<button type="button" class="budget-revert-btn" '
-        + 'data-ovrkey="'+escHtml(ovrKey)+'" data-otb="'+otbVal+'" '
-        + 'onclick="budgetRevertCell(this)" '
-        + 'title="Restaurar valor da tabela otb_despesa (R$ '+Math.round(otbVal).toLocaleString('pt-BR')+')" '
-        + 'style="margin-left:3px;padding:2px 5px;border:1px solid #d0d8ee;border-radius:4px;background:#fff;color:#1a56c4;cursor:pointer;font-size:10px;line-height:1;vertical-align:middle;'+(hasOvr?'':'visibility:hidden')+'">↺</button>'
-        + (hists.length?'<span style="font-size:9px;color:#b07a00;margin-left:2px" title="'+escHtml(hists.join(' | '))+'">●</span>':'')
-        + '</td>';
+      if(_canEditDetail){
+        h += '<td style="padding:3px 5px;border-bottom:1px solid #eef1f8;text-align:center;white-space:nowrap">'
+          + '<input type="text" class="budget-cell-input" '
+          + 'data-ovrkey="'+escHtml(ovrKey)+'" data-otb="'+otbVal+'" '
+          + 'value="'+escHtml(displayVal)+'" '
+          + 'title="'+escHtml(tipHints.join(' • '))+'" '
+          + 'onblur="budgetSaveOverride(this)" '
+          + 'onfocus="this.select()" '
+          + 'style="width:88px;padding:4px 6px;border:1px solid #d0d8ee;border-radius:4px;text-align:center;font-size:11px;background:'+bg+';color:'+clr+';font-weight:'+fw+'">'
+          + '<button type="button" class="budget-revert-btn" '
+          + 'data-ovrkey="'+escHtml(ovrKey)+'" data-otb="'+otbVal+'" '
+          + 'onclick="budgetRevertCell(this)" '
+          + 'title="Restaurar valor da tabela otb_despesa (R$ '+Math.round(otbVal).toLocaleString('pt-BR')+')" '
+          + 'style="margin-left:3px;padding:2px 5px;border:1px solid #d0d8ee;border-radius:4px;background:#fff;color:#1a56c4;cursor:pointer;font-size:10px;line-height:1;vertical-align:middle;'+(hasOvr?'':'visibility:hidden')+'">↺</button>'
+          + (hists.length?'<span style="font-size:9px;color:#b07a00;margin-left:2px" title="'+escHtml(hists.join(' | '))+'">●</span>':'')
+          + '</td>';
+      } else {
+        // Não-admin: célula somente leitura (mesmo visual, mas sem input)
+        h += '<td style="padding:4px 6px;border-bottom:1px solid #eef1f8;text-align:center;white-space:nowrap;font-size:11px;color:'+clr+';font-weight:'+fw+';background:'+bg+'" title="'+escHtml(tipHints.join(' • ')+(hasOvr?' • 🔒 Somente admin pode editar':''))+'">'
+          + (displayVal || '<span style="color:#ccc">—</span>')
+          + (hists.length?' <span style="font-size:9px;color:#b07a00" title="'+escHtml(hists.join(' | '))+'">●</span>':'')
+          + '</td>';
+      }
     });
     // Total da linha — considera overrides
     var rowTotalEff = months.reduce(function(s,am){
