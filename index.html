@@ -3603,6 +3603,30 @@ function dreEnrichWithCanais(raw, canaisRaw, clusterRaw){
 
 var SNAP_CHUNK = 3500000; // ~3.5MB por chave — margem segura
 
+// Atalho pra salvar snapshot do DRE direto do Budget — proxy pra handleSaveDre
+async function saveDreSnapshotFromBudget(btn){
+  if(typeof canEdit==='function' && !canEdit()){ toast('🔒 Você não tem permissão.','err'); return; }
+  if(!DRE_RAW || !DRE_RAW.length){
+    toast('⚠ DRE ainda não carregou — espere a Receita aparecer no Budget e tente de novo.', 'err');
+    return;
+  }
+  if(DRE_SNAPSHOT){
+    if(!confirm('O DRE já parece estar carregado de um snapshot. Salvar de novo? (vai re-agregar e regravar)')) return;
+  }
+  var realBtn = document.getElementById('btnSaveDre');
+  if(!realBtn){ toast('⚠ Botão Salvar DRE não encontrado','err'); return; }
+  var orig = btn.textContent; btn.disabled=true; btn.textContent='⏳ Gerando snapshot...';
+  try{
+    await handleSaveDre(realBtn);
+    btn.textContent = '✔ Snapshot salvo';
+    setTimeout(function(){ btn.textContent = orig; btn.disabled=false; }, 2500);
+  } catch(e){
+    btn.textContent = '❌ Falhou';
+    setTimeout(function(){ btn.textContent = orig; btn.disabled=false; }, 2500);
+    toast('Erro: '+e.message,'err');
+  }
+}
+
 async function handleSaveDre(btn){
   if(!canEdit()){ toast('🔒 Você não tem permissão para salvar.','err'); return; }
   var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
@@ -8926,6 +8950,7 @@ async function saveBudgetCfg(btn){
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn" data-perm-admin id="btnSaveDreSnapshotFromBudget" onclick="saveDreSnapshotFromBudget(this)" title="Gera um snapshot agregado do DRE no Supabase pra que próximas aberturas (DRE/Budget) sejam instantâneas. Use depois que o DRE carregar pela primeira vez." style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">📸 Snapshot DRE</button>
       <button class="btn" id="btnBudgetRefresh" onclick="budgetForceReload(this)" title="Recarrega os dados do Supabase" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">🔄 Atualizar</button>
       <button class="btn" data-perm-admin onclick="openBudgetCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button>
       <button class="btn save" data-perm-edit id="btnSaveBudget" onclick="handleSaveBudget(this)">💾 Salvar</button>
