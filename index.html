@@ -4299,7 +4299,7 @@ function dreCalc(a,shareRB,shareQTD,canalCtx,vendedorOverride){
       if(isNaN(val) || val < 0) val = fallback;
       total += val;
     });
-    var result = total / a.anomesList.length;
+    var result = total; // SOMA dos meses (não média) — para a coluna TOTAL refletir o período inteiro
     if(isNaN(result)){ console.error('[mktBase] result NaN total='+total+' count='+a.anomesList.length+' FIXOS_DEF='+JSON.stringify(FIXOS_DEF)); return fallback; }
     return result;
   })();
@@ -4377,7 +4377,7 @@ function dreCalc(a,shareRB,shareQTD,canalCtx,vendedorOverride){
       var p = DRE_CFG_PARAMS[amH] || DRE_CFG_PARAMS[am];
       total += (p && p[key]!=null) ? p[key] : def;
     });
-    return total / a.anomesList.length;
+    return total; // SOMA dos meses (não média) — coerente com a coluna TOTAL
   }
   // Salário Adm: SEMPRE vem da Folha (verbas excluindo 13°). Soma todos os meses selecionados.
   var sa_unit = (function(){
