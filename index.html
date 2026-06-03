@@ -7778,7 +7778,7 @@ function openFolhaDetail(area, ano){
 
   // Open in budget detail overlay
   var overlay = document.getElementById('budgetDetailOverlay');
-  if(!overlay){ overlay=document.createElement('div'); overlay.id='budgetDetailOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(10,20,60,.55);z-index:1200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)'; overlay.onclick=function(e){if(e.target===this)this.style.display='none';}; document.body.appendChild(overlay); }
+  if(!overlay){ overlay=document.createElement('div'); overlay.id='budgetDetailOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(10,20,60,.55);z-index:1200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)'; overlay.onclick=function(e){ if(e.target===this){ this.style.display='none'; if(typeof renderBudget==='function') renderBudget(); } }; document.body.appendChild(overlay); }
   overlay.innerHTML = '<div style="background:#fff;border-radius:12px;box-shadow:0 24px 64px rgba(0,0,0,.4);width:min(1280px,96vw);max-height:90vh;overflow:hidden;display:flex;flex-direction:column">'
     +'<div style="padding:16px 20px;background:#1a2547;color:#fff;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'
     +'<div><strong style="font-size:15px">👥 Salário Folha — '+escHtml(areaUp)+(ano?' ('+ano+')':'')+'</strong> <span style="font-size:11px;opacity:.7;margin-left:8px">📝 Inputs roxos pontilhados = meses futuros editáveis</span></div>'
@@ -7891,16 +7891,64 @@ function folhaProjOnInputBlur(inp){
     inp.style.fontWeight = '400';
   } else {
     var n = parseBrlInput(raw);
-    if(n == null || isNaN(n)){ inp.value=''; folhaProjSet(area,nome,ym,null); folhaProjClearCache(); folhaProjAtualizarTotal(); return; }
+    if(n == null || isNaN(n)){ inp.value=''; folhaProjSet(area,nome,ym,null); folhaProjClearCache(); folhaProjAtualizarTotal(); _folhaProjScheduleSyncBudget(); return; }
     folhaProjSet(area, nome, ym, n);
     inp.value = 'R$ '+Math.round(n).toLocaleString('pt-BR');
     inp.style.background = '#e9e4fa';
     inp.style.color = '#5a1d7a';
     inp.style.borderColor = '#7b2d8b';
     inp.style.fontWeight = '700';
+    console.log('[folhaProj] salvo', area+'|'+nome+'|'+ym, '=', n);
   }
   folhaProjClearCache();
   folhaProjAtualizarTotal();
+  _folhaProjScheduleSyncBudget();
+}
+
+// Re-renderiza o Budget atrás do modal + autosave da projeção no Supabase (debounce 1.5s)
+var _folhaProjSyncTimer = null;
+function _folhaProjScheduleSyncBudget(){
+  if(_folhaProjSyncTimer) clearTimeout(_folhaProjSyncTimer);
+  _folhaProjSyncTimer = setTimeout(function(){
+    _folhaProjSyncTimer = null;
+    // Re-render do Budget (atrás do modal) — assim quando o usuário fechar a tela já está atualizada
+    if(typeof renderBudget === 'function') {
+      try { renderBudget(); } catch(e){ console.warn('[folhaProj] renderBudget falhou:', e.message); }
+    }
+    // Auto-save: persiste projeções no Supabase (mesmo payload que o botão "Salvar Configurações" do Budget grava)
+    if(typeof supaSave === 'function' && typeof TBLS !== 'undefined' && TBLS.save_dre){
+      var payload = {
+        classif: BUDGET_CFG.classif||{},
+        tiposIgnorados: BUDGET_CFG.tiposIgnorados||{},
+        tiposDespGerais: BUDGET_CFG.tiposDespGerais||{},
+        tiposCD: BUDGET_CFG.tiposCD||{},
+        budgetOverrides: BUDGET_CFG.budgetOverrides||{},
+        folhaProjecao: BUDGET_CFG.folhaProjecao||{},
+        sim: BUDGET_CFG.sim||{},
+        savedAt: new Date().toISOString()
+      };
+      _folhaProjShowSaveStatus('saving');
+      supaSave(TBLS.save_dre, 'budget_classif', payload)
+        .then(function(){ _folhaProjShowSaveStatus('saved'); console.log('[folhaProj] auto-save OK em', new Date().toLocaleTimeString('pt-BR')); })
+        .catch(function(e){ _folhaProjShowSaveStatus('error'); console.warn('[folhaProj] auto-save falhou:', e.message); });
+    }
+  }, 1500);
+}
+
+// Indicador discreto de status do autosave no header do modal
+function _folhaProjShowSaveStatus(state){
+  var el = document.getElementById('folhaProjSaveStatus');
+  if(!el){
+    var hdr = document.querySelector('#budgetDetailOverlay [style*="background:#1a2547"]');
+    if(!hdr) return;
+    el = document.createElement('span');
+    el.id = 'folhaProjSaveStatus';
+    el.style.cssText = 'font-size:10px;opacity:.85;margin-left:10px;padding:2px 8px;border-radius:10px;font-weight:600';
+    hdr.querySelector('div').appendChild(el);
+  }
+  if(state==='saving'){ el.textContent='💾 salvando…'; el.style.background='rgba(255,255,255,.15)'; el.style.color='#fff'; }
+  else if(state==='saved'){ el.textContent='✔ salvo'; el.style.background='#1a7c3e'; el.style.color='#fff'; setTimeout(function(){ if(el && el.textContent==='✔ salvo'){ el.textContent=''; el.style.background='transparent'; }}, 2500); }
+  else if(state==='error'){ el.textContent='⚠ erro ao salvar'; el.style.background='#c0181a'; el.style.color='#fff'; }
 }
 
 // Atualiza linha TOTAL do modal somando realizados + projeções
