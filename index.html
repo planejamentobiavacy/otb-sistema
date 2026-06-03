@@ -3659,6 +3659,20 @@ async function initDre(){
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
   var tabsDefs=[{id:'mensal',label:'📅 Todos os Meses'},{id:'canal',label:'📡 Canal'},{id:'cluster',label:'🗂 Cluster'},{id:'regiao',label:'📍 Região'},{id:'fornecedor',label:'🏭 Fornecedor'},{id:'transportadora',label:'🚚 Transportadora'},{id:'vendedor',label:'🧑‍💼 Vendedor'}];
   var bar=document.getElementById('dreTabsBar'); bar.innerHTML='';
+  // Botão Filtros à esquerda das abas — economiza espaço vertical
+  (function(){
+    var exp = window.DRE_FILTROS_EXPANDED !== false;
+    var fbtn = document.createElement('button');
+    fbtn.className = 'dre-filtros-toggle';
+    fbtn.id = 'dreFiltrosBtnGlobal';
+    fbtn.setAttribute('onclick','dreToggleFiltros()');
+    fbtn.setAttribute('title','Expandir / retrair filtros');
+    fbtn.style.cssText = 'margin-right:14px;padding:7px 14px;border:1.5px solid #d0d8ee;border-radius:18px;background:#f7f9ff;color:#1a2547;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;flex-shrink:0';
+    fbtn.innerHTML = '<span class="dre-filtros-toggle-icon">'+(exp?'▼':'▶')+'</span>'
+                   +'<span>🔍 Filtros</span>'
+                   +'<span class="dre-filtros-count" style="background:'+(exp?'#d0d8ee':'#1a56c4')+';color:'+(exp?'#1a2547':'#fff')+';padding:1px 7px;border-radius:8px;font-size:10px;font-weight:700">0</span>';
+    bar.appendChild(fbtn);
+  })();
   tabsDefs.forEach(function(t){
     var btn=document.createElement('button'); btn.className='dre-tab-btn'; btn.setAttribute('data-tab',t.id); btn.textContent=t.label;
     if(t.id===DRE_TAB) btn.classList.add('active');
@@ -3695,14 +3709,8 @@ async function initDre(){
   if(typeof window.DRE_FILTROS_EXPANDED === 'undefined') window.DRE_FILTROS_EXPANDED = true;
   var fBar=function(ids){
     var exp = window.DRE_FILTROS_EXPANDED;
-    return '<div style="padding:10px 0 14px">'
-      +'<button onclick="dreToggleFiltros()" class="dre-filtros-toggle" style="padding:4px 12px;border:1.5px solid #d0d8ee;border-radius:14px;background:#f7f9ff;color:#1a2547;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px;margin-bottom:'+(exp?'8px':'0')+'" title="Expandir / retrair filtros">'
-        +'<span class="dre-filtros-toggle-icon">'+(exp?'▼':'▶')+'</span>'
-        +'<span>🔍 Filtros</span>'
-        +'<span class="dre-filtros-count" style="background:'+(exp?'#d0d8ee':'#1a56c4')+';color:'+(exp?'#1a2547':'#fff')+';padding:1px 7px;border-radius:8px;font-size:10px;font-weight:700">'+(ids.length)+'</span>'
-      +'</button>'
-      +'<div class="dre-filtros-content" style="display:'+(exp?'flex':'none')+';align-items:flex-end;gap:10px;flex-wrap:wrap">'+ids.join('')+'</div>'
-    +'</div>';
+    // Botão de toggle agora vive na barra de abas (à esquerda); aqui ficam só os dropdowns
+    return '<div class="dre-filtros-content" data-count="'+ids.length+'" style="display:'+(exp?'flex':'none')+';align-items:flex-end;gap:10px;flex-wrap:wrap;padding:8px 0 12px">'+ids.join('')+'</div>';
   };
   document.getElementById('drePanels').innerHTML=
     '<div id="drePanel-mensal" style="display:flex">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-mensal'),selQ('dre-q-mensal'),selMes('dre-mes-mensal'),selCanal('dre-canal-mensal'),selCluster('dre-cluster-mensal'),selRegiao('dre-reg-mensal'),selForn('dre-forn-mensal'),selTransp('dre-transp-mensal'),selVend('dre-vend-mensal')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-mensal" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px"></div></div>'+'<div id="dreTable-mensal"></div></div>'+
@@ -3742,6 +3750,13 @@ function dreSwitchTab(tab){
   document.querySelectorAll('.dre-tab-btn').forEach(function(b){
     b.classList.toggle('active', b.getAttribute('data-tab')===tab);
   });
+  // Atualiza contagem do botão global de filtros conforme o tab ativo
+  (function(){
+    var activePanel = document.querySelector('#drePanel-'+tab+' .dre-filtros-content');
+    var count = activePanel ? (activePanel.getAttribute('data-count') || activePanel.children.length) : 0;
+    var globalCount = document.querySelector('#dreFiltrosBtnGlobal .dre-filtros-count');
+    if(globalCount) globalCount.textContent = count;
+  })();
   dreRender();
 }
 
