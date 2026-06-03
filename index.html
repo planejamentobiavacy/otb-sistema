@@ -655,7 +655,8 @@ var COLS = {
   venda_dre: null, // select=* — colunas uppercase, PostgREST case-sensitive. Inclui cod_vendedor para join com otb_canais
 
   // dw_otb_despesa: colunas reais confirmadas no Supabase
-  despesa: ['ano_mes_emissao','ano_mes_venc','ano_mes_baixa','e2_tipo','e2_fornece','e2_nomfor','e2_hist','valor_pagamento','pk_ano_mes_venc_e2_forn'],
+  // (pk_ano_mes_venc_e2_forn não existe na tabela; ano_mes_venc cobre a extração de período)
+  despesa: ['ano_mes_emissao','ano_mes_venc','ano_mes_baixa','e2_tipo','e2_fornece','e2_nomfor','e2_hist','valor_pagamento'],
 
   // dw_otb_folha: usa select=* pois os nomes das colunas podem variar
   // folhaGetPeriodo/Area/Cargo/Nome/Total já lidam com múltiplos nomes possíveis
