@@ -586,7 +586,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       </div>
       <div class="cfg-section" id="cfgPermSection" style="margin-bottom:0;display:none">
         <h3>🔐 Permissões de Budget por Usuário</h3>
-        <p style="font-size:11px;color:#7a8ab0;margin:0 0 12px">Configure o acesso de cada usuário ao sistema:<br>• <strong>Áreas</strong> (Budget/Folha): marque as áreas que o usuário pode ver. Vazio = acesso total às áreas.<br>• <strong>👑 Administrador</strong>: pode editar configurações, salvar dados e gerenciar usuários.<br>• <strong>📦 OTB</strong>: permite acesso ao módulo de Open to Buy. Admin sempre tem.</p>
+        <p style="font-size:11px;color:#7a8ab0;margin:0 0 12px">Configure o acesso de cada usuário ao sistema:<br>• <strong>Áreas</strong> (Budget/Folha): marque as áreas que o usuário pode ver. Vazio = acesso total às áreas.<br>• <strong>👑 Administrador</strong>: pode acessar e editar OTB, DRE, Budget e Folha, salvar dados e gerenciar usuários. Sem essa marcação o usuário não vê o módulo OTB e não consegue salvar alterações em nenhuma tela.</p>
         <div id="cfgPermRows"></div>
         <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input id="permNewEmail" type="email" placeholder="novo@email.com" style="flex:1;min-width:200px;padding:7px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:12px;font-family:inherit">
@@ -1237,16 +1237,10 @@ function permRow(email, selectedAreas, isAdminUser, hasOtbAccess){
   var adminCheckHtml = '<label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:'+(superAdmin?'not-allowed':'pointer')+';padding:3px 8px;background:'+(isAdminUser||superAdmin?'#fff4e0':'#f0f3fa')+';border:1.5px solid '+(isAdminUser||superAdmin?'#e89c40':'#d0d8ee')+';border-radius:4px;font-weight:'+(isAdminUser||superAdmin?'700':'500')+';color:'+(isAdminUser||superAdmin?'#a55a00':'#0f1a3a')+'">'
     +'<input type="checkbox" class="perm-admin-cb" '+(isAdminUser||superAdmin?'checked':'')+' '+(superAdmin?'disabled':'')+' style="cursor:'+(superAdmin?'not-allowed':'pointer')+'">'
     +'👑 Administrador'+(superAdmin?' (Super)':'')+'</label>';
-  // OTB Access checkbox — admin sempre tem (disabled), demais escolhem
-  var otbEffective = isAdminUser || superAdmin || hasOtbAccess;
-  var otbCheckHtml = '<label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:'+(isAdminUser||superAdmin?'not-allowed':'pointer')+';padding:3px 8px;background:'+(otbEffective?'#e8f0ff':'#f0f3fa')+';border:1.5px solid '+(otbEffective?'#5a8fd0':'#d0d8ee')+';border-radius:4px;font-weight:'+(otbEffective?'700':'500')+';color:'+(otbEffective?'#1a4d8f':'#0f1a3a')+'" title="'+(isAdminUser||superAdmin?'Admin sempre tem acesso ao OTB':'Permite acesso ao módulo OTB')+'">'
-    +'<input type="checkbox" class="perm-otb-cb" '+(otbEffective?'checked':'')+' '+(isAdminUser||superAdmin?'disabled':'')+' style="cursor:'+(isAdminUser||superAdmin?'not-allowed':'pointer')+'">'
-    +'📦 OTB</label>';
   return '<div class="perm-row" data-email="'+email+'" data-super-admin="'+(superAdmin?'1':'0')+'" style="background:#f7f9ff;border:1px solid #d0d8ee;border-radius:6px;padding:10px 12px;margin-bottom:8px">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">'
     +'<span style="font-size:12px;font-weight:700;color:#1a2547;flex:1;min-width:200px">'+email+'</span>'
     +adminCheckHtml
-    +otbCheckHtml
     +seeAsBtn
     +removeBtn
     +'</div>'
@@ -1316,16 +1310,13 @@ async function savePermissions(btn){
   document.querySelectorAll('.perm-row').forEach(function(row){
     var email = row.getAttribute('data-email');
     var isSuper = row.getAttribute('data-super-admin') === '1';
-    var areas = Array.from(row.querySelectorAll('input[type=checkbox]:not(.perm-admin-cb):not(.perm-otb-cb):checked')).map(function(cb){ return cb.value; });
+    var areas = Array.from(row.querySelectorAll('input[type=checkbox]:not(.perm-admin-cb):checked')).map(function(cb){ return cb.value; });
     var adminCb = row.querySelector('.perm-admin-cb');
-    var otbCb = row.querySelector('.perm-otb-cb');
     var isAdminFlag = adminCb && adminCb.checked;
-    var hasOtb = otbCb && otbCb.checked;
     // Super-admins (hardcoded) não precisam ser salvos em USER_PERMISSIONS — exceto se tiverem áreas restritas
     if(isSuper && areas.length === 0) return; // não salva — gerenciado por ADMIN_EMAILS
     newPerms[email] = { budgetAreas: areas };
     if(isAdminFlag && !isSuper) newPerms[email].admin = true;
-    if(hasOtb && !isSuper && !isAdminFlag) newPerms[email].otbAccess = true; // admin tem OTB implícito
   });
   try{
     await supaSave(TBLS.save_dre, 'user_permissions', newPerms);
@@ -4699,10 +4690,15 @@ function _is13VerbaName(colName){
 // Multi-canal: se uma pessoa pertence a N canais, seu salário é RATEADO 1/N por canal.
 function folhaSalCanalAm(canal, am){
   if(!canal || !am) return 0;
+  // Override manual do DRE Config tem prioridade — quando preenchido, sobrepõe a Folha
+  var canalUp = String(canal).toUpperCase();
+  var overrideKey = canalUp.toLowerCase() + '_abs'; // CLOSER → closer_abs, etc
+  if(typeof DRE_CFG_PARAMS !== 'undefined' && DRE_CFG_PARAMS[am] && DRE_CFG_PARAMS[am][overrideKey] != null){
+    return parseFloat(DRE_CFG_PARAMS[am][overrideKey])||0;
+  }
   var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
           : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW && FOLHA_RAW.length) ? FOLHA_RAW : [];
   if(!src.length) return 0;
-  var canalUp = String(canal).toUpperCase();
   var cacheKey = canalUp + '|' + am;
   // Cache hit
   if(_folhaSalCache.byCanalAm[cacheKey] !== undefined) return _folhaSalCache.byCanalAm[cacheKey];
@@ -4852,6 +4848,10 @@ function folhaSalIndividualAm(personName, am, canalRequired){
 // Memoizado por am
 function folhaSalAdmAm(am){
   if(!am) return 0;
+  // Override manual do DRE Config tem prioridade — quando preenchido, sobrepõe a Folha
+  if(typeof DRE_CFG_PARAMS !== 'undefined' && DRE_CFG_PARAMS[am] && DRE_CFG_PARAMS[am].sal_adm != null){
+    return parseFloat(DRE_CFG_PARAMS[am].sal_adm)||0;
+  }
   var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
           : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW && FOLHA_RAW.length) ? FOLHA_RAW : [];
   if(!src.length) return 0;
@@ -5902,6 +5902,9 @@ async function openDreCfg(){
     if(before.length) return before[before.length-1];
     return _folhaMesesDisp[_folhaMesesDisp.length-1];
   })();
+  // Para o display da Config: usa SEMPRE o mês selecionado (sem fallback pra mês anterior),
+  // senão a tela "mente" e mostra valores de outro mês quando o atual está vazio.
+  _folhaAmRef = am;
 
   // ── Ref values ────────────────────────────────────
   var rbCloser    = rbCanal('CLOSER',am),    folhaCloser    = folhaTotalCanal('CLOSER',am);
@@ -6058,16 +6061,36 @@ async function openDreCfg(){
       '👟 Custo unitário aplicado às qtd_grade_hava do mês')
     +'</div></div>'
 
-    // ── SALÁRIOS COMERCIAIS (somente leitura — vem da Folha) ──
+    // ── SALÁRIOS COMERCIAIS (editáveis, sobrepõem Folha quando preenchidos) ──
     +'<div class="dre-cfg-sec">'
-    +'<div class="dre-cfg-sec-hd">💼 Salários Comerciais — Folha do mês ('+am+')</div>'
-    +'<div style="font-size:11px;color:#7a8ab0;padding:6px 14px 0;line-height:1.5">Valores calculados automaticamente da <strong>Folha</strong> de cada vendedor, somando todas as verbas <strong>exceto 13º Salário</strong>. Para alterar, ajuste a classificação na tela <strong>Folha</strong>.</div>'
+    +'<div class="dre-cfg-sec-hd">💼 Salários Comerciais — Mês ('+am+')</div>'
+    +'<div style="font-size:11px;color:#7a8ab0;padding:6px 14px 0;line-height:1.5">Campos editáveis. Por padrão pegam o valor da <strong>Folha</strong> do mês (verbas exceto 13°). Você pode <strong>sobrepor</strong> com um valor manual — neste caso o DRE passa a usar o valor digitado e ignora a Folha para este canal/mês. Deixe vazio para voltar ao automático.</div>'
     +'<div class="dre-cfg-grid">'
-    +readOnlyField('Sal. Closer (R$)',    folhaCloserS13,    'CLOSER — '+(folhaCloserS13?'verbas s/ 13° somadas':'nenhuma pessoa classificada'))
-    +readOnlyField('Sal. Developer (R$)', folhaDeveloperS13, 'DEVELOPER — '+(folhaDeveloperS13?'verbas s/ 13° somadas':'nenhuma pessoa classificada'))
-    +readOnlyField('Sal. Farmer (R$)',    folhaFarmerS13,    'FARMER — '+(folhaFarmerS13?'verbas s/ 13° somadas':'nenhuma pessoa classificada'))
-    +readOnlyField('Sal. Hava (R$)',      folhaHavaS13,      'HAVA — '+(folhaHavaS13?'verbas s/ 13° somadas':'classifique pessoas como HAVA na Folha'))
-    +readOnlyField('Sal. KA (R$)',        folhaKaS13,        'KA — '+(folhaKaS13?'verbas s/ 13° somadas':'classifique pessoas como KA na Folha'))
+    +fieldBrl('Sal. Closer (R$)', 'closer_abs',
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].closer_abs!=null) ? DRE_CFG_PARAMS[am].closer_abs : folhaCloserS13,
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].closer_abs!=null
+          ? '✏️ Override manual · 📊 Folha do mês: R$ '+Math.round(folhaCloserS13||0).toLocaleString('pt-BR')
+          : (folhaCloserS13>0 ? '📊 Folha do mês (CLOSER, s/ 13°): R$ '+Math.round(folhaCloserS13).toLocaleString('pt-BR') : '⚠ Sem CLOSER classificado na Folha em '+am)))
+    +fieldBrl('Sal. Developer (R$)', 'developer_abs',
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].developer_abs!=null) ? DRE_CFG_PARAMS[am].developer_abs : folhaDeveloperS13,
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].developer_abs!=null
+          ? '✏️ Override manual · 📊 Folha do mês: R$ '+Math.round(folhaDeveloperS13||0).toLocaleString('pt-BR')
+          : (folhaDeveloperS13>0 ? '📊 Folha do mês (DEVELOPER, s/ 13°): R$ '+Math.round(folhaDeveloperS13).toLocaleString('pt-BR') : '⚠ Sem DEVELOPER classificado na Folha em '+am)))
+    +fieldBrl('Sal. Farmer (R$)', 'farmer_abs',
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].farmer_abs!=null) ? DRE_CFG_PARAMS[am].farmer_abs : folhaFarmerS13,
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].farmer_abs!=null
+          ? '✏️ Override manual · 📊 Folha do mês: R$ '+Math.round(folhaFarmerS13||0).toLocaleString('pt-BR')
+          : (folhaFarmerS13>0 ? '📊 Folha do mês (FARMER, s/ 13°): R$ '+Math.round(folhaFarmerS13).toLocaleString('pt-BR') : '⚠ Sem FARMER classificado na Folha em '+am)))
+    +fieldBrl('Sal. Hava (R$)', 'hava_abs',
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].hava_abs!=null) ? DRE_CFG_PARAMS[am].hava_abs : folhaHavaS13,
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].hava_abs!=null
+          ? '✏️ Override manual · 📊 Folha do mês: R$ '+Math.round(folhaHavaS13||0).toLocaleString('pt-BR')
+          : (folhaHavaS13>0 ? '📊 Folha do mês (HAVA, s/ 13°): R$ '+Math.round(folhaHavaS13).toLocaleString('pt-BR') : '⚠ Sem HAVA classificado na Folha em '+am)))
+    +fieldBrl('Sal. KA (R$)', 'ka_abs',
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].ka_abs!=null) ? DRE_CFG_PARAMS[am].ka_abs : folhaKaS13,
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].ka_abs!=null
+          ? '✏️ Override manual · 📊 Folha do mês: R$ '+Math.round(folhaKaS13||0).toLocaleString('pt-BR')
+          : (folhaKaS13>0 ? '📊 Folha do mês (KA, s/ 13°): R$ '+Math.round(folhaKaS13).toLocaleString('pt-BR') : '⚠ Sem KA classificado na Folha em '+am)))
     +'</div>'    +'<div class="dre-cfg-grid" style="margin-top:12px;padding-top:12px;border-top:1px dashed #d0d8ee">'    +fieldPct('% 13º + Férias', 'pct13ferias', (function(){ var v=getP('pct13ferias'); return (!v||v<=0) ? 0.11 : v; })(),      '📐 Aplicado sobre o total de salários — resultado em 13º + Férias (-)'    )    +'</div></div>'
 
     // ── COMISSÕES ──
@@ -6099,9 +6122,13 @@ async function openDreCfg(){
     // ── FIXOS ──
     +'<div class="dre-cfg-sec">'
     +'<div class="dre-cfg-sec-hd">🏢 Despesas Fixas</div>'
-    +'<div style="font-size:11px;color:#7a8ab0;padding:6px 14px 0;line-height:1.5">Salário Adm calculado automaticamente da <strong>Folha</strong> (pessoas classificadas como ADMINISTRATIVO), somando verbas <strong>exceto 13º Salário</strong>.</div>'
+    +'<div style="font-size:11px;color:#7a8ab0;padding:6px 14px 0;line-height:1.5">Salário Adm puxado da <strong>Folha</strong> (pessoas classificadas como ADMINISTRATIVO, verbas s/ 13°). Você pode <strong>sobrepor</strong> com um valor manual — deixe vazio para voltar ao automático.</div>'
     +'<div class="dre-cfg-grid">'
-    +readOnlyField('Salários Adm (R$)', folhaAdm, folhaAdm ? '👥 Folha ADM (verbas s/ 13°)' : 'Nenhuma pessoa marcada como ADM na Folha')
+    +fieldBrl('Salários Adm (R$)', 'sal_adm',
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].sal_adm!=null) ? DRE_CFG_PARAMS[am].sal_adm : folhaAdm,
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].sal_adm!=null
+          ? '✏️ Override manual · 📊 Folha do mês (ADM): R$ '+Math.round(folhaAdm||0).toLocaleString('pt-BR')
+          : (folhaAdm>0 ? '📊 Folha do mês (ADM, s/ 13°): R$ '+Math.round(folhaAdm).toLocaleString('pt-BR') : '⚠ Nenhuma pessoa marcada como ADM na Folha em '+am)))
     +fieldBrl('Despesas Gerais (R$)', 'desp_gerais', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].desp_gerais!=null)?DRE_CFG_PARAMS[am].desp_gerais:FIXOS_DEF.desp_gerais,
       despGerais ? '💸 Base: '+fmt(despGerais) : '')
     +fieldBrl('CD — Centro de Dist. (R$)', 'cd_mensal', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].cd_mensal!=null)?DRE_CFG_PARAMS[am].cd_mensal:FIXOS_DEF.cd_mensal,
@@ -6183,11 +6210,19 @@ function applyDreCfg(){
       DRE_CONFIG[k][am] = val;
     });
     DRE_CFG_PARAMS[am].desp_mkt = gv('desp_mkt');
-    // Salários comerciais (closer_abs etc) — NÃO são mais editáveis no DRE Config:
-    // o DRE puxa os valores diretamente da Folha (verbas excluindo 13°) por canal e mês.
-    // Limpa qualquer override antigo que possa estar armazenado.
-    ['closer_abs','developer_abs','farmer_abs','hava_abs','ka_abs','sal_adm'].forEach(function(k){
-      if(DRE_CFG_PARAMS[am][k] != null) delete DRE_CFG_PARAMS[am][k];
+    // Salários comerciais — editáveis. Se vazio = remove override (DRE volta a usar Folha).
+    // Se preenchido = grava override e DRE usa o valor manual.
+    ['closer_abs','developer_abs','farmer_abs','hava_abs','ka_abs'].forEach(function(k){
+      var el = document.getElementById('dcf_'+k);
+      if(!el) return;
+      var raw = (el.value||'').trim();
+      if(raw === ''){
+        if(DRE_CFG_PARAMS[am][k] != null) delete DRE_CFG_PARAMS[am][k];
+      } else {
+        var v = parseFloat(raw);
+        if(isNaN(v)){ if(DRE_CFG_PARAMS[am][k] != null) delete DRE_CFG_PARAMS[am][k]; }
+        else { DRE_CFG_PARAMS[am][k] = v; }
+      }
     });
     // Save pct13ferias as decimal
     var pct13val = gv('pct13ferias');
@@ -6216,7 +6251,19 @@ function applyDreCfg(){
     // Salva fixos por mês (sal_adm NÃO é mais salvo — vem da Folha)
     var _mktVal = parseFloat(document.getElementById('dcf_desp_mkt')?document.getElementById('dcf_desp_mkt').value:0)||0;
     DRE_CFG_PARAMS[am].desp_mkt   = _mktVal;
-    if(DRE_CFG_PARAMS[am].sal_adm != null) delete DRE_CFG_PARAMS[am].sal_adm;
+    // Salário Adm — editável. Mesma lógica: vazio = remove override; preenchido = grava.
+    (function(){
+      var el = document.getElementById('dcf_sal_adm');
+      if(!el) return;
+      var raw = (el.value||'').trim();
+      if(raw === ''){
+        if(DRE_CFG_PARAMS[am].sal_adm != null) delete DRE_CFG_PARAMS[am].sal_adm;
+      } else {
+        var v = parseFloat(raw);
+        if(isNaN(v)){ if(DRE_CFG_PARAMS[am].sal_adm != null) delete DRE_CFG_PARAMS[am].sal_adm; }
+        else { DRE_CFG_PARAMS[am].sal_adm = v; }
+      }
+    })();
     DRE_CFG_PARAMS[am].desp_gerais= gv('desp_gerais');
     DRE_CFG_PARAMS[am].cd_mensal  = gv('cd_mensal');
     DRE_CFG_PARAMS[am].custoGrade = gv('custoGrade');
@@ -6371,14 +6418,9 @@ function isLoggedUserPermitted(){
 }
 // Pode editar (Salvar, Configurar, Recarregar dados) — só admin REAL (impersonation não pode editar)
 function canEdit(){ return isRealAdmin() && !isImpersonating(); }
-// Pode acessar o módulo OTB? Admin = sempre; demais = só se USER_PERMISSIONS[email].otbAccess === true
+// Pode acessar o módulo OTB? Agora restrito a administradores.
 function canAccessOtb(){
-  if(isAdmin()) return true;
-  var em = getEffectiveUserEmail();
-  if(!em) return true; // sem login = não bloqueia (login lida)
-  // Em modo "transição" (nenhum usuário cadastrado), libera
-  if(Object.keys(USER_PERMISSIONS).length === 0) return true;
-  return !!(USER_PERMISSIONS[em] && USER_PERMISSIONS[em].otbAccess);
+  return isAdmin();
 }
 // Áreas permitidas pro usuário atual (Budget E Folha usam a mesma lista)
 function getFolhaAreasPermitidas(){ return getBudgetAreasPermitidas(); }
@@ -8268,6 +8310,16 @@ function openBudgetCfg(){
   document.getElementById('budgetCfgOverlay').style.display='flex';
 }
 
+// Debounce do campo de busca — evita re-renderizar a tabela inteira a cada tecla
+var _bcfgSearchTimer = null;
+function bcfgSearchInput(v){
+  if(_bcfgSearchTimer) clearTimeout(_bcfgSearchTimer);
+  _bcfgSearchTimer = setTimeout(function(){
+    _bcfgSearchTimer = null;
+    renderBudgetCfgTable(v);
+  }, 250);
+}
+
 function renderBudgetCfgTable(search){
   var container = document.getElementById('bcfgTableWrap') || document.getElementById('budgetCfgBody');
   // Data always stored on budgetCfgBody
@@ -8281,6 +8333,9 @@ function renderBudgetCfgTable(search){
   var selStyle  = dataEl._selStyle;
   var inpStyle  = dataEl._inpStyle;
   var fmtVal    = budgetFmtVal;
+
+  // Limite por seção pra evitar travamentos com milhares de linhas — refine a busca pra ver mais
+  var MAX_ROWS = 200;
 
   var searchUC = (search||'').trim().toUpperCase();
 
@@ -8331,7 +8386,7 @@ function renderBudgetCfgTable(search){
   // Barra de busca + resumo
   h += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap">';
   h += '<div style="flex:1;min-width:200px">';
-  h += '<input id="bcfg_search" type="text" placeholder="🔍 Pesquisar fornecedor classificado..." value="'+escHtml(search||'')+'" oninput="renderBudgetCfgTable(this.value)" style="'+inpStyle+';font-size:12px;padding:6px 10px">';
+  h += '<input id="bcfg_search" type="text" placeholder="🔍 Pesquisar fornecedor classificado..." value="'+escHtml(search||'')+'" oninput="bcfgSearchInput(this.value)" style="'+inpStyle+';font-size:12px;padding:6px 10px">';
   h += '</div>';
   h += '<div style="font-size:11px;color:#7a8ab0;white-space:nowrap">';
   h += '<span style="color:#e05a2b;font-weight:700">'+pendingCount+'</span> pendentes · ';
@@ -8362,10 +8417,14 @@ function renderBudgetCfgTable(search){
     h += '<div style="font-size:10px;font-weight:700;letter-spacing:1px;color:#e05a2b;padding:6px 10px 4px;background:#fff8f5;border-left:3px solid #e05a2b;margin-bottom:2px">'+pendLabel+'</div>';
     h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">';
     h += thHead + '<tbody>';
-    showPending.forEach(function(k, i){
+    var pendSlice = showPending.slice(0, MAX_ROWS);
+    pendSlice.forEach(function(k, i){
       h += budgetCfgRow(k, i, combos[k], BUDGET_CFG.classif[k]||{}, tipoOpts, areaOpts, selStyle, inpStyle, fmtVal, 'p');
     });
     h += '</tbody></table>';
+    if(showPending.length > MAX_ROWS){
+      h += '<div style="padding:6px 10px;font-size:11px;color:#7a8ab0;font-style:italic;text-align:center;background:#fff8f5;border:1px dashed #e05a2b;border-radius:4px;margin-bottom:8px">Mostrando os primeiros '+MAX_ROWS+' de '+showPending.length+'. Refine a busca para ver os demais.</div>';
+    }
   }
 
   // ── Classificados (só quando há busca) ──
@@ -8373,10 +8432,14 @@ function renderBudgetCfgTable(search){
     h += '<div style="font-size:10px;font-weight:700;letter-spacing:1px;color:#1a7c3e;padding:6px 10px 4px;background:#f0fff6;border-left:3px solid #1a7c3e;margin-bottom:2px">✔ CLASSIFICADOS — resultado da busca ('+showClassified.length+')</div>';
     h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">';
     h += thHead + '<tbody>';
-    showClassified.forEach(function(k, i){
+    var clsSlice = showClassified.slice(0, MAX_ROWS);
+    clsSlice.forEach(function(k, i){
       h += budgetCfgRow(k, i, combos[k], BUDGET_CFG.classif[k]||{}, tipoOpts, areaOpts, selStyle, inpStyle, fmtVal, 'c');
     });
     h += '</tbody></table>';
+    if(showClassified.length > MAX_ROWS){
+      h += '<div style="padding:6px 10px;font-size:11px;color:#7a8ab0;font-style:italic;text-align:center;background:#f0fff6;border:1px dashed #1a7c3e;border-radius:4px;margin-bottom:8px">Mostrando os primeiros '+MAX_ROWS+' de '+showClassified.length+'. Refine a busca para ver os demais.</div>';
+    }
   }
 
   if(!showPending.length && !showClassified.length && searchUC.length > 0){
