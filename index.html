@@ -5411,6 +5411,11 @@ function folhaCfgFilter(q){
   var lista  = window._folhaCfgLista || [];
   var nomes  = window._folhaCfgNomes || {};
   var qUp    = q.trim().toUpperCase();
+  console.log('[folhaCfgFilter] q="'+q+'" lista.length='+lista.length+' nomes.keys='+Object.keys(nomes).length);
+  if(!lista.length){
+    console.warn('[folhaCfgFilter] lista vazia — window._folhaCfgLista não foi populada. Reabra o modal.');
+    return;
+  }
   var filtered = !qUp ? lista : lista.filter(function(nome){
     if(nome.toUpperCase().includes(qUp)) return true;
     var info  = nomes[nome] || {};
@@ -5418,9 +5423,12 @@ function folhaCfgFilter(q){
     if((info.areaBruta||'').toUpperCase().includes(qUp)) return true;
     var salvo = FOLHA_CFG.classif[nome] || {};
     if((salvo.area||'').toUpperCase().includes(qUp)) return true;
-    if((salvo.canal||'').toUpperCase().includes(qUp)) return true;
+    // canal pode ser string ou array — normaliza pra string antes do include
+    var canalStr = Array.isArray(salvo.canal) ? salvo.canal.join(',') : String(salvo.canal||'');
+    if(canalStr.toUpperCase().includes(qUp)) return true;
     return false;
   });
+  console.log('[folhaCfgFilter] qUp="'+qUp+'" → '+filtered.length+'/'+lista.length+' resultados');
   folhaCfgRender(filtered);
 }
 
