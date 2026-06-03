@@ -6648,7 +6648,9 @@ async function openBudget(){
       step('Folha ('+FOLHA_RAW.length.toLocaleString('pt-BR')+' linhas)', Date.now()-t1);
     }
 
-    // 2) DRE — usa snapshot se disponível (rápido, ~25k linhas) — em paralelo com Budget
+    // 2) DRE — usa snapshot se disponível (rápido, ~25k linhas). Quando não há snapshot,
+    // pode levar ~80s pra carregar bruto — NÃO bloqueia o render do Budget; deixa em background
+    // e re-renderiza quando chegar. Linhas que dependem do DRE (Receita Bruta) ficam "—" no meio tempo.
     _budgetSetProgress(30, 'Carregando vendas (DRE)...');
     var t2 = Date.now();
     var drePromise;
@@ -6668,10 +6670,11 @@ async function openBudget(){
       step('Budget ('+(BUDGET_DESP_RAW||[]).length.toLocaleString('pt-BR')+' despesas)', Date.now()-t3);
     });
 
-    // Aguarda os dois em paralelo
-    _budgetSetProgress(70, 'Aguardando dados...');
-    await Promise.all([drePromise, budgetPromise]);
-
+    // ── Estratégia: renderiza com o que estiver pronto primeiro (Folha+Budget — rápidos) ──
+    // Se o DRE ainda estiver carregando (sem snapshot, bruto = ~80s), não esperamos —
+    // mostramos a tela e re-renderizamos quando o DRE chegar.
+    await budgetPromise;
+    var dreAlreadyDone = DRE_LOADED;
     _budgetSetProgress(90, 'Renderizando tabela...');
     var t4 = Date.now();
     renderBudget();
@@ -6679,6 +6682,18 @@ async function openBudget(){
     _budgetSetProgress(100, 'Pronto');
     console.log('[openBudget] total:', (Date.now()-t0)+'ms', steps);
     setTimeout(function(){ _budgetShowLoading(false); }, 200);
+
+    // Se DRE ainda não terminou, re-renderiza quando chegar (aparece toast discreto)
+    if(!dreAlreadyDone){
+      drePromise.then(function(){
+        console.log('[openBudget] DRE chegou tarde — re-renderizando Budget com receita real');
+        try { renderBudget(); } catch(e){ console.warn('[openBudget] re-render falhou:', e.message); }
+        toast('✔ Receita carregada — Budget atualizado');
+      }).catch(function(e){
+        console.warn('[openBudget] DRE falhou em background:', e && e.message);
+      });
+    }
+    return;
   } catch(e){
     console.error('[openBudget] erro:', e);
     _budgetSetProgress(0, '❌ Erro: '+e.message);
