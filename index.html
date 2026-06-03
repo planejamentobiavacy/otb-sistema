@@ -5906,6 +5906,32 @@ async function openDreCfg(){
   // senão a tela "mente" e mostra valores de outro mês quando o atual está vazio.
   _folhaAmRef = am;
 
+  // Helper: monta a mensagem de referência abaixo do campo de salário.
+  // - Se o mês atual tem dados na Folha: mostra o valor.
+  // - Se NÃO tem mas existe um mês anterior com dados: mostra esse mês como referência.
+  // - Se nem o anterior tem nada: avisa que está vazio.
+  function _salMsgRef(noun, currentVal, computeForAm){
+    if(currentVal > 0){
+      return '📊 Folha do mês ('+noun+', s/ 13°): R$ '+Math.round(currentVal).toLocaleString('pt-BR');
+    }
+    var before = _folhaMesesDisp.filter(function(m){ return m < am; });
+    var prev = before.length ? before[before.length-1] : null;
+    if(!prev) return '⚠ Sem '+noun+' classificado na Folha em '+am;
+    // Computa valor do mês anterior (folhaTotalCanalS13/folhaTotalAdm usam _folhaAmRef internamente,
+    // então trocamos temporariamente pra buscar o valor de prev e restauramos depois).
+    var _sv = _folhaAmRef; _folhaAmRef = prev;
+    var prevVal = 0;
+    try { prevVal = computeForAm(prev) || 0; } catch(e){ prevVal = 0; }
+    _folhaAmRef = _sv;
+    var _mn = parseInt(prev.slice(4,6),10);
+    var _ml = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    var prevLabel = _ml[_mn]+'/'+prev.slice(0,4);
+    if(prevVal > 0){
+      return '⚠ Sem dados em '+am+' — referência '+prevLabel+' ('+noun+', s/ 13°): R$ '+Math.round(prevVal).toLocaleString('pt-BR');
+    }
+    return '⚠ Sem '+noun+' classificado na Folha em '+am+' (nem em '+prevLabel+')';
+  }
+
   // ── Ref values ────────────────────────────────────
   var rbCloser    = rbCanal('CLOSER',am),    folhaCloser    = folhaTotalCanal('CLOSER',am);
   var rbDeveloper = rbCanal('DEVELOPER',am), folhaDeveloper = folhaTotalCanal('DEVELOPER',am);
@@ -6068,29 +6094,24 @@ async function openDreCfg(){
     +'<div class="dre-cfg-grid">'
     +fieldBrl('Sal. Closer (R$)', 'closer_abs',
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].closer_abs!=null) ? DRE_CFG_PARAMS[am].closer_abs : folhaCloserS13,
-       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].closer_abs!=null
-          ? '✏️ Override manual · 📊 Folha do mês: R$ '+Math.round(folhaCloserS13||0).toLocaleString('pt-BR')
-          : (folhaCloserS13>0 ? '📊 Folha do mês (CLOSER, s/ 13°): R$ '+Math.round(folhaCloserS13).toLocaleString('pt-BR') : '⚠ Sem CLOSER classificado na Folha em '+am)))
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].closer_abs!=null ? '✏️ Override manual · ' : '')
+       + _salMsgRef('CLOSER', folhaCloserS13, function(p){ return folhaTotalCanalS13('CLOSER', p); }))
     +fieldBrl('Sal. Developer (R$)', 'developer_abs',
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].developer_abs!=null) ? DRE_CFG_PARAMS[am].developer_abs : folhaDeveloperS13,
-       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].developer_abs!=null
-          ? '✏️ Override manual · 📊 Folha do mês: R$ '+Math.round(folhaDeveloperS13||0).toLocaleString('pt-BR')
-          : (folhaDeveloperS13>0 ? '📊 Folha do mês (DEVELOPER, s/ 13°): R$ '+Math.round(folhaDeveloperS13).toLocaleString('pt-BR') : '⚠ Sem DEVELOPER classificado na Folha em '+am)))
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].developer_abs!=null ? '✏️ Override manual · ' : '')
+       + _salMsgRef('DEVELOPER', folhaDeveloperS13, function(p){ return folhaTotalCanalS13('DEVELOPER', p); }))
     +fieldBrl('Sal. Farmer (R$)', 'farmer_abs',
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].farmer_abs!=null) ? DRE_CFG_PARAMS[am].farmer_abs : folhaFarmerS13,
-       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].farmer_abs!=null
-          ? '✏️ Override manual · 📊 Folha do mês: R$ '+Math.round(folhaFarmerS13||0).toLocaleString('pt-BR')
-          : (folhaFarmerS13>0 ? '📊 Folha do mês (FARMER, s/ 13°): R$ '+Math.round(folhaFarmerS13).toLocaleString('pt-BR') : '⚠ Sem FARMER classificado na Folha em '+am)))
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].farmer_abs!=null ? '✏️ Override manual · ' : '')
+       + _salMsgRef('FARMER', folhaFarmerS13, function(p){ return folhaTotalCanalS13('FARMER', p); }))
     +fieldBrl('Sal. Hava (R$)', 'hava_abs',
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].hava_abs!=null) ? DRE_CFG_PARAMS[am].hava_abs : folhaHavaS13,
-       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].hava_abs!=null
-          ? '✏️ Override manual · 📊 Folha do mês: R$ '+Math.round(folhaHavaS13||0).toLocaleString('pt-BR')
-          : (folhaHavaS13>0 ? '📊 Folha do mês (HAVA, s/ 13°): R$ '+Math.round(folhaHavaS13).toLocaleString('pt-BR') : '⚠ Sem HAVA classificado na Folha em '+am)))
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].hava_abs!=null ? '✏️ Override manual · ' : '')
+       + _salMsgRef('HAVA', folhaHavaS13, function(p){ return folhaTotalCanalS13('HAVA', p); }))
     +fieldBrl('Sal. KA (R$)', 'ka_abs',
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].ka_abs!=null) ? DRE_CFG_PARAMS[am].ka_abs : folhaKaS13,
-       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].ka_abs!=null
-          ? '✏️ Override manual · 📊 Folha do mês: R$ '+Math.round(folhaKaS13||0).toLocaleString('pt-BR')
-          : (folhaKaS13>0 ? '📊 Folha do mês (KA, s/ 13°): R$ '+Math.round(folhaKaS13).toLocaleString('pt-BR') : '⚠ Sem KA classificado na Folha em '+am)))
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].ka_abs!=null ? '✏️ Override manual · ' : '')
+       + _salMsgRef('KA', folhaKaS13, function(p){ return folhaTotalCanalS13('KA', p); }))
     +'</div>'    +'<div class="dre-cfg-grid" style="margin-top:12px;padding-top:12px;border-top:1px dashed #d0d8ee">'    +fieldPct('% 13º + Férias', 'pct13ferias', (function(){ var v=getP('pct13ferias'); return (!v||v<=0) ? 0.11 : v; })(),      '📐 Aplicado sobre o total de salários — resultado em 13º + Férias (-)'    )    +'</div></div>'
 
     // ── COMISSÕES ──
@@ -6126,9 +6147,8 @@ async function openDreCfg(){
     +'<div class="dre-cfg-grid">'
     +fieldBrl('Salários Adm (R$)', 'sal_adm',
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].sal_adm!=null) ? DRE_CFG_PARAMS[am].sal_adm : folhaAdm,
-       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].sal_adm!=null
-          ? '✏️ Override manual · 📊 Folha do mês (ADM): R$ '+Math.round(folhaAdm||0).toLocaleString('pt-BR')
-          : (folhaAdm>0 ? '📊 Folha do mês (ADM, s/ 13°): R$ '+Math.round(folhaAdm).toLocaleString('pt-BR') : '⚠ Nenhuma pessoa marcada como ADM na Folha em '+am)))
+       (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].sal_adm!=null ? '✏️ Override manual · ' : '')
+       + _salMsgRef('ADM', folhaAdm, function(p){ return folhaTotalAdm(p); }))
     +fieldBrl('Despesas Gerais (R$)', 'desp_gerais', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].desp_gerais!=null)?DRE_CFG_PARAMS[am].desp_gerais:FIXOS_DEF.desp_gerais,
       despGerais ? '💸 Base: '+fmt(despGerais) : '')
     +fieldBrl('CD — Centro de Dist. (R$)', 'cd_mensal', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].cd_mensal!=null)?DRE_CFG_PARAMS[am].cd_mensal:FIXOS_DEF.cd_mensal,
