@@ -605,6 +605,9 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
     </div>
     <div class="cfg-footer">
       <button class="btn save" onclick="handleSaveAll(this)" style="margin-right:auto">💾 Salvar Tudo</button>
+      <button class="btn" onclick="handleExportBackup(this)" style="background:#1a4d8f;color:#fff;border:none" title="Baixa um JSON com TODAS as classificações, overrides, projeções e parâmetros (não inclui dados brutos — esses se recuperam com Recarregar Tudo). Recomendado: 1x por semana num Drive seguro.">📥 Exportar Backup</button>
+      <button class="btn" onclick="document.getElementById('cfgImportBackupFile').click()" style="background:#5a3d8f;color:#fff;border:none" title="Restaura backup a partir de arquivo JSON exportado anteriormente. ATENÇÃO: sobrescreve as configurações atuais.">📤 Restaurar</button>
+      <input type="file" id="cfgImportBackupFile" accept=".json" style="display:none" onchange="handleImportBackup(this)">
       <button class="btn" onclick="closeConfig()">Fechar</button>
     </div>
   </div>
@@ -2285,6 +2288,172 @@ async function handleSaveAll(btn){
   }
   console.log('[handleSaveAll] total:', dtTotal+'ms', steps, erros.length?{erros:erros}:'');
   btn.textContent = orig; btn.disabled = false;
+
+  // ── Auto-backup em chave datada (mantém últimos 7 dias) ────────────────
+  // Roda em background depois do save principal; não bloqueia toast/UI.
+  if(!erros.length) _autoBackupRotate();
+}
+
+// ─── Chaves que valem backup automático (trabalho manual, não-regenerável) ───
+// Dados brutos e snapshots agregados (dre_current, budget_cfg) ficam de fora porque
+// se recuperam totalmente com "Recarregar Tudo" + "Salvar Tudo".
+var _BACKUP_KEYS = [
+  {table:'save_dre',   key:'budget_classif'},   // classif, overrides, folhaProjecao, sim, tiposIgnorados
+  {table:'save_dre',   key:'dre_cfg_params'},   // config, fixos, cfgParams, vendedorMap
+  {table:'save_folha', key:'folha_classif'},    // área e canal manual por pessoa
+  {table:'save_otb',   key:'otb_current'}       // matrizes + gradeMap + state.edits (overrides futuros OTB)
+];
+var _BACKUP_DAYS_RETENTION = 7;
+
+function _today(){
+  var d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
+// Lê chaves atuais de cada item de _BACKUP_KEYS e copia pra <key>_backup_YYYY-MM-DD.
+// Depois enumera todos os backups e apaga os mais antigos que _BACKUP_DAYS_RETENTION dias.
+async function _autoBackupRotate(){
+  var dateStr = _today();
+  var cutoffMs = Date.now() - _BACKUP_DAYS_RETENTION*24*60*60*1000;
+  console.log('[autoBackup] iniciando rotação de backup', dateStr);
+  for(var i=0; i<_BACKUP_KEYS.length; i++){
+    var b = _BACKUP_KEYS[i];
+    try{
+      var cur = await supaLoad(b.table, b.key);
+      if(cur == null) continue;
+      var backupKey = b.key+'_backup_'+dateStr;
+      // Adiciona meta de backup ao payload pra facilitar restauração
+      var withMeta = (typeof cur === 'object' && cur !== null) 
+        ? Object.assign({}, cur, {_backupOf: b.key, _backupAt: new Date().toISOString()})
+        : {_backupOf: b.key, _backupAt: new Date().toISOString(), _backupValue: cur};
+      await supaSave(b.table, backupKey, withMeta);
+      console.log('[autoBackup] ✔', b.table+'/'+backupKey);
+    } catch(e){ console.warn('[autoBackup] falha em', b.key, ':', e.message); }
+  }
+  // Limpeza: lista todas as chaves *_backup_* e apaga > retenção
+  try{
+    var tables = Array.from(new Set(_BACKUP_KEYS.map(function(b){ return b.table; })));
+    for(var ti=0; ti<tables.length; ti++){
+      var tbl = tables[ti];
+      var rows = await supaFetch('/rest/v1/'+tbl+'?key=like.*_backup_*&select=key');
+      if(!rows || !rows.length) continue;
+      for(var ri=0; ri<rows.length; ri++){
+        var k = rows[ri].key;
+        var m = k.match(/_backup_(\d{4}-\d{2}-\d{2})$/);
+        if(!m) continue;
+        var d = new Date(m[1]+'T00:00:00');
+        if(isNaN(d.getTime())) continue;
+        if(d.getTime() < cutoffMs){
+          try{ await supaFetch('/rest/v1/'+tbl+'?key=eq.'+k, {method:'DELETE'}); console.log('[autoBackup] 🗑 expirou', k); }
+          catch(e){ console.warn('[autoBackup] não consegui apagar', k, ':', e.message); }
+        }
+      }
+    }
+  } catch(e){ console.warn('[autoBackup] limpeza falhou:', e.message); }
+  console.log('[autoBackup] rotação concluída');
+}
+
+// ─── Exportar Backup: gera JSON local com todas as configs não-regeneráveis ───
+async function handleExportBackup(btn){
+  var orig = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Coletando...';
+  try{
+    var payload = {
+      exportedAt: new Date().toISOString(),
+      exportedBy: (typeof CURRENT_USER_EMAIL !== 'undefined' && CURRENT_USER_EMAIL) || 'unknown',
+      system: 'avacy-otb',
+      version: '1',
+      retention: _BACKUP_DAYS_RETENTION,
+      data: {}
+    };
+    for(var i=0; i<_BACKUP_KEYS.length; i++){
+      var b = _BACKUP_KEYS[i];
+      btn.textContent = '⏳ '+b.key+'...';
+      try{
+        var v = await supaLoad(b.table, b.key);
+        payload.data[b.table+'/'+b.key] = v;
+      } catch(e){
+        payload.data[b.table+'/'+b.key] = {_error: e.message};
+      }
+    }
+    // Trigger download
+    var json = JSON.stringify(payload, null, 2);
+    var blob = new Blob([json], {type:'application/json'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    var ts = new Date();
+    var stamp = ts.getFullYear()+String(ts.getMonth()+1).padStart(2,'0')+String(ts.getDate()).padStart(2,'0')+'-'+String(ts.getHours()).padStart(2,'0')+String(ts.getMinutes()).padStart(2,'0');
+    a.href = url; a.download = 'avacy-otb-backup-'+stamp+'.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    var kb = Math.round(json.length/1024);
+    toast('✅ Backup exportado ('+kb+'KB) — guarde em local seguro', 'ok', 5000);
+  } catch(e){
+    toast('❌ Falha ao exportar: '+e.message, 'err', 6000);
+  }
+  btn.textContent = orig; btn.disabled = false;
+}
+
+// ─── Importar Backup: lê JSON e restaura no Supabase (com confirmação) ────────
+async function handleImportBackup(inputEl){
+  var file = inputEl.files && inputEl.files[0];
+  inputEl.value = ''; // permite re-selecionar o mesmo arquivo
+  if(!file) return;
+  if(typeof canEdit==='function' && !canEdit()){
+    toast('🔒 Você não tem permissão para restaurar.','err');
+    return;
+  }
+  try{
+    var text = await file.text();
+    var payload = JSON.parse(text);
+    if(payload.system !== 'avacy-otb' || !payload.data){
+      toast('❌ Arquivo não é um backup válido','err'); return;
+    }
+    var summary = [];
+    Object.keys(payload.data).forEach(function(k){
+      var v = payload.data[k];
+      if(v && !v._error) summary.push('• '+k);
+    });
+    var when = payload.exportedAt ? new Date(payload.exportedAt).toLocaleString('pt-BR') : '?';
+    var who  = payload.exportedBy || '?';
+    var msg = 'RESTAURAR BACKUP?\n\n'
+      + 'Exportado em: '+when+'\n'
+      + 'Exportado por: '+who+'\n\n'
+      + 'Chaves a restaurar:\n'+summary.join('\n')+'\n\n'
+      + '⚠ ATENÇÃO: vai SOBRESCREVER as configurações atuais. Não há desfazer.\n\n'
+      + 'Confirma?';
+    if(!confirm(msg)) return;
+    // Faz mais uma confirmação por segurança
+    var typed = prompt('Digite RESTAURAR (em maiúsculas) pra confirmar:');
+    if(typed !== 'RESTAURAR'){ toast('Restauração cancelada','err'); return; }
+    var btn = document.querySelector('button[onclick*="cfgImportBackupFile"]');
+    var orig = btn ? btn.textContent : '';
+    if(btn){ btn.disabled = true; btn.textContent = '⏳ Restaurando...'; }
+    var done = 0, erros = [];
+    for(var i=0; i<_BACKUP_KEYS.length; i++){
+      var b = _BACKUP_KEYS[i];
+      var dataKey = b.table+'/'+b.key;
+      var v = payload.data[dataKey];
+      if(v == null || v._error) continue;
+      try{
+        // Remove campos de meta de backup se presentes (ficam num backup pego do dia)
+        if(v && typeof v === 'object'){
+          v = Object.assign({}, v);
+          delete v._backupOf; delete v._backupAt;
+        }
+        if(btn) btn.textContent = '⏳ '+b.key+'...';
+        await supaSave(b.table, b.key, v);
+        done++;
+      } catch(e){ erros.push(b.key+': '+e.message); }
+    }
+    if(erros.length){
+      toast('⚠ '+done+' restauradas, '+erros.length+' falhas: '+erros.join(' | '),'err',10000);
+    } else {
+      toast('✅ Backup restaurado — '+done+' chave(s). Recarregue a página pra ver os dados.','ok',8000);
+    }
+    if(btn){ btn.textContent = orig; btn.disabled = false; }
+  } catch(e){
+    toast('❌ Falha ao ler arquivo: '+e.message, 'err', 6000);
+  }
 }
 
 function buildOtbPayload(){
