@@ -8332,7 +8332,7 @@ function openBudgetDetail(tipo, area, ano){
   if(!_canEditDetail){
     h += '<div style="background:#fff7e6;border:1px solid #e6b774;color:#7a4a00;padding:7px 12px;border-radius:6px;margin-bottom:10px;font-size:11px;font-weight:600;display:flex;align-items:center;gap:6px">🔒 <span>Modo somente leitura — apenas administradores podem editar valores manuais nesta tela.</span></div>';
   }
-  h += '<div style="overflow:auto;max-height:60vh">';
+  h += '<div style="overflow:auto;max-height:78vh">';
   h += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px">';
   h += '<thead><tr style="background:#1a2547;color:#fff;position:sticky;top:0">';
   h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px;position:sticky;left:0;background:#1a2547;z-index:2">FORNECEDOR</th>';
@@ -8431,7 +8431,7 @@ function openBudgetDetail(tipo, area, ano){
   }
   if(!document.getElementById('budgetDetailTitle') || !document.getElementById('budgetDetailBody')){
     overlay.innerHTML =
-      '<div class="dre-cfg-box" style="width:min(1200px,96vw)">'
+      '<div class="dre-cfg-box" style="width:min(1600px,98vw)">'
       +'<div class="dre-cfg-hd">'
       +  '<div><h2>📊 Detalhes por Fornecedor</h2><small id="budgetDetailTitle"></small></div>'
       +  '<button class="dre-cfg-close" onclick="closeBudgetDetail()">×</button>'
@@ -8934,7 +8934,7 @@ async function saveBudgetCfg(btn){
 
 <!-- ══════════════ BUDGET DETAIL MODAL ══════════════ -->
 <div class="dre-cfg-overlay" id="budgetDetailOverlay" onclick="if(event.target===this)closeBudgetDetail()" style="display:none">
-  <div class="dre-cfg-box" style="width:min(1200px,96vw)">
+  <div class="dre-cfg-box" style="width:min(1600px,98vw)">
     <div class="dre-cfg-hd">
       <div><h2>📊 Detalhes por Fornecedor</h2><small id="budgetDetailTitle"></small></div>
       <button class="dre-cfg-close" onclick="closeBudgetDetail()">×</button>
