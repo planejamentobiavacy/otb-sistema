@@ -7664,7 +7664,7 @@ function renderBudget(anoFilter){
         var _simClr = _simStored!=null ? '#5a1d7a' : '#1a56c4';
         var _simBd = _simStored!=null ? '#7b2d8b' : '#a0b4e0';
         inp.setAttribute('style','width:58px;text-align:center;border:1px solid '+_simBd+';border-radius:4px;padding:2px 4px;font-size:11px;background:'+_simBg+';color:'+_simClr+';font-weight:700');
-        display = inp.outerHTML;
+        display = '<span style="display:inline-flex;align-items:center;gap:2px">'+inp.outerHTML+'<span style="color:'+_simClr+';font-size:10px;font-weight:600;opacity:.7">%</span></span>';
         effectiveForYear = simVal ? parseFloat(simVal)/100 : null;
       } else {
         display = val===null ? (ss?'<span style="color:rgba(255,255,255,.5)">—</span>':'<span style="color:#ccc">—</span>') : isPct ? _bPct(val) : _bFmt(val);
