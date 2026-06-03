@@ -865,9 +865,11 @@ async function supaLoad(saveTable, rowKey){
 // ═══════════════════════════════════════════════════════
 function showScreen(id){
   ['screenLogin','screenHome','screenOtb','screenDre','screenFolha','screenBudget'].forEach(function(s){
-    document.getElementById(s).classList.remove('screen-active');
+    var el = document.getElementById(s);
+    if(el) el.classList.remove('screen-active');
   });
-  document.getElementById(id).classList.add('screen-active');
+  var target = document.getElementById(id);
+  if(target) target.classList.add('screen-active');
 }
 
 async function doLogin(){
@@ -1081,14 +1083,21 @@ async function afterLogin(){
 }
 
 // Verifica sessão existente ao abrir a página
-_supa.auth.getSession().then(function(res){
-  if(res.data && res.data.session){
-    _session = res.data.session;
-    afterLogin();
-  } else {
-    showLogin();
-  }
-});
+function _initSession(){
+  _supa.auth.getSession().then(function(res){
+    if(res.data && res.data.session){
+      _session = res.data.session;
+      afterLogin();
+    } else {
+      showLogin();
+    }
+  });
+}
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', _initSession);
+} else {
+  _initSession();
+}
 
 // Renova sessão automaticamente + trata redefinição de senha
 _supa.auth.onAuthStateChange(function(event, session){
