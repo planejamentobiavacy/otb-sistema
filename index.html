@@ -8334,6 +8334,19 @@ function renderBudgetCfgTable(search){
   h += totalCount+' total';
   h += '</div></div>';
 
+  // Cabeçalho sticky — fica visível ao rolar a tabela (position:sticky funciona dentro do overflow:auto)
+  var _thStyle = 'position:sticky;top:0;z-index:2;background:#1a2547;color:#fff;padding:7px 10px;font-size:10px;font-weight:700;letter-spacing:1px;';
+  var thHead =
+    '<thead><tr>'
+    +'<th style="'+_thStyle+'text-align:left">FORNECEDOR</th>'
+    +'<th style="'+_thStyle+'text-align:left">HIST.</th>'
+    +'<th style="'+_thStyle+'text-align:right">TOTAL R$</th>'
+    +'<th style="'+_thStyle+'text-align:left">TIPO</th>'
+    +'<th style="'+_thStyle+'text-align:left">ÁREA</th>'
+    +'<th style="'+_thStyle+'text-align:left">OBSERVAÇÕES</th>'
+    +'<th style="'+_thStyle+'text-align:center;min-width:110px">DESCONSIDERAR</th>'
+    +'</tr></thead>';
+
   h += '<div style="overflow-y:auto;max-height:52vh">';
 
   // ── Pendentes (ou filtrados pela busca) ──
@@ -8343,15 +8356,7 @@ function renderBudgetCfgTable(search){
       : '⚠ SEM CLASSIFICAÇÃO ('+showPending.length+')';
     h += '<div style="font-size:10px;font-weight:700;letter-spacing:1px;color:#e05a2b;padding:6px 10px 4px;background:#fff8f5;border-left:3px solid #e05a2b;margin-bottom:2px">'+pendLabel+'</div>';
     h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">';
-    h += '<thead><tr style="background:#1a2547;color:#fff">';
-    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">FORNECEDOR</th>';
-    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">HIST.</th>';
-    h += '<th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:700;letter-spacing:1px">TOTAL R$</th>';
-    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">TIPO</th>';
-    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">ÁREA</th>';
-    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">OBSERVAÇÕES</th>';
-    h += '<th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;letter-spacing:1px;min-width:110px">DESCONSIDERAR</th>';
-    h += '</tr></thead><tbody>';
+    h += thHead + '<tbody>';
     showPending.forEach(function(k, i){
       h += budgetCfgRow(k, i, combos[k], BUDGET_CFG.classif[k]||{}, tipoOpts, areaOpts, selStyle, inpStyle, fmtVal, 'p');
     });
@@ -8362,15 +8367,7 @@ function renderBudgetCfgTable(search){
   if(showClassified.length){
     h += '<div style="font-size:10px;font-weight:700;letter-spacing:1px;color:#1a7c3e;padding:6px 10px 4px;background:#f0fff6;border-left:3px solid #1a7c3e;margin-bottom:2px">✔ CLASSIFICADOS — resultado da busca ('+showClassified.length+')</div>';
     h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">';
-    h += '<thead><tr style="background:#1a2547;color:#fff">';
-    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">FORNECEDOR</th>';
-    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">HIST.</th>';
-    h += '<th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:700;letter-spacing:1px">TOTAL R$</th>';
-    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">TIPO</th>';
-    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">ÁREA</th>';
-    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">OBSERVAÇÕES</th>';
-    h += '<th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;letter-spacing:1px;min-width:110px">DESCONSIDERAR</th>';
-    h += '</tr></thead><tbody>';
+    h += thHead + '<tbody>';
     showClassified.forEach(function(k, i){
       h += budgetCfgRow(k, i, combos[k], BUDGET_CFG.classif[k]||{}, tipoOpts, areaOpts, selStyle, inpStyle, fmtVal, 'c');
     });
