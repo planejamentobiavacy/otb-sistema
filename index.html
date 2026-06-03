@@ -8136,23 +8136,17 @@ function openBudgetCfg(){
   var body = document.getElementById('budgetCfgBody');
   if(!body) return;
 
-  // Build combos: agrupa por nomfor (uma linha por fornecedor, acumula todos os hist)
+  // Build combos: uma linha por (Fornecedor, Histórico) — classificação linha a linha
   var combos = {};
   BUDGET_DESP_RAW.forEach(function(r){
     var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
     var hist   = String(r.e2_hist||r.E2_HIST||'').trim();
     if(!nomfor && !hist) return;
     var val = parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||r.e2_valor||r.E2_VALOR||r.value||r.VALUE||r.vlr||r.VLR||r.e2_valto||r.E2_VALTO)||0;
-    // Chave = só nomfor (agrupa todos os hist do mesmo fornecedor)
-    if(!combos[nomfor]) combos[nomfor] = {nomfor:nomfor, hists:{}, count:0, total:0};
-    combos[nomfor].count++;
-    combos[nomfor].total += val;
-    if(hist) combos[nomfor].hists[hist] = 1; // acumula hist únicos
-  });
-  // Compatibilidade: adiciona campo 'hist' como string dos hists únicos (para tooltip no ℹ)
-  Object.keys(combos).forEach(function(k){
-    var hists = Object.keys(combos[k].hists);
-    combos[k].hist = hists.join(' · ');
+    var key = nomfor+'|'+hist; // chave composta: cada par fornecedor+hist é uma linha
+    if(!combos[key]) combos[key] = {nomfor:nomfor, hist:hist, count:0, total:0};
+    combos[key].count++;
+    combos[key].total += val;
   });
 
   if(!Object.keys(combos).length){
@@ -8249,12 +8243,8 @@ function renderBudgetCfgTable(search){
   // Separa: sem tipo/área (pendentes) e com tipo/área (classificados)
   var pending = [], classified = [];
   allKeys.forEach(function(k){
-    // Busca classif do fornecedor: primeiro tenta chave exata (nomfor), depois qualquer entrada do fornecedor
-    var saved = BUDGET_CFG.classif[k] || (function(){
-      // Procura qualquer chave que comece com nomfor+'|'
-      var keys = Object.keys(BUDGET_CFG.classif).filter(function(ck){ return ck.split('|')[0] === k; });
-      return keys.length ? BUDGET_CFG.classif[keys[0]] : {};
-    })();
+    // Busca classif: tenta chave composta (nomfor|hist) e cai para a legada (só nomfor)
+    var saved = BUDGET_CFG.classif[k] || BUDGET_CFG.classif[combos[k].nomfor] || {};
     var hasTipo = saved.tipo && saved.tipo !== '';
     var hasArea = saved.area && saved.area !== '';
     var isDesc  = saved.desconsiderar === 'sim';
@@ -8316,8 +8306,8 @@ function renderBudgetCfgTable(search){
     h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">';
     h += '<thead><tr style="background:#1a2547;color:#fff">';
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">FORNECEDOR</th>';
+    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">HIST.</th>';
     h += '<th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:700;letter-spacing:1px">TOTAL R$</th>';
-    h += '<th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;letter-spacing:1px">HIST.</th>';
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">TIPO</th>';
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">ÁREA</th>';
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">OBSERVAÇÕES</th>';
@@ -8335,8 +8325,8 @@ function renderBudgetCfgTable(search){
     h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">';
     h += '<thead><tr style="background:#1a2547;color:#fff">';
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">FORNECEDOR</th>';
+    h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">HIST.</th>';
     h += '<th style="padding:7px 10px;text-align:right;font-size:10px;font-weight:700;letter-spacing:1px">TOTAL R$</th>';
-    h += '<th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;letter-spacing:1px">HIST.</th>';
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">TIPO</th>';
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">ÁREA</th>';
     h += '<th style="padding:7px 10px;text-align:left;font-size:10px;font-weight:700;letter-spacing:1px">OBSERVAÇÕES</th>';
@@ -8370,14 +8360,8 @@ function budgetCfgRow(k, i, c, saved, tipoOpts, areaOpts, selStyle, inpStyle, fm
   var kEsc = k.replace(/"/g,'&quot;');
   var h = '<tr style="background:'+bg+'">';
   h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#0f1a3a;font-weight:600;max-width:180px">'+escHtml(c.nomfor)+'</td>';
+  h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#0f1a3a;font-size:11px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escHtml(c.hist||'')+'">'+(c.hist?escHtml(c.hist):'<span style="color:#ccc">—</span>')+'</td>';
   h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;color:#1a2547;font-weight:700;text-align:right;white-space:nowrap">'+fmtVal(c.total)+'</td>';
-  h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;text-align:center">';
-  if(c.hist){
-    h += '<span title="'+escHtml(c.hist)+'" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;background:#e8f0fe;border-radius:50%;color:#2352c8;font-size:11px;cursor:help;font-weight:700">ℹ</span>';
-  } else {
-    h += '<span style="color:#ccc;font-size:11px">—</span>';
-  }
-  h += '</td>';
   h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8">';
   h += '<select id="bcfg_tipo_'+rid+'" data-key="'+kEsc+'" style="'+selStyle+'">';
   h += tipoOpts.replace('value="'+(saved.tipo||'')+'"','value="'+(saved.tipo||'')+'" selected');
@@ -8422,20 +8406,7 @@ async function saveBudgetCfg(btn){
       obs:  obsEl  ? obsEl.value  : (prev.obs||''),
       desconsiderar: descEl ? descEl.value : (prev.desconsiderar||'nao')
     };
-    // k agora é só nomfor — aplica classif a TODOS os lançamentos deste fornecedor
-    BUDGET_DESP_RAW.forEach(function(r){
-      var rNomfor = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
-      var rHist   = String(r.e2_hist||r.E2_HIST||'').trim();
-      if(rNomfor !== k) return;
-      var rKey = rNomfor+'|'+rHist;
-      BUDGET_CFG.classif[rKey] = {
-        tipo: newClassif.tipo,
-        area: newClassif.area,
-        obs:  newClassif.obs,
-        desconsiderar: newClassif.desconsiderar
-      };
-    });
-    // Salva também com chave direta nomfor para lookup rápido
+    // k = nomfor|hist (classificação linha a linha) — salva apenas nesta combinação específica
     BUDGET_CFG.classif[k] = newClassif;
   });
 
