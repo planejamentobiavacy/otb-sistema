@@ -553,7 +553,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
     </div>
     <!-- Abas de agrupamento -->
     <div style="margin-left:auto;display:flex;gap:2px;background:#eef1f4;padding:3px;border-radius:6px">
-      <button class="fp-tab-pill active" id="fpTabArea"  onclick="folhaSwitchAba('area')">Por Área</button>
+      <button class="fp-tab-pill active" id="fpTabArea"  onclick="folhaSwitchAba('area')">Por Área Ajust</button>
       <button class="fp-tab-pill"        id="fpTabCargo" onclick="folhaSwitchAba('cargo')">Por Cargo</button>
       <button class="fp-tab-pill"        id="fpTabNome"  onclick="folhaSwitchAba('nome')">Por Nome</button>
       <button class="fp-tab-pill"        id="fpTabCanal" onclick="folhaSwitchAba('canal')">Por Canal</button>
@@ -586,7 +586,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       </div>
       <div class="cfg-section" id="cfgPermSection" style="margin-bottom:0;display:none">
         <h3>🔐 Permissões de Budget por Usuário</h3>
-        <p style="font-size:11px;color:#7a8ab0;margin:0 0 12px">Configure o acesso de cada usuário ao sistema:<br>• <strong>Áreas</strong> (Budget/Folha): marque as áreas que o usuário pode ver. Vazio = acesso total às áreas.<br>• <strong>👑 Administrador</strong>: pode acessar e editar OTB, DRE, Budget e Folha, salvar dados e gerenciar usuários. Sem essa marcação o usuário não vê o módulo OTB e não consegue salvar alterações em nenhuma tela.</p>
+        <p style="font-size:11px;color:#7a8ab0;margin:0 0 12px">Configure o acesso de cada usuário ao sistema:<br>• <strong>Áreas</strong> (Budget/Folha): marque as áreas que o usuário pode ver. Vazio = acesso total às áreas.<br>• <strong>👑 Administrador</strong>: pode editar OTB, DRE, Budget e Folha, salvar dados e gerenciar usuários.<br>• <strong>📦 OTB</strong>: libera visualização do módulo OTB (somente leitura). Edição segue restrita a administradores. Admins já têm acesso implícito.</p>
         <div id="cfgPermRows"></div>
         <div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input id="permNewEmail" type="email" placeholder="novo@email.com" style="flex:1;min-width:200px;padding:7px 10px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:12px;font-family:inherit">
@@ -1237,10 +1237,17 @@ function permRow(email, selectedAreas, isAdminUser, hasOtbAccess){
   var adminCheckHtml = '<label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:'+(superAdmin?'not-allowed':'pointer')+';padding:3px 8px;background:'+(isAdminUser||superAdmin?'#fff4e0':'#f0f3fa')+';border:1.5px solid '+(isAdminUser||superAdmin?'#e89c40':'#d0d8ee')+';border-radius:4px;font-weight:'+(isAdminUser||superAdmin?'700':'500')+';color:'+(isAdminUser||superAdmin?'#a55a00':'#0f1a3a')+'">'
     +'<input type="checkbox" class="perm-admin-cb" '+(isAdminUser||superAdmin?'checked':'')+' '+(superAdmin?'disabled':'')+' style="cursor:'+(superAdmin?'not-allowed':'pointer')+'">'
     +'👑 Administrador'+(superAdmin?' (Super)':'')+'</label>';
+  // OTB checkbox — controla apenas o ACESSO de leitura ao módulo. Edição segue restrita a admin (canEdit).
+  // Admin tem OTB implícito (não precisa marcar); demais escolhem.
+  var otbEffective = isAdminUser || superAdmin || hasOtbAccess;
+  var otbCheckHtml = '<label style="display:flex;align-items:center;gap:5px;font-size:11px;cursor:'+(isAdminUser||superAdmin?'not-allowed':'pointer')+';padding:3px 8px;background:'+(otbEffective?'#e8f0ff':'#f0f3fa')+';border:1.5px solid '+(otbEffective?'#5a8fd0':'#d0d8ee')+';border-radius:4px;font-weight:'+(otbEffective?'700':'500')+';color:'+(otbEffective?'#1a4d8f':'#0f1a3a')+'" title="'+(isAdminUser||superAdmin?'Admin sempre tem acesso ao OTB':'Permite visualizar o módulo OTB (somente leitura — edição é restrita a admin)')+'">'
+    +'<input type="checkbox" class="perm-otb-cb" '+(otbEffective?'checked':'')+' '+(isAdminUser||superAdmin?'disabled':'')+' style="cursor:'+(isAdminUser||superAdmin?'not-allowed':'pointer')+'">'
+    +'📦 OTB'+(isAdminUser||superAdmin?'':' (somente leitura)')+'</label>';
   return '<div class="perm-row" data-email="'+email+'" data-super-admin="'+(superAdmin?'1':'0')+'" style="background:#f7f9ff;border:1px solid #d0d8ee;border-radius:6px;padding:10px 12px;margin-bottom:8px">'
     +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap">'
     +'<span style="font-size:12px;font-weight:700;color:#1a2547;flex:1;min-width:200px">'+email+'</span>'
     +adminCheckHtml
+    +otbCheckHtml
     +seeAsBtn
     +removeBtn
     +'</div>'
@@ -1310,13 +1317,17 @@ async function savePermissions(btn){
   document.querySelectorAll('.perm-row').forEach(function(row){
     var email = row.getAttribute('data-email');
     var isSuper = row.getAttribute('data-super-admin') === '1';
-    var areas = Array.from(row.querySelectorAll('input[type=checkbox]:not(.perm-admin-cb):checked')).map(function(cb){ return cb.value; });
+    var areas = Array.from(row.querySelectorAll('input[type=checkbox]:not(.perm-admin-cb):not(.perm-otb-cb):checked')).map(function(cb){ return cb.value; });
     var adminCb = row.querySelector('.perm-admin-cb');
+    var otbCb   = row.querySelector('.perm-otb-cb');
     var isAdminFlag = adminCb && adminCb.checked;
+    var hasOtb      = otbCb && otbCb.checked;
     // Super-admins (hardcoded) não precisam ser salvos em USER_PERMISSIONS — exceto se tiverem áreas restritas
     if(isSuper && areas.length === 0) return; // não salva — gerenciado por ADMIN_EMAILS
     newPerms[email] = { budgetAreas: areas };
     if(isAdminFlag && !isSuper) newPerms[email].admin = true;
+    // OTB: salva flag apenas pra não-admin (admin já tem acesso implícito)
+    if(hasOtb && !isSuper && !isAdminFlag) newPerms[email].otbAccess = true;
   });
   try{
     await supaSave(TBLS.save_dre, 'user_permissions', newPerms);
@@ -2900,7 +2911,7 @@ function renderTable(){
           var lyCell3=matrix[lyYm3];
           v=(lyCell3&&lyCell3.estVal>0&&cell.estVal!=null)?(cell.estVal/lyCell3.estVal-1)*100:null;
         }
-        var isFut=ym>=cur,editable=editableInBlock&&isFut&&sup!=='AVACY'&&catIsAll;
+        var isFut=ym>=cur,editable=editableInBlock&&isFut&&sup!=='AVACY'&&catIsAll && (typeof canEdit!=='function' || canEdit());
         var cls=['value'];
         if(isFut) cls.push('future');
         if(row.isVar) cls.push('pct');
@@ -2954,6 +2965,12 @@ function renderTable(){
   // Editable cells
   wrap.querySelectorAll('[contenteditable="true"]').forEach(function(td){
     td.addEventListener('blur',function(){
+      if(typeof canEdit==='function' && !canEdit()){
+        toast('🔒 Você não tem permissão para editar.','err');
+        td.removeAttribute('contenteditable');
+        renderTable();
+        return;
+      }
       var sup=td.dataset.sup,ym=td.dataset.ym,key=td.dataset.key,type=td.dataset.type;
       var raw=td.textContent.replace('%','').replace('+','').trim(),num=parseNum(raw);
       if(!state.edits[sup]) state.edits[sup]={};
@@ -6505,9 +6522,15 @@ function isLoggedUserPermitted(){
 }
 // Pode editar (Salvar, Configurar, Recarregar dados) — só admin REAL (impersonation não pode editar)
 function canEdit(){ return isRealAdmin() && !isImpersonating(); }
-// Pode acessar o módulo OTB? Agora restrito a administradores.
+// Pode acessar (visualizar) o módulo OTB? Admin sempre; demais só se tiverem otbAccess.
+// IMPORTANTE: visualizar ≠ editar. Edição segue restrita a admin via canEdit().
 function canAccessOtb(){
-  return isAdmin();
+  if(isAdmin()) return true;
+  var em = getEffectiveUserEmail();
+  if(!em) return true; // sem login = não bloqueia (login lida)
+  // Em modo "transição" (nenhum usuário cadastrado), libera
+  if(Object.keys(USER_PERMISSIONS).length === 0) return true;
+  return !!(USER_PERMISSIONS[em] && USER_PERMISSIONS[em].otbAccess);
 }
 // Áreas permitidas pro usuário atual (Budget E Folha usam a mesma lista)
 function getFolhaAreasPermitidas(){ return getBudgetAreasPermitidas(); }
@@ -8225,6 +8248,24 @@ function openBudgetDetail(tipo, area, ano){
   // Months present
   var monthSet = {};
   fns.forEach(function(fn){ Object.keys(map[fn].byMonth).forEach(function(am){ monthSet[am]=1; }); });
+  // Inclui meses que só têm override (sem lançamentos brutos) — usuário pode ter preenchido valor manual
+  if(BUDGET_CFG.budgetOverrides){
+    Object.keys(BUDGET_CFG.budgetOverrides).forEach(function(ovrKey){
+      var parts = ovrKey.split('|');
+      if(parts.length < 4) return;
+      var oTipo = parts[0], oArea = parts[1], oAm = parts.slice(3).join('|');
+      if(oTipo !== tipo) return;
+      if(area && oArea !== area) return;
+      if(ano && !oAm.startsWith(ano)) return;
+      monthSet[oAm] = 1;
+    });
+  }
+  // Se filtrado por ano: garante TODOS os 12 meses (mesmo sem dados) pra permitir planejamento de meses futuros
+  if(ano){
+    for(var _mo=1; _mo<=12; _mo++){
+      monthSet[ano+String(_mo).padStart(2,'0')] = 1;
+    }
+  }
   var months = Object.keys(monthSet).sort();
 
   var title = tipo + (area ? ' — '+area : '') + (ano ? ' ('+ano+')' : '');
