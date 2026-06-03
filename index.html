@@ -656,7 +656,7 @@ var COLS = {
 
   // dw_otb_despesa: colunas reais confirmadas no Supabase
   // (pk_ano_mes_venc_e2_forn não existe na tabela; ano_mes_venc cobre a extração de período)
-  despesa: ['ano_mes_emissao','ano_mes_venc','ano_mes_baixa','e2_tipo','e2_fornece','e2_nomfor','e2_hist','valor_pagamento'],
+  despesa: ['ano_mes_emissao','ano_mes_venc','ano_mes_baixa','e2_tipo','e2_fornece','e2_nomfor','e2_hist','e2_parcela','valor_pagamento'],
 
   // dw_otb_folha: usa select=* pois os nomes das colunas podem variar
   // folhaGetPeriodo/Area/Cargo/Nome/Total já lidam com múltiplos nomes possíveis
@@ -8489,10 +8489,7 @@ function openBudgetCfgRowDetail(k){
     var thStyle = 'position:sticky;top:0;z-index:2;background:#1a2547;color:#fff;padding:6px 9px;font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;text-align:left;white-space:nowrap';
     hHtml += '<table style="width:100%;border-collapse:collapse;font-size:11px;min-width:600px">';
     hHtml += '<thead><tr>';
-    hHtml += '<th style="'+thStyle+'">#</th>';
-    hHtml += '<th style="'+thStyle+'">DATA</th>';
-    hHtml += '<th style="'+thStyle+';text-align:right">VALOR</th>';
-    // Campos restantes (oculta nomfor/hist/valor que já estão acima ou no resumo)
+    // Cabeçalhos: apenas os campos brutos da base (ordem alfabética por nome de coluna)
     var skipFields = {e2_nomfor:1,E2_NOMFOR:1,e2_hist:1,E2_HIST:1};
     fields.forEach(function(f){
       if(skipFields[f]) return;
@@ -8501,13 +8498,8 @@ function openBudgetCfgRowDetail(k){
     hHtml += '</tr></thead><tbody>';
     records.forEach(function(r, idx){
       var bg = idx%2===0 ? '#fff' : '#f7f9ff';
-      var rawDate = (typeof budgetDespAm === 'function') ? budgetDespAm(r) : '';
-      var dateFmt = (rawDate && rawDate.length===6) ? (rawDate.slice(0,4)+'-'+rawDate.slice(4,6)) : (rawDate||'—');
       var cellStyle = 'padding:5px 9px;border-bottom:1px solid #eef1f8;white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis';
       hHtml += '<tr style="background:'+bg+'">';
-      hHtml += '<td style="'+cellStyle+';color:#7a8ab0;font-weight:600">'+(idx+1)+'</td>';
-      hHtml += '<td style="'+cellStyle+'">'+escHtml(dateFmt)+'</td>';
-      hHtml += '<td style="'+cellStyle+';text-align:right;font-weight:700;color:#1a2547">'+fmtVal(pickValor(r))+'</td>';
       fields.forEach(function(f){
         if(skipFields[f]) return;
         var v = r[f];
