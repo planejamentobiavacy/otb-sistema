@@ -3744,6 +3744,7 @@ function dreToggleFiltros(){
 }
 
 function dreSwitchTab(tab){
+  DRE_TAB = tab; // mantém o estado em sincronia com a UI; sem isso o render ia continuar montando a aba antiga
   document.querySelectorAll('[id^="drePanel-"]').forEach(function(p){
     p.style.display=p.id==='drePanel-'+tab?'flex':'none';
   });
