@@ -7604,14 +7604,21 @@ function renderBudget(anoFilter){
           + 'onclick="budgetRevertCell(this)" '
           + 'title="'+escHtml(revertTip)+'" '
           + 'style="margin-left:2px;padding:2px 4px;border:1px solid '+(ss?'rgba(255,255,255,.45)':'#d0d8ee')+';border-radius:4px;background:'+(ss?'rgba(255,255,255,.22)':'#fff')+';color:'+(ss?'#fff':'#1a56c4')+';cursor:pointer;font-size:9px;line-height:1;vertical-align:middle;'+(hasOvr?'':'visibility:hidden')+'">↺</button>';
-      } else if(future && simKey && val===null){
-        // Mês futuro sem dado real: input simulável
-        var simVal = BUDGET_CFG.sim[ym] && BUDGET_CFG.sim[ym][simKey] != null ? (BUDGET_CFG.sim[ym][simKey]*100).toFixed(1) : '';
+      } else if(future && simKey){
+        // Mês futuro: input simulável (sempre mostra, mesmo se já tiver simulação salva, pra permitir re-editar)
+        var _simStored = BUDGET_CFG.sim[ym] && BUDGET_CFG.sim[ym][simKey] != null ? BUDGET_CFG.sim[ym][simKey] : null;
+        var simVal = _simStored != null
+          ? (_simStored*100).toFixed(1)
+          : (typeof val === 'number' && val != null ? (val*100).toFixed(1) : '');
         var inp = document.createElement('input');
         inp.type='number'; inp.step='0.1'; inp.min='0'; inp.max='100'; inp.placeholder='—'; inp.value=simVal;
         inp.dataset.ym=ym; inp.dataset.key=simKey;
         inp.setAttribute('onchange','budgetSetSim(this.dataset.ym,this.dataset.key,this.value)');
-        inp.style.cssText='width:58px;text-align:center;border:1px solid #a0b4e0;border-radius:4px;padding:2px 4px;font-size:11px;background:#eef5ff;color:#1a56c4;font-weight:700';
+        // Cor: roxo claro quando tem override de simulação; azul quando vazio
+        var _simBg = _simStored!=null ? '#e9e4fa' : '#eef5ff';
+        var _simClr = _simStored!=null ? '#5a1d7a' : '#1a56c4';
+        var _simBd = _simStored!=null ? '#7b2d8b' : '#a0b4e0';
+        inp.style.cssText='width:58px;text-align:center;border:1px solid '+_simBd+';border-radius:4px;padding:2px 4px;font-size:11px;background:'+_simBg+';color:'+_simClr+';font-weight:700';
         display = inp.outerHTML;
         effectiveForYear = simVal ? parseFloat(simVal)/100 : null;
       } else {
