@@ -7647,15 +7647,23 @@ function renderBudget(anoFilter){
         var simVal = _simStored != null
           ? (_simStored*100).toFixed(1)
           : (typeof val === 'number' && val != null ? (val*100).toFixed(1) : '');
+        // IMPORTANTE: setAttribute em vez de .value — outerHTML só serializa atributos, não propriedades.
+        // Sem isso, o input "perde" o valor visualmente após o re-render (apesar de salvo em BUDGET_CFG.sim).
         var inp = document.createElement('input');
-        inp.type='number'; inp.step='0.1'; inp.min='0'; inp.max='100'; inp.placeholder='—'; inp.value=simVal;
-        inp.dataset.ym=ym; inp.dataset.key=simKey;
+        inp.setAttribute('type','number');
+        inp.setAttribute('step','0.1');
+        inp.setAttribute('min','0');
+        inp.setAttribute('max','100');
+        inp.setAttribute('placeholder','—');
+        if(simVal !== '') inp.setAttribute('value', simVal);
+        inp.setAttribute('data-ym', ym);
+        inp.setAttribute('data-key', simKey);
         inp.setAttribute('onchange','budgetSetSim(this.dataset.ym,this.dataset.key,this.value)');
         // Cor: roxo claro quando tem override de simulação; azul quando vazio
         var _simBg = _simStored!=null ? '#e9e4fa' : '#eef5ff';
         var _simClr = _simStored!=null ? '#5a1d7a' : '#1a56c4';
         var _simBd = _simStored!=null ? '#7b2d8b' : '#a0b4e0';
-        inp.style.cssText='width:58px;text-align:center;border:1px solid '+_simBd+';border-radius:4px;padding:2px 4px;font-size:11px;background:'+_simBg+';color:'+_simClr+';font-weight:700';
+        inp.setAttribute('style','width:58px;text-align:center;border:1px solid '+_simBd+';border-radius:4px;padding:2px 4px;font-size:11px;background:'+_simBg+';color:'+_simClr+';font-weight:700');
         display = inp.outerHTML;
         effectiveForYear = simVal ? parseFloat(simVal)/100 : null;
       } else {
