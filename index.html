@@ -7949,12 +7949,15 @@ function renderBudget(anoFilter){
 
   // ── EBITDA — última linha (cor azul) ──
   // EBITDA = Receita Líquida − CMV R$ − Total Despesas
-  summaryRow('EBITDA', '📊', '#1a2547', '#2352c8', function(ym){
-    var rl = budgetReceitaLiquida(ym);
-    var cmv = budgetCmvVal(ym);
-    var td = totalDespesasGeral[ym]||0;
-    return rl - cmv - td;
-  });
+  // Visível apenas para administradores (métrica financeira sensível)
+  if(typeof isAdmin === 'function' && isAdmin()){
+    summaryRow('EBITDA', '📊', '#1a2547', '#2352c8', function(ym){
+      var rl = budgetReceitaLiquida(ym);
+      var cmv = budgetCmvVal(ym);
+      var td = totalDespesasGeral[ym]||0;
+      return rl - cmv - td;
+    });
+  }
 
   h += '</tbody></table></div></div>';
   document.getElementById('budgetBody').innerHTML = h;
