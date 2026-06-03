@@ -2146,25 +2146,145 @@ async function handleAtualizarTudo(btn){
 }
 
 async function handleSaveAll(btn){
-  var orig = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Salvando...';
+  if(typeof canEdit==='function' && !canEdit()){ toast('🔒 Você não tem permissão para salvar.','err'); return; }
+  var orig = btn.textContent; btn.disabled = true;
   var erros = [];
-  try{
-    if(state.matrices && Object.keys(state.matrices).length > 0){
+  var t0 = Date.now();
+  var steps = [];
+  function setStep(label){ btn.textContent = '⏳ ' + label; }
+
+  // 1) OTB — snapshot completo da matriz consolidada ────────────────────────
+  if(state && state.matrices && Object.keys(state.matrices).length > 0){
+    var tOtb = Date.now();
+    setStep('Salvando OTB...');
+    try{
       await supaSave(TBLS.save_otb, 'otb_current', buildOtbPayload());
-    }
-  } catch(e){ erros.push('OTB: ' + e.message); }
+      steps.push({name:'OTB', dt:Date.now()-tOtb});
+    } catch(e){ erros.push('OTB: '+e.message); }
+  }
+
+  // 2) DRE — params + snapshot agregado (de ~100k linhas brutas → ~25k linhas) ─
+  var tDre = Date.now();
   try{
-    // DRE: só salva config (parâmetros), não os dados brutos
-    await supaSave(TBLS.save_dre, 'dre_current', {config:DRE_CONFIG, exportedAt:new Date().toISOString()});
-  } catch(e){ erros.push('DRE config: ' + e.message); }
-  if(erros.length > 0){
-    toast('⚠️ Erros ao salvar: ' + erros.join(' | '), 'err', 6000);
+    // 2a) Sempre salva params (config + cfgParams + vendedorMap)
+    var vendedorMap = {};
+    if(DRE_RAW && DRE_RAW.length){
+      DRE_RAW.forEach(function(r){
+        var cod  = String(r.COD_VENDEDOR||r.cod_vendedor||'').trim();
+        var nome = String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||'').trim();
+        if(cod && nome && !vendedorMap[cod]) vendedorMap[cod] = nome;
+      });
+    }
+    setStep('Salvando params DRE...');
+    await supaSave(TBLS.save_dre, 'dre_cfg_params', {
+      config: typeof DRE_CONFIG!=='undefined'?DRE_CONFIG:null,
+      fixos:  typeof FIXOS_DEF!=='undefined'?FIXOS_DEF:null,
+      cfgParams: typeof DRE_CFG_PARAMS!=='undefined'?DRE_CFG_PARAMS:{},
+      vendedorMap: vendedorMap,
+      savedAt: new Date().toISOString()
+    });
+
+    // 2b) Snapshot agregado — só se DRE_RAW está em memória
+    if(DRE_RAW && DRE_RAW.length){
+      setStep('Agregando DRE ('+DRE_RAW.length.toLocaleString('pt-BR')+' linhas)...');
+      var snapshot;
+      if(DRE_RAW.length > 50000){
+        snapshot = await dreAggregateFullAsync(DRE_RAW, function(done, total){
+          btn.textContent = '⏳ Agregando DRE '+Math.round(done/total*100)+'%';
+        });
+      } else {
+        snapshot = dreAggregateFull(DRE_RAW);
+      }
+      var meta = {
+        config: typeof DRE_CONFIG!=='undefined'?DRE_CONFIG:null,
+        fixos:  typeof FIXOS_DEF!=='undefined'?FIXOS_DEF:null,
+        cfgParams: typeof DRE_CFG_PARAMS!=='undefined'?DRE_CFG_PARAMS:{},
+        snapshotAt: new Date().toISOString(),
+        snapshotRows: snapshot ? snapshot.length : 0,
+        rawRows: DRE_RAW.length
+      };
+      if(!snapshot || !snapshot.length){
+        await supaSave(TBLS.save_dre, 'dre_current', Object.assign({}, meta, {snapshot:[]}));
+        steps.push({name:'DRE (vazio)', dt:Date.now()-tDre});
+      } else {
+        var fullJson = JSON.stringify(snapshot);
+        var kb = Math.round(fullJson.length/1024);
+        if(fullJson.length <= SNAP_CHUNK){
+          setStep('Salvando snapshot DRE ('+kb+'KB)...');
+          await supaSave(TBLS.save_dre, 'dre_current', Object.assign({}, meta, {snapshot:snapshot, chunks:0}));
+        } else {
+          // Quebra em chunks ~3.5MB
+          var chunks = [];
+          var chunkSize = Math.ceil(snapshot.length / Math.ceil(fullJson.length / SNAP_CHUNK));
+          for(var i=0; i<snapshot.length; i+=chunkSize) chunks.push(snapshot.slice(i, i+chunkSize));
+          for(var ci=0; ci<chunks.length; ci++){
+            btn.textContent = '⏳ DRE parte '+(ci+1)+'/'+chunks.length;
+            await supaSave(TBLS.save_dre, 'dre_snap_'+ci, {rows: chunks[ci]});
+          }
+          await supaSave(TBLS.save_dre, 'dre_current', Object.assign({}, meta, {snapshot:null, chunks:chunks.length}));
+        }
+        if(typeof DRE_SNAPSHOT !== 'undefined') DRE_SNAPSHOT = true;
+        steps.push({name:'DRE ('+snapshot.length.toLocaleString('pt-BR')+' linhas, '+kb+'KB)', dt:Date.now()-tDre});
+      }
+    } else {
+      steps.push({name:'DRE (só params — dados não carregados)', dt:Date.now()-tDre});
+    }
+  } catch(e){ erros.push('DRE: '+e.message); }
+
+  // 3) Budget — classificações + snapshot agregado das despesas ──────────────
+  var tBud = Date.now();
+  setStep('Salvando Budget...');
+  try{
+    // 3a) Classificações (chave separada — sobrevive mesmo se snapshot falhar)
+    await supaSave(TBLS.save_dre, 'budget_classif', {
+      classif:        (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.classif)||{},
+      tiposIgnorados: (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.tiposIgnorados)||{},
+      tiposDespGerais:(typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.tiposDespGerais)||{},
+      tiposCD:        (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.tiposCD)||{},
+      budgetOverrides:(typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.budgetOverrides)||{},
+      folhaProjecao:  (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.folhaProjecao)||{},
+      sim:            (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.sim)||{},
+      savedAt: new Date().toISOString()
+    });
+    // 3b) Snapshot agregado de BUDGET_DESP_RAW
+    var bSnapshot = (typeof BUDGET_DESP_RAW!=='undefined' && BUDGET_DESP_RAW.length) ? budgetAggregate(BUDGET_DESP_RAW) : null;
+    var bPayload = {
+      classif:        (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.classif)||{},
+      snapshot:       bSnapshot,
+      snapshotAt:     new Date().toISOString(),
+      snapshotRows:   bSnapshot ? bSnapshot.length : 0,
+      rawRows:        (typeof BUDGET_DESP_RAW!=='undefined') ? BUDGET_DESP_RAW.length : 0
+    };
+    await supaSave(TBLS.save_dre, 'budget_cfg', bPayload);
+    var bKb = Math.round(JSON.stringify(bPayload).length/1024);
+    steps.push({name:'Budget ('+(bSnapshot?bSnapshot.length.toLocaleString('pt-BR'):0)+' linhas, '+bKb+'KB)', dt:Date.now()-tBud});
+  } catch(e){ erros.push('Budget: '+e.message); }
+
+  // 4) Folha — só as classificações (não tem snapshot bruto; raw é refetched on demand)
+  var tFol = Date.now();
+  if(typeof FOLHA_CFG !== 'undefined' && FOLHA_CFG.classif && Object.keys(FOLHA_CFG.classif).length){
+    setStep('Salvando Folha...');
+    try{
+      await supaSave(TBLS.save_folha, 'folha_classif', {
+        classif: FOLHA_CFG.classif,
+        savedAt: new Date().toISOString()
+      });
+      steps.push({name:'Folha ('+Object.keys(FOLHA_CFG.classif).length+' classif)', dt:Date.now()-tFol});
+    } catch(e){ erros.push('Folha: '+e.message); }
+  }
+
+  // ─── Fim ─────────────────────────────────────────────────────────────────
+  var dtTotal = Date.now() - t0;
+  if(erros.length){
+    toast('⚠ Erros: '+erros.join(' | '), 'err', 8000);
   } else {
     var ts = new Date().toLocaleString('pt-BR');
-    document.getElementById('otbLastSaved').textContent = ts;
-    toast('✅ OTB salvo! DRE e Folha carregam direto do Supabase.');
+    var el = document.getElementById('otbLastSaved');
+    if(el) el.textContent = ts;
+    toast('✅ Tudo salvo em '+Math.round(dtTotal/1000)+'s — '+steps.map(function(s){return s.name;}).join(' · '), 'ok', 6000);
   }
-  btn.disabled = false; btn.textContent = orig;
+  console.log('[handleSaveAll] total:', dtTotal+'ms', steps, erros.length?{erros:erros}:'');
+  btn.textContent = orig; btn.disabled = false;
 }
 
 function buildOtbPayload(){
@@ -3602,30 +3722,6 @@ function dreEnrichWithCanais(raw, canaisRaw, clusterRaw){
 }
 
 var SNAP_CHUNK = 3500000; // ~3.5MB por chave — margem segura
-
-// Atalho pra salvar snapshot do DRE direto do Budget — proxy pra handleSaveDre
-async function saveDreSnapshotFromBudget(btn){
-  if(typeof canEdit==='function' && !canEdit()){ toast('🔒 Você não tem permissão.','err'); return; }
-  if(!DRE_RAW || !DRE_RAW.length){
-    toast('⚠ DRE ainda não carregou — espere a Receita aparecer no Budget e tente de novo.', 'err');
-    return;
-  }
-  if(DRE_SNAPSHOT){
-    if(!confirm('O DRE já parece estar carregado de um snapshot. Salvar de novo? (vai re-agregar e regravar)')) return;
-  }
-  var realBtn = document.getElementById('btnSaveDre');
-  if(!realBtn){ toast('⚠ Botão Salvar DRE não encontrado','err'); return; }
-  var orig = btn.textContent; btn.disabled=true; btn.textContent='⏳ Gerando snapshot...';
-  try{
-    await handleSaveDre(realBtn);
-    btn.textContent = '✔ Snapshot salvo';
-    setTimeout(function(){ btn.textContent = orig; btn.disabled=false; }, 2500);
-  } catch(e){
-    btn.textContent = '❌ Falhou';
-    setTimeout(function(){ btn.textContent = orig; btn.disabled=false; }, 2500);
-    toast('Erro: '+e.message,'err');
-  }
-}
 
 async function handleSaveDre(btn){
   if(!canEdit()){ toast('🔒 Você não tem permissão para salvar.','err'); return; }
@@ -8979,7 +9075,6 @@ async function saveBudgetCfg(btn){
       </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn" data-perm-admin id="btnSaveDreSnapshotFromBudget" onclick="saveDreSnapshotFromBudget(this)" title="Gera um snapshot agregado do DRE no Supabase pra que próximas aberturas (DRE/Budget) sejam instantâneas. Use depois que o DRE carregar pela primeira vez." style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">📸 Snapshot DRE</button>
       <button class="btn" id="btnBudgetRefresh" onclick="budgetForceReload(this)" title="Recarrega os dados do Supabase" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">🔄 Atualizar</button>
       <button class="btn" data-perm-admin onclick="openBudgetCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button>
       <button class="btn save" data-perm-edit id="btnSaveBudget" onclick="handleSaveBudget(this)">💾 Salvar</button>
