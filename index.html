@@ -6984,17 +6984,51 @@ function invalidateBudgetClassifIndex(){ _budgetClassifIndex = null; }
 
 function budgetDespByTipoArea(ym, tipo, area){
   var am = ym.replace('-','');
-  return BUDGET_DESP_RAW.filter(function(r){
+  // 1) Agrupa lançamentos brutos por (tipo, area, fornecedor) para podermos sobrepor com overrides
+  // (a chave de override é tipo|area|nomforKey|am — mesma normalização do modal de detalhes)
+  var groups = {}; // gk -> {tipo, area, nomforKey, val}
+  BUDGET_DESP_RAW.forEach(function(r){
     var ramAm = budgetDespAm(r);
+    if(ramAm !== am) return;
     var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'');
     var hist   = String(r.e2_hist||r.E2_HIST||'');
     var classif= getBudgetClassif(nomfor, hist);
-    return ramAm===am
-      && (!tipo || classif.tipo===tipo)
-      && (!area || classif.area===area)
-      && classif.desconsiderar !== 'sim'
-      && !BUDGET_CFG.tiposIgnorados[classif.tipo];
-  }).reduce(function(s,r){ return s+(parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||r.e2_valor||r.E2_VALOR)||0);},0);
+    if(tipo && classif.tipo !== tipo) return;
+    if(area && classif.area !== area) return;
+    if(classif.desconsiderar === 'sim') return;
+    if(BUDGET_CFG.tiposIgnorados && BUDGET_CFG.tiposIgnorados[classif.tipo]) return;
+    var nomforKey = nomfor.toUpperCase().replace(/\s+/g,' ');
+    var gk = (classif.tipo||'')+'|'+(classif.area||'')+'|'+nomforKey;
+    if(!groups[gk]) groups[gk] = {tipo: classif.tipo||'', area: classif.area||'', nomforKey: nomforKey, val: 0};
+    groups[gk].val += parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||r.e2_valor||r.E2_VALOR)||0;
+  });
+  // 2) Inclui overrides "puros" — fornecedores que ganharam valor manual num mês sem lançamentos brutos
+  // (ex: previsão de Frete BRASPRESS em Jun/26 sem dados ainda na base)
+  if(BUDGET_CFG.budgetOverrides){
+    Object.keys(BUDGET_CFG.budgetOverrides).forEach(function(ovrKey){
+      var parts = ovrKey.split('|');
+      if(parts.length < 4) return;
+      var oTipo = parts[0], oArea = parts[1], oNomforKey = parts[2];
+      // am pode conter '|' em casos esquisitos; reconstrói via slice
+      var oAm = parts.slice(3).join('|');
+      if(oAm !== am) return;
+      if(tipo && oTipo !== tipo) return;
+      if(area && oArea !== area) return;
+      if(BUDGET_CFG.tiposIgnorados && BUDGET_CFG.tiposIgnorados[oTipo]) return;
+      var gk = oTipo+'|'+oArea+'|'+oNomforKey;
+      if(!groups[gk]) groups[gk] = {tipo: oTipo, area: oArea, nomforKey: oNomforKey, val: 0};
+    });
+  }
+  // 3) Soma final: para cada grupo (tipo, area, fornecedor) usa o override se existir; senão o valor bruto
+  var total = 0;
+  Object.keys(groups).forEach(function(gk){
+    var g = groups[gk];
+    var oKey = g.tipo+'|'+g.area+'|'+g.nomforKey+'|'+am;
+    var ovr  = (BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[oKey] != null)
+               ? parseFloat(BUDGET_CFG.budgetOverrides[oKey]) : null;
+    total += (ovr != null && !isNaN(ovr)) ? ovr : g.val;
+  });
+  return total;
 }
 
 var _bFmt = function(v){ if(v===null||v===undefined) return '—';
@@ -7996,6 +8030,7 @@ function folhaProjAtualizarTotal(){
 // ── Budget Detail Modal ─────────────────────────────────
 // ── Budget Overrides: edição célula por célula no dialog Detalhes por Fornecedor ──────
 // Chave: tipo|area|nomforKey|am (area pode ser '' quando não filtrado, am no formato YYYYMM)
+var _bgtOvrSyncTimer = null;
 function budgetOvrKey(tipo, area, nomforKey, am){
   return tipo+'|'+(area||'')+'|'+nomforKey+'|'+am;
 }
@@ -8038,6 +8073,14 @@ function budgetSaveOverride(input){
   budgetRenderCellValue(input);
   budgetRecalcRowTotal(input);
   if(changed){
+    // Re-render do Budget atrás do modal pra refletir o novo total (debounce p/ não rodar a cada tecla)
+    if(typeof _bgtOvrSyncTimer !== 'undefined' && _bgtOvrSyncTimer) clearTimeout(_bgtOvrSyncTimer);
+    _bgtOvrSyncTimer = setTimeout(function(){
+      _bgtOvrSyncTimer = null;
+      if(typeof renderBudget === 'function'){
+        try { renderBudget(); } catch(e){ console.warn('[budgetOverride] renderBudget falhou:', e.message); }
+      }
+    }, 600);
     // Salva de forma assíncrona — atualiza a chave budget_classif completa
     supaSave(TBLS.save_dre,'budget_classif', {
       classif: BUDGET_CFG.classif||{},
