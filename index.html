@@ -655,7 +655,7 @@ var COLS = {
   venda_dre: null, // select=* — colunas uppercase, PostgREST case-sensitive. Inclui cod_vendedor para join com otb_canais
 
   // dw_otb_despesa: colunas reais confirmadas no Supabase
-  despesa: ['ano_mes_emissao','ano_mes_venc','ano_mes_baixa','e2_tipo','e2_fornece','e2_nomfor','e2_hist','valor_pagamento','pk_ano_mes_venc_tipo_e2_forn'],
+  despesa: ['ano_mes_emissao','ano_mes_venc','ano_mes_baixa','e2_tipo','e2_fornece','e2_nomfor','e2_hist','valor_pagamento','pk_ano_mes_venc_e2_forn'],
 
   // dw_otb_folha: usa select=* pois os nomes das colunas podem variar
   // folhaGetPeriodo/Area/Cargo/Nome/Total já lidam com múltiplos nomes possíveis
@@ -3930,6 +3930,9 @@ function dreFilt(ano,mes,canal,q,cluster,regiao,forn,transp,vendedor){
 }
 function dreRender(){
   if(!DRE_LOADED) return;
+  // Guarda: se os painéis ainda não foram montados (callback de load disparado antes do initDre),
+  // sai silenciosamente — o initDre vai renderizar quando o usuário entrar na tela DRE.
+  if(!document.getElementById('dreKpi-mensal') || !document.getElementById('dreTable-mensal')) return;
   // Diagnóstico de integridade dos dados — útil para identificar duplicações
   if(window._dreDebugLogged !== DRE_RAW.length){
     window._dreDebugLogged = DRE_RAW.length;
