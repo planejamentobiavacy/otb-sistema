@@ -939,13 +939,20 @@ async function doForgot(){
       redirectTo: window.location.origin + window.location.pathname
     });
     if(res.error) throw res.error;
-    // Mostra confirmação
     document.getElementById('forgotEmailSent').textContent = email;
     document.getElementById('panelForgot').style.display   = 'none';
     document.getElementById('panelForgotOk').style.display = 'block';
   } catch(e){
+    console.error('[doForgot]', e);
     err.style.display = 'block';
-    err.textContent   = '❌ Não foi possível enviar. Verifique o e-mail informado.';
+    var msg = e && e.message ? e.message : 'erro desconhecido';
+    // Traduções de erros comuns do Supabase
+    var human = msg;
+    if(/rate limit|too many/i.test(msg)) human = 'Limite de envios atingido. Aguarde alguns minutos e tente novamente.';
+    else if(/for security purposes/i.test(msg)) human = 'Por segurança, espere alguns segundos antes de tentar novamente.';
+    else if(/invalid|not.*found|exist/i.test(msg)) human = 'E-mail não cadastrado. Peça pro admin enviar um convite via Configurações.';
+    else if(/email/i.test(msg) && /smtp|send/i.test(msg)) human = 'Servidor de e-mail bloqueou. Avise o admin pra checar SMTP no Supabase.';
+    err.innerHTML = '❌ '+human+'<br><span style="font-size:10px;opacity:.7;margin-top:4px;display:block">Detalhe técnico: '+msg+'</span>';
   }
   btn.disabled = false; btn.textContent = 'Enviar link de redefinição';
 }
