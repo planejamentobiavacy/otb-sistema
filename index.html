@@ -8582,6 +8582,12 @@ function folhaProjClearCache(){ _folhaProjAreaCache = null; }
 
 function openFolhaDetail(area, ano){
   var areaUp = (area||'').toUpperCase();
+  // Expande áreas mescladas (ex: FIN/FAT/FISC → FATURAMENTO, FINANCEIRO, FISCAL)
+  // para que o modal traga os colaboradores originais das áreas-fonte.
+  var areaSources = (typeof _budgetSourceAreas === 'function')
+    ? _budgetSourceAreas(area).map(function(s){ return s.toUpperCase(); })
+    : [areaUp];
+  if(areaSources.indexOf(areaUp) < 0) areaSources.push(areaUp);
   var ml = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   var fmtV = function(v){ if(!v||v===0) return '<span style="color:#ccc">—</span>'; return v<0?'<span style="color:#c0181a">-R$ '+Math.round(Math.abs(v)).toLocaleString('pt-BR')+'</span>':'R$ '+Math.round(v).toLocaleString('pt-BR'); };
 
@@ -8605,7 +8611,7 @@ function openFolhaDetail(area, ano){
     var nome = folhaGetNome(r);
     var cfg  = FOLHA_CFG.classif[nome];
     var areaR= (cfg&&cfg.area ? cfg.area : folhaGetArea(r)).toUpperCase();
-    if(areaR !== areaUp) return;
+    if(areaSources.indexOf(areaR) < 0) return;
     var am   = String(folhaGetPeriodo(r)||'').replace(/[^0-9]/g,'').slice(0,6);
     if(am.length!==6) return;
     if(ano && am.slice(0,4)!==String(ano)) return;
@@ -8633,7 +8639,7 @@ function openFolhaDetail(area, ano){
     // 3) Fallback final: só o total
     if(totalVerbas===0) totalVerbas=parseFloat(r.valor||r.VALOR)||0;
 
-    if(!map[nome]) map[nome]={total:0,byMonth:{},verbas:{}};
+    if(!map[nome]) map[nome]={total:0,byMonth:{},verbas:{},area:areaR};
     map[nome].total+=totalVerbas;
     map[nome].byMonth[ym]=(map[nome].byMonth[ym]||0)+totalVerbas;
     if(!map[nome].verbas[ym]) map[nome].verbas[ym]={};
@@ -8700,14 +8706,17 @@ function openFolhaDetail(area, ano){
         totalRealizado += v;
         h += '<td style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center">'+fmtV(v)+'</td>';
       } else if(isFuture){
-        var proj = folhaProjGet(areaUp, nome, ym);
+        // Usa a área-fonte real do colaborador (não o nome mesclado FIN/FAT/FISC),
+        // pra que a projeção persista na mesma chave que o Budget lê depois.
+        var rowArea = row.area || areaUp;
+        var proj = folhaProjGet(rowArea, nome, ym);
         if(proj != null) totalProj += proj;
         var displayProj = proj != null ? 'R$ '+Math.round(proj).toLocaleString('pt-BR') : '';
         var cellBg = proj != null ? '#e9e4fa' : '#faf6ff';
         var cellClr = proj != null ? '#5a1d7a' : '#aab8d6';
         h += '<td style="padding:3px 5px;border-bottom:1px solid #eef1f8;text-align:center">'
           + '<input type="text" '
-          + 'data-area="'+escHtml(areaUp)+'" data-nome="'+escHtml(nome)+'" data-ym="'+ym+'" '
+          + 'data-area="'+escHtml(rowArea)+'" data-nome="'+escHtml(nome)+'" data-ym="'+ym+'" '
           + 'value="'+escHtml(displayProj)+'" '
           + 'placeholder="—" '
           + 'onblur="folhaProjOnInputBlur(this)" '
@@ -8753,7 +8762,7 @@ function openFolhaDetail(area, ano){
       var v = map[n].byMonth[ym] || 0;
       if(v > 0){ t += v; }
       else {
-        var p = folhaProjGet(areaUp, n, ym);
+        var p = folhaProjGet(map[n].area || areaUp, n, ym);
         if(p != null) t += p;
       }
     });
