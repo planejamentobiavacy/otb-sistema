@@ -7500,12 +7500,15 @@ async function _mergeBudgetClassifVol(baseSavedAt){
       // _vol é mais antigo que a base — base é a fonte de verdade, descarta delta
       return false;
     }
-    if(vol.tiposIgnorados)  BUDGET_CFG.tiposIgnorados  = vol.tiposIgnorados;
-    if(vol.tiposDespGerais) BUDGET_CFG.tiposDespGerais = vol.tiposDespGerais;
-    if(vol.tiposCD)         BUDGET_CFG.tiposCD         = vol.tiposCD;
-    if(vol.budgetOverrides) BUDGET_CFG.budgetOverrides = vol.budgetOverrides;
-    if(vol.folhaProjecao)   BUDGET_CFG.folhaProjecao   = vol.folhaProjecao;
-    if(vol.sim)             BUDGET_CFG.sim             = vol.sim;
+    // Safety net: NÃO sobrescreve campo da base com um vol VAZIO
+    // (evita perda de dados se um save antigo tiver gravado o campo sem conteúdo)
+    var _hasContent = function(obj){ return obj && typeof obj === 'object' && Object.keys(obj).length > 0; };
+    if(_hasContent(vol.tiposIgnorados))  BUDGET_CFG.tiposIgnorados  = vol.tiposIgnorados;
+    if(_hasContent(vol.tiposDespGerais)) BUDGET_CFG.tiposDespGerais = vol.tiposDespGerais;
+    if(_hasContent(vol.tiposCD))         BUDGET_CFG.tiposCD         = vol.tiposCD;
+    if(_hasContent(vol.budgetOverrides)) BUDGET_CFG.budgetOverrides = vol.budgetOverrides;
+    if(_hasContent(vol.folhaProjecao))   BUDGET_CFG.folhaProjecao   = vol.folhaProjecao;
+    if(_hasContent(vol.sim))             BUDGET_CFG.sim             = vol.sim;
     console.log('[delta] budget_classif_vol aplicado em cima da base — overrides:',
       Object.keys(BUDGET_CFG.budgetOverrides||{}).length, '| sim:', Object.keys(BUDGET_CFG.sim||{}).length);
     return true;
@@ -9624,7 +9627,17 @@ async function saveBudgetCfg(btn){
 
   try{
     // Salva em chave dedicada (sobrevive a regeneração de snapshot)
-    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados, tiposDespGerais: BUDGET_CFG.tiposDespGerais||{}, tiposCD: BUDGET_CFG.tiposCD||{}, budgetOverrides: BUDGET_CFG.budgetOverrides||{}, folhaProjecao: BUDGET_CFG.folhaProjecao||{}, savedAt: new Date().toISOString()});
+    // IMPORTANTE: inclui sim na payload — caso contrário projeções de impostos somem ao clicar "Salvar Classificações"
+    await supaSave(TBLS.save_dre,'budget_classif', {
+      classif:         BUDGET_CFG.classif,
+      tiposIgnorados:  BUDGET_CFG.tiposIgnorados,
+      tiposDespGerais: BUDGET_CFG.tiposDespGerais||{},
+      tiposCD:         BUDGET_CFG.tiposCD||{},
+      budgetOverrides: BUDGET_CFG.budgetOverrides||{},
+      folhaProjecao:   BUDGET_CFG.folhaProjecao||{},
+      sim:             BUDGET_CFG.sim||{},
+      savedAt:         new Date().toISOString()
+    });
     if(typeof _clearBudgetClassifVol === 'function') await _clearBudgetClassifVol();
     // Atualiza também budget_cfg para manter consistência
     await supaSave(TBLS.save_dre,'budget_cfg', BUDGET_CFG);
