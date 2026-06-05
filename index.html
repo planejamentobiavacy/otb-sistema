@@ -108,6 +108,10 @@ input.budget-cell-input[data-ss="1"]:focus{
 .nav-pills a:hover{background:rgba(255,255,255,.1);color:#fff}
 .nav-pills a.current{background:rgba(255,255,255,.18);color:#fff;cursor:default}
 .nav-pills a.current:hover{background:rgba(255,255,255,.18)}
+.budget-dre-banner{display:none;background:linear-gradient(90deg,#1a56c4,#4a7ce0);color:#fff;padding:8px 14px;margin-bottom:10px;border-radius:6px;align-items:center;gap:12px;font-size:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);flex-shrink:0}
+.budget-dre-banner.visible{display:flex}
+.budget-dre-bar{flex:1;height:6px;background:rgba(255,255,255,.2);border-radius:3px;overflow:hidden;position:relative;min-width:120px}
+.budget-dre-bar-fill{position:absolute;left:0;top:0;height:100%;width:0%;background:rgba(255,255,255,.85);border-radius:3px;transition:width .4s ease-out}
 .btn{background:var(--surface);color:var(--text);border:1px solid var(--border);padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;border-radius:3px;display:inline-flex;align-items:center;gap:6px;transition:all .15s;font-family:inherit}
 .btn:hover{background:#f0f3f7;border-color:var(--border-strong)}
 .btn:disabled{opacity:.5;cursor:not-allowed}
@@ -3550,6 +3554,8 @@ function dreApplySectionsState(){
 function dreShowProgress(loaded, total){
   var bar = document.getElementById('dreProgBar');
   var lbl = document.getElementById('dreProgLabel');
+  // Atualiza banner do Budget se estiver visível (DRE carregando em background)
+  if(typeof _budgetUpdateDreBanner === 'function') _budgetUpdateDreBanner(loaded, total);
   if(!bar && !lbl) return;
   var pct = total > 0 ? Math.min(100, Math.round(loaded/total*100)) : 0;
   if(bar) bar.style.width = pct + '%';
@@ -7154,6 +7160,60 @@ function _budgetSetProgress(pct, label, stepHtml){
   if(stp && stepHtml) stp.innerHTML = stepHtml;
 }
 
+// Banner persistente que aparece enquanto o DRE carrega em background
+// (depois que o Budget já renderizou — mostra que a Receita Bruta vai chegar)
+var _budgetDreCreepTimer = null;
+var _budgetDreCreepPct   = 0;
+var _budgetDreRealProgress = false; // vira true quando dreShowProgress chega com dados reais
+
+function _budgetShowDreBanner(show){
+  var el = document.getElementById('budgetDreBanner');
+  if(!el) return;
+  if(show){
+    el.classList.add('visible');
+    _budgetDreCreepPct = 0;
+    _budgetDreRealProgress = false;
+    var fill = document.getElementById('budgetDreBarFill');
+    if(fill) fill.style.width = '0%';
+    var pctEl = document.getElementById('budgetDreBannerPct');
+    if(pctEl) pctEl.textContent = 'iniciando...';
+    // Crescimento sintético lento (até ~85%) enquanto não chega progresso real.
+    // Assintótico — vai desacelerando pra nunca chegar em 100% sozinho.
+    if(_budgetDreCreepTimer) clearInterval(_budgetDreCreepTimer);
+    _budgetDreCreepTimer = setInterval(function(){
+      if(_budgetDreRealProgress){ clearInterval(_budgetDreCreepTimer); _budgetDreCreepTimer = null; return; }
+      // Cresce mais rápido no início, depois desacelera. Cap em 85%.
+      var step = Math.max(0.5, (85 - _budgetDreCreepPct) * 0.04);
+      _budgetDreCreepPct = Math.min(85, _budgetDreCreepPct + step);
+      var f = document.getElementById('budgetDreBarFill');
+      if(f) f.style.width = _budgetDreCreepPct.toFixed(1) + '%';
+    }, 400);
+  } else {
+    el.classList.remove('visible');
+    if(_budgetDreCreepTimer){ clearInterval(_budgetDreCreepTimer); _budgetDreCreepTimer = null; }
+    _budgetDreCreepPct = 0;
+    _budgetDreRealProgress = false;
+  }
+}
+
+// Atualiza progresso real (chamado por dreShowProgress se o banner estiver visível)
+function _budgetUpdateDreBanner(loaded, total){
+  var el = document.getElementById('budgetDreBanner');
+  if(!el || !el.classList.contains('visible')) return;
+  if(total > 0 && loaded > 0){
+    _budgetDreRealProgress = true;
+    var pct = Math.min(100, Math.round(loaded/total*100));
+    var fill = document.getElementById('budgetDreBarFill');
+    // Garante que não retrocede (progresso real só sobe)
+    if(fill){
+      var cur = parseFloat(fill.style.width) || 0;
+      if(pct > cur) fill.style.width = pct + '%';
+    }
+    var pctEl = document.getElementById('budgetDreBannerPct');
+    if(pctEl) pctEl.textContent = loaded.toLocaleString('pt-BR') + ' / ' + total.toLocaleString('pt-BR') + ' (' + pct + '%)';
+  }
+}
+
 async function openBudget(){
   showScreen('screenBudget');
   // Se já está tudo carregado, vai direto
@@ -7222,12 +7282,15 @@ async function openBudget(){
 
     // Se DRE ainda não terminou, re-renderiza quando chegar (aparece toast discreto)
     if(!dreAlreadyDone){
+      _budgetShowDreBanner(true);
       drePromise.then(function(){
         console.log('[openBudget] DRE chegou tarde — re-renderizando Budget com receita real');
+        _budgetShowDreBanner(false);
         try { renderBudget(); } catch(e){ console.warn('[openBudget] re-render falhou:', e.message); }
         toast('✔ Receita carregada — Budget atualizado');
       }).catch(function(e){
         console.warn('[openBudget] DRE falhou em background:', e && e.message);
+        _budgetShowDreBanner(false);
       });
     }
     return;
@@ -9878,6 +9941,11 @@ async function saveBudgetCfg(btn){
     </div>
   </header>
   <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;padding:16px 20px;min-height:0" id="budgetBody">
+    <div id="budgetDreBanner" class="budget-dre-banner">
+      <div style="font-weight:600;white-space:nowrap">📊 Carregando vendas do DRE</div>
+      <div class="budget-dre-bar"><div class="budget-dre-bar-fill" id="budgetDreBarFill"></div></div>
+      <div id="budgetDreBannerPct" style="font-size:11px;opacity:.9;min-width:90px;text-align:right;white-space:nowrap">aguarde...</div>
+    </div>
     <div style="text-align:center;padding:80px;color:#7a8ab0;font-size:14px" id="budgetEmpty">Carregando dados...</div>
   </div>
   <div id="budgetLoading" class="dre-loading" style="display:none">
