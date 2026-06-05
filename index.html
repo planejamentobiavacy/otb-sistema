@@ -8103,11 +8103,32 @@ function renderBudget(anoFilter){
 
     areasUsadas.forEach(function(area){
       var usedTiposForArea = {};
+      // Filtra também pelo ano atual — não mostra subitem se a classificação só tem
+      // lançamentos em anos anteriores (linha apareceria vazia, confunde o usuário)
+      var _anoBudget = (typeof BUDGET_ANO_FILTER !== 'undefined' && BUDGET_ANO_FILTER) ? String(BUDGET_ANO_FILTER) : '';
       BUDGET_DESP_RAW.forEach(function(r){
         var k = (r.e2_nomfor||r.E2_NOMFOR||'')+'|'+(r.e2_hist||r.E2_HIST||'');
         var c = BUDGET_CFG.classif[k]||{};
-        if(c.area===area && c.tipo && c.desconsiderar !== 'sim' && !BUDGET_CFG.tiposIgnorados[c.tipo]) usedTiposForArea[c.tipo] = true;
+        if(c.area!==area || !c.tipo || c.desconsiderar === 'sim' || BUDGET_CFG.tiposIgnorados[c.tipo]) return;
+        // Verifica ano se filtrado
+        if(_anoBudget){
+          var am = budgetDespAm(r) || '';
+          if(am.slice(0,4) !== _anoBudget) return;
+        }
+        usedTiposForArea[c.tipo] = true;
       });
+      // Inclui também tipos com override budgetOverrides no ano (ex: previsões futuras sem lançamento bruto ainda)
+      if(BUDGET_CFG.budgetOverrides){
+        Object.keys(BUDGET_CFG.budgetOverrides).forEach(function(ovrKey){
+          var parts = ovrKey.split('|'); if(parts.length < 4) return;
+          var oTipo = parts[0], oArea = parts[1];
+          var oAm = parts.slice(3).join('|');
+          if(oArea !== area) return;
+          if(_anoBudget && oAm.slice(0,4) !== _anoBudget) return;
+          if(BUDGET_CFG.tiposIgnorados && BUDGET_CFG.tiposIgnorados[oTipo]) return;
+          usedTiposForArea[oTipo] = true;
+        });
+      }
       var tipos = BUDGET_TIPOS.filter(function(t){ return usedTiposForArea[t]; });
 
       // Total por área = soma de despesas (todos os tipos) + Salário Folha da área
