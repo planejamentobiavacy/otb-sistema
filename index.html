@@ -502,7 +502,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn" data-perm-admin onclick="openDreCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Config</button>
-      <button class="btn save" data-perm-edit id="btnSaveDre" onclick="handleSaveDre(this)">💾 Salvar DRE</button>
+      <button class="btn save" data-perm-edit id="btnSaveDre" onclick="handleSaveDre(this)">💾 Salvar</button>
     </div>
   </header>
   <div class="dre-header-bar" id="dreTabsBar"></div>
@@ -10148,7 +10148,6 @@ async function saveBudgetCfg(btn){
       </nav>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn" id="btnBudgetRefresh" onclick="budgetForceReload(this)" title="Recarrega os dados do Supabase" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">🔄 Atualizar</button>
       <button class="btn" data-perm-admin onclick="openBudgetCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button>
       <button class="btn save" data-perm-edit id="btnSaveBudget" onclick="handleSaveBudget(this)">💾 Salvar</button>
     </div>
