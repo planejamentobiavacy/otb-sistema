@@ -9197,6 +9197,39 @@ function openBudgetDetail(tipo, area, ano){
   h += '<td class="budget-footer-total" style="padding:7px 10px;text-align:center;background:#0f1a3a">'+fmtV(grandTotal)+'</td>';
   h += '</tr>';
 
+  // ── Linha de referência: Frete + FOB do DRE (só aparece pra tipo "Frete") ──
+  // Mostra valores reais do DRE pra comparação com o classificado no Budget
+  if(String(tipo).toUpperCase() === 'FRETE' && typeof DRE_RAW !== 'undefined' && DRE_RAW && DRE_RAW.length){
+    var _dreFreteFobForAm = function(am){
+      var ano = am.slice(0,4), mes = am.slice(4,6);
+      var rows = DRE_RAW.filter(function(r){
+        return String(r.ano||r.ANO||'') === ano && String(r.mes||r.MES||'').padStart(2,'0') === mes;
+      });
+      if(!rows.length) return null;
+      var a = dreAgg(rows);
+      var amH = ano + '-' + mes;
+      var p = (typeof DRE_CFG_PARAMS !== 'undefined') ? (DRE_CFG_PARAMS[am] || DRE_CFG_PARAMS[amH]) : null;
+      var pctFob = (p && p.fob != null) ? parseFloat(p.fob) : (DRE_CONFIG_DEFAULTS.fob || 0);
+      var custoHavaBruto = (a.custo_hava||0) > 0 ? (a.custo_hava||0) / 0.79 : 0;
+      var fob = custoHavaBruto * pctFob;
+      var cf  = a.custo_frete || 0;
+      return {cf: cf, fob: fob, total: cf + fob};
+    };
+    var dreGrandTotal = 0;
+    h += '<tr style="background:#f3eefb;color:#4a2785;font-weight:600;font-style:italic">';
+    h += '<td style="padding:7px 10px;position:sticky;left:0;background:#f3eefb;z-index:1;font-style:italic">📊 Frete + FOB (DRE)</td>';
+    h += '<td style="padding:4px 10px;font-size:10px;color:#7a5aa0">Referência do DRE — não editável</td>';
+    months.forEach(function(am){
+      var v = _dreFreteFobForAm(am);
+      var val = v ? v.total : 0;
+      dreGrandTotal += val;
+      var tip = v ? 'Custo Frete: R$ '+Math.round(v.cf).toLocaleString('pt-BR')+' | FOB: R$ '+Math.round(v.fob).toLocaleString('pt-BR') : 'Sem dados DRE para esse mês';
+      h += '<td style="padding:5px 8px;text-align:center;font-size:11px" title="'+escHtml(tip)+'">'+(val>0?'R$ '+Math.round(val).toLocaleString('pt-BR'):'<span style="color:#bbb">—</span>')+'</td>';
+    });
+    h += '<td style="padding:7px 10px;text-align:center;background:#e8dff5;font-weight:700">'+(dreGrandTotal>0?'R$ '+Math.round(dreGrandTotal).toLocaleString('pt-BR'):'—')+'</td>';
+    h += '</tr>';
+  }
+
   h += '</tbody></table></div>';
 
   // openFolhaDetail sobrescreve o innerHTML do overlay, destruindo budgetDetailTitle e budgetDetailBody.
