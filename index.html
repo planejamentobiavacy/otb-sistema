@@ -9608,16 +9608,24 @@ function openBudgetCfg(){
 
   // Build combos: uma linha por (Fornecedor, Histórico) — classificação linha a linha
   var combos = {};
+  var allMonthsSet = {};
   BUDGET_DESP_RAW.forEach(function(r){
     var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
     var hist   = String(r.e2_hist||r.E2_HIST||'').trim();
     if(!nomfor && !hist) return;
     var val = parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||r.e2_valor||r.E2_VALOR||r.value||r.VALUE||r.vlr||r.VLR||r.e2_valto||r.E2_VALTO)||0;
     var key = nomfor+'|'+hist; // chave composta: cada par fornecedor+hist é uma linha
-    if(!combos[key]) combos[key] = {nomfor:nomfor, hist:hist, count:0, total:0};
+    var am  = budgetDespAm(r); // YYYYMM ou ''
+    if(!combos[key]) combos[key] = {nomfor:nomfor, hist:hist, count:0, total:0, months:{}};
     combos[key].count++;
     combos[key].total += val;
+    if(am){
+      combos[key].months[am] = (combos[key].months[am]||0) + val;
+      allMonthsSet[am] = true;
+    }
   });
+  // Lista de meses disponíveis (ordem decrescente — mais recente primeiro)
+  var allMonths = Object.keys(allMonthsSet).sort().reverse();
 
   if(!Object.keys(combos).length){
     body.innerHTML = '<div style="padding:20px;color:#7a8ab0;text-align:center">Nenhum lançamento encontrado na tabela '+TBLS.despesa+'.</div>';
@@ -9637,6 +9645,7 @@ function openBudgetCfg(){
   // Guarda referência global para re-render do filtro
   body._allKeys = allKeys;
   body._combos  = combos;
+  body._allMonths = allMonths;
   body._tipoOpts = tipoOpts;
   body._fmtVal   = fmtVal;
   body._areaOpts = areaOpts;
@@ -9704,6 +9713,17 @@ function bcfgSearchInput(v){
   }, 250);
 }
 
+// Atualiza o filtro de período (AAAAMM) e re-renderiza
+function bcfgSetPeriodFilter(value){
+  var dataEl = document.getElementById('budgetCfgBody');
+  if(!dataEl) return;
+  dataEl._periodFilter = value || '';
+  // Lê a busca atual pra preservar
+  var sInput = document.getElementById('bcfg_search');
+  var s = sInput ? sInput.value : '';
+  renderBudgetCfgTable(s);
+}
+
 // Aplica o Tipo/Área selecionados a TODOS os fornecedores que estão filtrados na busca atual
 // (pendentes + classificados). Os classificados são sobrescritos.
 function bcfgBulkApply(){
@@ -9717,18 +9737,25 @@ function bcfgBulkApply(){
   if(!dataEl || !dataEl._allKeys){ toast('Erro: dados não carregados','err'); return; }
   var allKeys = dataEl._allKeys;
   var combos  = dataEl._combos;
+  var periodFilter = dataEl._periodFilter || '';
   var searchInput = document.getElementById('bcfg_search');
   var search = searchInput ? searchInput.value : '';
   var searchUC = (search||'').trim().toUpperCase();
-  if(!searchUC){ toast('Aplicação em lote só funciona com busca ativa','err'); return; }
+  if(!searchUC && !periodFilter){ toast('Aplicação em lote só funciona com busca ou filtro de período ativo','err'); return; }
 
-  // Coleta TODAS as chaves que batem com a busca (pending + classified)
+  // Coleta TODAS as chaves que batem com busca E período (intersecção)
   var affected = [];
   allKeys.forEach(function(k){
-    var matches = combos[k].nomfor.toUpperCase().indexOf(searchUC) >= 0
-               || (combos[k].hist||'').toUpperCase().indexOf(searchUC) >= 0
-               || (BUDGET_CFG.classif[k] && (BUDGET_CFG.classif[k].obs||'').toUpperCase().indexOf(searchUC) >= 0);
-    if(matches) affected.push(k);
+    // Filtro de período
+    if(periodFilter && !(combos[k].months && combos[k].months[periodFilter])) return;
+    // Filtro de busca
+    if(searchUC){
+      var matches = combos[k].nomfor.toUpperCase().indexOf(searchUC) >= 0
+                 || (combos[k].hist||'').toUpperCase().indexOf(searchUC) >= 0
+                 || (BUDGET_CFG.classif[k] && (BUDGET_CFG.classif[k].obs||'').toUpperCase().indexOf(searchUC) >= 0);
+      if(!matches) return;
+    }
+    affected.push(k);
   });
   if(!affected.length){ toast('Nenhum fornecedor afetado','err'); return; }
 
@@ -9764,6 +9791,8 @@ function renderBudgetCfgTable(search){
   if(!dataEl||!dataEl._allKeys) return;
   var allKeys   = dataEl._allKeys;
   var combos    = dataEl._combos;
+  var allMonths = dataEl._allMonths || [];
+  var periodFilter = dataEl._periodFilter || '';
   var tipoOpts  = dataEl._tipoOpts;
   var areaOpts  = dataEl._areaOpts;
   var selStyle  = dataEl._selStyle;
@@ -9775,9 +9804,16 @@ function renderBudgetCfgTable(search){
 
   var searchUC = (search||'').trim().toUpperCase();
 
+  // Filtro de período: se setado, só inclui combos que têm lançamento naquele AAAAMM
+  function _matchesPeriod(k){
+    if(!periodFilter) return true;
+    return !!(combos[k].months && combos[k].months[periodFilter]);
+  }
+
   // Separa: sem tipo/área (pendentes) e com tipo/área (classificados)
   var pending = [], classified = [];
   allKeys.forEach(function(k){
+    if(!_matchesPeriod(k)) return;
     // Busca classif: tenta chave composta (nomfor|hist) e cai para a legada (só nomfor)
     var saved = BUDGET_CFG.classif[k] || BUDGET_CFG.classif[combos[k].nomfor] || {};
     var hasTipo = saved.tipo && saved.tipo !== '';
@@ -9787,12 +9823,18 @@ function renderBudgetCfgTable(search){
     else pending.push(k);
   });
 
-  // Quando há busca: filtra AMBAS as listas (pendentes e classificados)
-  // Quando sem busca: mostra só pendentes, classificados ficam ocultos
+  // Quando há busca OU filtro de período: filtra AMBAS as listas (pendentes e classificados)
+  // Quando sem busca/filtro: mostra só pendentes, classificados ficam ocultos
+  var hasFilter = searchUC.length > 0 || !!periodFilter;
   var showPending, showClassified;
-  if(searchUC.length > 0){
-    showPending    = pending.filter(function(k){ return combos[k].nomfor.toUpperCase().indexOf(searchUC)>=0 || (combos[k].hist||'').toUpperCase().indexOf(searchUC)>=0 || (BUDGET_CFG.classif[k]&&(BUDGET_CFG.classif[k].obs||'').toUpperCase().indexOf(searchUC)>=0); });
-    showClassified = classified.filter(function(k){ return combos[k].nomfor.toUpperCase().indexOf(searchUC)>=0 || (combos[k].hist||'').toUpperCase().indexOf(searchUC)>=0 || (BUDGET_CFG.classif[k]&&(BUDGET_CFG.classif[k].obs||'').toUpperCase().indexOf(searchUC)>=0); });
+  if(hasFilter){
+    if(searchUC.length > 0){
+      showPending    = pending.filter(function(k){ return combos[k].nomfor.toUpperCase().indexOf(searchUC)>=0 || (combos[k].hist||'').toUpperCase().indexOf(searchUC)>=0 || (BUDGET_CFG.classif[k]&&(BUDGET_CFG.classif[k].obs||'').toUpperCase().indexOf(searchUC)>=0); });
+      showClassified = classified.filter(function(k){ return combos[k].nomfor.toUpperCase().indexOf(searchUC)>=0 || (combos[k].hist||'').toUpperCase().indexOf(searchUC)>=0 || (BUDGET_CFG.classif[k]&&(BUDGET_CFG.classif[k].obs||'').toUpperCase().indexOf(searchUC)>=0); });
+    } else {
+      showPending    = pending;
+      showClassified = classified;
+    }
   } else {
     showPending    = pending;
     showClassified = [];
@@ -9824,15 +9866,30 @@ function renderBudgetCfgTable(search){
   h += '<div style="flex:1;min-width:200px">';
   h += '<input id="bcfg_search" type="text" placeholder="🔍 Pesquisar fornecedor classificado..." value="'+escHtml(search||'')+'" oninput="bcfgSearchInput(this.value)" style="'+inpStyle+';font-size:12px;padding:6px 10px">';
   h += '</div>';
+  // Filtro de período (Ano/Mês)
+  var _ml = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  h += '<select id="bcfg_period" onchange="bcfgSetPeriodFilter(this.value)" title="Mostrar só fornecedores que tem lançamento neste mês" style="'+selStyle+';font-size:12px;padding:5px 8px;min-width:140px">';
+  h += '<option value="">📅 Todos os meses</option>';
+  allMonths.forEach(function(am){
+    var y = am.slice(0,4), m = parseInt(am.slice(4,6),10);
+    var label = _ml[m]+'/'+y;
+    var sel = (am === periodFilter) ? ' selected' : '';
+    h += '<option value="'+am+'"'+sel+'>'+label+'</option>';
+  });
+  h += '</select>';
   h += '<div style="font-size:11px;color:#7a8ab0;white-space:nowrap">';
   h += '<span style="color:#e05a2b;font-weight:700">'+pendingCount+'</span> pendentes · ';
   h += '<span style="color:#1a7c3e;font-weight:700">'+classCount+'</span> classificados · ';
   h += totalCount+' total';
+  if(periodFilter){
+    var _pm = parseInt(periodFilter.slice(4,6),10);
+    h += ' <span style="background:#e8f0fe;color:#1a56c4;padding:1px 7px;border-radius:10px;font-weight:600;margin-left:4px">📅 '+_ml[_pm]+'/'+periodFilter.slice(0,4)+'</span>';
+  }
   h += '</div></div>';
 
-  // ── BULK APPLY: aparece só quando há busca ativa + ao menos um resultado ──
+  // ── BULK APPLY: aparece só quando há busca/período ativo + ao menos um resultado ──
   // Permite aplicar Tipo/Área a todos os fornecedores filtrados de uma vez
-  if(searchUC.length > 0 && (showPending.length || showClassified.length)){
+  if(hasFilter && (showPending.length || showClassified.length)){
     var totalAffected = showPending.length + showClassified.length;
     h += '<div style="background:#eef5ff;border:1.5px solid #4682c4;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
     h += '<div style="font-size:11px;font-weight:700;color:#1a4d8f;letter-spacing:.5px;white-space:nowrap">⚡ APLICAR EM LOTE</div>';
@@ -9860,8 +9917,8 @@ function renderBudgetCfgTable(search){
 
   // ── Pendentes (ou filtrados pela busca) ──
   if(showPending.length){
-    var pendLabel = searchUC.length > 0
-      ? '🔍 SEM CLASSIFICAÇÃO — resultado da busca ('+showPending.length+')'
+    var pendLabel = (searchUC.length > 0 || periodFilter)
+      ? '🔍 SEM CLASSIFICAÇÃO — resultado do filtro ('+showPending.length+')'
       : '⚠ SEM CLASSIFICAÇÃO ('+showPending.length+')';
     h += '<div style="font-size:10px;font-weight:700;letter-spacing:1px;color:#e05a2b;padding:6px 10px 4px;background:#fff8f5;border-left:3px solid #e05a2b;margin-bottom:2px">'+pendLabel+'</div>';
     h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">';
@@ -9878,7 +9935,7 @@ function renderBudgetCfgTable(search){
 
   // ── Classificados (só quando há busca) ──
   if(showClassified.length){
-    h += '<div style="font-size:10px;font-weight:700;letter-spacing:1px;color:#1a7c3e;padding:6px 10px 4px;background:#f0fff6;border-left:3px solid #1a7c3e;margin-bottom:2px">✔ CLASSIFICADOS — resultado da busca ('+showClassified.length+')</div>';
+    h += '<div style="font-size:10px;font-weight:700;letter-spacing:1px;color:#1a7c3e;padding:6px 10px 4px;background:#f0fff6;border-left:3px solid #1a7c3e;margin-bottom:2px">✔ CLASSIFICADOS — resultado do filtro ('+showClassified.length+')</div>';
     h += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:8px">';
     h += thHead + '<tbody>';
     var clsSlice = showClassified.slice(0, MAX_ROWS);
@@ -9891,10 +9948,16 @@ function renderBudgetCfgTable(search){
     }
   }
 
-  if(!showPending.length && !showClassified.length && searchUC.length > 0){
-    h += '<div style="padding:16px 10px;color:#7a8ab0;font-size:12px;font-style:italic;text-align:center">Nenhum fornecedor encontrado para "'+escHtml(search)+'".</div>';
+  if(!showPending.length && !showClassified.length && hasFilter){
+    var _msg = searchUC.length > 0 ? 'busca "'+escHtml(search)+'"' : '';
+    if(periodFilter){
+      var _pm = parseInt(periodFilter.slice(4,6),10);
+      var _ml2 = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+      _msg = _msg ? (_msg+' em '+_ml2[_pm]+'/'+periodFilter.slice(0,4)) : _ml2[_pm]+'/'+periodFilter.slice(0,4);
+    }
+    h += '<div style="padding:16px 10px;color:#7a8ab0;font-size:12px;font-style:italic;text-align:center">Nenhum fornecedor encontrado para '+_msg+'.</div>';
   }
-  if(!pending.length && !searchUC.length){
+  if(!pending.length && !hasFilter){
     h += '<div style="padding:20px;text-align:center;color:#1a7c3e;font-weight:700;font-size:13px">✔ Todos os fornecedores estão classificados!</div>';
   }
 
