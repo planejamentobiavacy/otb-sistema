@@ -7813,8 +7813,11 @@ function invalidateBudgetClassifIndex(){ _budgetClassifIndex = null; }
 var _AREA_MERGE_DISPLAY = { 'Faturamento': 'Fin/Fat/Fisc', 'Financeiro': 'Fin/Fat/Fisc', 'Fiscal': 'Fin/Fat/Fisc' };
 function _budgetDisplayArea(src){ return _AREA_MERGE_DISPLAY[src] || src; }
 function _budgetSourceAreas(disp){
+  var dispUp = String(disp||'').toUpperCase();
   var sources = [disp];
-  Object.keys(_AREA_MERGE_DISPLAY).forEach(function(s){ if(_AREA_MERGE_DISPLAY[s] === disp) sources.push(s); });
+  Object.keys(_AREA_MERGE_DISPLAY).forEach(function(s){
+    if(String(_AREA_MERGE_DISPLAY[s]||'').toUpperCase() === dispUp) sources.push(s);
+  });
   return sources;
 }
 // Áreas que sempre aparecem na tela de Despesas (mesmo sem classificações ainda).
