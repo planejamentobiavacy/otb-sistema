@@ -3556,6 +3556,16 @@ function dreShowProgress(loaded, total){
   var lbl = document.getElementById('dreProgLabel');
   // Atualiza banner do Budget se estiver visível (DRE carregando em background)
   if(typeof _budgetUpdateDreBanner === 'function') _budgetUpdateDreBanner(loaded, total);
+  // Atualiza barra de progresso do MODAL de loading do Budget enquanto openBudget aguarda DRE.
+  // Escala o progresso real do DRE pro intervalo 30-85% da barra do Budget.
+  if(typeof _budgetIsLoading !== 'undefined' && _budgetIsLoading && typeof _budgetSetProgress === 'function'){
+    if(total > 0 && loaded >= 0){
+      var dreFrac = Math.min(1, loaded/total);
+      var scaled = 30 + dreFrac * 55; // 30% → 85% (deixa 85-100% pra Budget e render)
+      var lbl2 = 'Carregando DRE: ' + loaded.toLocaleString('pt-BR') + ' / ' + total.toLocaleString('pt-BR') + ' (' + Math.round(dreFrac*100) + '%)';
+      _budgetSetProgress(scaled, lbl2);
+    }
+  }
   if(!bar && !lbl) return;
   var pct = total > 0 ? Math.min(100, Math.round(loaded/total*100)) : 0;
   if(bar) bar.style.width = pct + '%';
@@ -7162,6 +7172,7 @@ function _budgetSetProgress(pct, label, stepHtml){
 
 // Banner persistente que aparece enquanto o DRE carrega em background
 // (depois que o Budget já renderizou — mostra que a Receita Bruta vai chegar)
+var _budgetIsLoading = false; // true enquanto openBudget aguarda dependências
 var _budgetDreCreepTimer = null;
 var _budgetDreCreepPct   = 0;
 var _budgetDreRealProgress = false; // vira true quando dreShowProgress chega com dados reais
@@ -7245,12 +7256,13 @@ async function openBudget(){
       step('Folha ('+FOLHA_RAW.length.toLocaleString('pt-BR')+' linhas)', Date.now()-t1);
     }
 
-    // 2) DRE — usa snapshot se disponível (rápido, ~25k linhas). Quando não há snapshot,
-    // pode levar ~80s pra carregar bruto — NÃO bloqueia o render do Budget; deixa em background
-    // e re-renderiza quando chegar. Linhas que dependem do DRE (Receita Bruta) ficam "—" no meio tempo.
+    // 2) DRE — pode ser pesado (até ~80s bruto). Vamos ESPERAR ele antes de renderizar,
+    // pra evitar abrir o Budget com "—" no lugar da Receita Bruta. A barra de progresso
+    // do modal de loading reflete o progresso real do DRE via _budgetIsLoading flag.
     _budgetSetProgress(30, 'Carregando vendas (DRE)...');
     var t2 = Date.now();
     var drePromise;
+    _budgetIsLoading = true; // ativa hook em dreShowProgress
     if(!DRE_LOADED && typeof loadDreFromSupabase === 'function'){
       drePromise = loadDreFromSupabase().then(function(){
         step('DRE ('+(DRE_RAW||[]).length.toLocaleString('pt-BR')+' linhas'+(DRE_SNAPSHOT?', snapshot':'')+')', Date.now()-t2);
@@ -7267,11 +7279,9 @@ async function openBudget(){
       step('Budget ('+(BUDGET_DESP_RAW||[]).length.toLocaleString('pt-BR')+' despesas)', Date.now()-t3);
     });
 
-    // ── Estratégia: renderiza com o que estiver pronto primeiro (Folha+Budget — rápidos) ──
-    // Se o DRE ainda estiver carregando (sem snapshot, bruto = ~80s), não esperamos —
-    // mostramos a tela e re-renderizamos quando o DRE chegar.
-    await budgetPromise;
-    var dreAlreadyDone = DRE_LOADED;
+    // ── Espera AMBOS terminarem antes de renderizar ──
+    await Promise.all([budgetPromise, drePromise]);
+    _budgetIsLoading = false;
     _budgetSetProgress(90, 'Renderizando tabela...');
     var t4 = Date.now();
     renderBudget();
@@ -7279,22 +7289,9 @@ async function openBudget(){
     _budgetSetProgress(100, 'Pronto');
     console.log('[openBudget] total:', (Date.now()-t0)+'ms', steps);
     setTimeout(function(){ _budgetShowLoading(false); }, 200);
-
-    // Se DRE ainda não terminou, re-renderiza quando chegar (aparece toast discreto)
-    if(!dreAlreadyDone){
-      _budgetShowDreBanner(true);
-      drePromise.then(function(){
-        console.log('[openBudget] DRE chegou tarde — re-renderizando Budget com receita real');
-        _budgetShowDreBanner(false);
-        try { renderBudget(); } catch(e){ console.warn('[openBudget] re-render falhou:', e.message); }
-        toast('✔ Receita carregada — Budget atualizado');
-      }).catch(function(e){
-        console.warn('[openBudget] DRE falhou em background:', e && e.message);
-        _budgetShowDreBanner(false);
-      });
-    }
     return;
   } catch(e){
+    _budgetIsLoading = false;
     console.error('[openBudget] erro:', e);
     _budgetSetProgress(0, '❌ Erro: '+e.message);
     toast('Erro carregando Budget: '+e.message,'err');
@@ -7810,6 +7807,16 @@ function _budgetSourceAreas(disp){
 // Útil pra usuários poderem fazer projeções/overrides em áreas vazias.
 var BUDGET_AREAS_ALWAYS_SHOW = ['Planejamento'];
 
+// Regra de negócio: tipos que NÃO devem aparecer em determinadas áreas.
+// Mesmo que algum fornecedor esteja classificado nessa combinação, ela é ocultada.
+var BUDGET_TIPO_AREA_EXCLUDE = {
+  'Avacy': ['Frete']
+};
+function _isExcludedTipoArea(tipo, area){
+  var ex = BUDGET_TIPO_AREA_EXCLUDE[area];
+  return !!(ex && ex.indexOf(tipo) >= 0);
+}
+
 // % de 13°+Férias aplicado sobre Salário Folha — lê do DRE_CFG_PARAMS por mês.
 // Mesma lógica do DRE (sa13ferias = sa * pct13ferias_adm). Fallback: 11%.
 function _pct13fAdmForYm(ym){
@@ -7997,6 +8004,29 @@ function renderBudget(anoFilter){
   h += '<th style="text-align:center;padding:8px 10px;background:#0a7c4e;color:#fff;font-size:13.2px;font-weight:700;min-width:120px;position:sticky;top:0;right:0;z-index:4;border-left:2px solid rgba(255,255,255,.25)">TOTAL</th>';
   h += '</tr></thead><tbody>';
 
+  // Pré-computa: quais (tipo|area|am) tuplas têm ao menos um override manual?
+  // Usado pra exibir indicador (●) nas células da Budget que têm ajuste manual em fornecedores.
+  var _ovrByTipoAreaAm = {};
+  if(BUDGET_CFG.budgetOverrides){
+    Object.keys(BUDGET_CFG.budgetOverrides).forEach(function(k){
+      if(BUDGET_CFG.budgetOverrides[k] == null) return;
+      var parts = k.split('|');
+      if(parts.length < 4) return;
+      var oTipo = parts[0], oArea = parts[1];
+      var oAm   = parts.slice(3).join('|');
+      _ovrByTipoAreaAm[oTipo+'|'+oArea+'|'+oAm] = true;
+    });
+  }
+  function _hasOverrideForCell(tipo, area, ym){
+    if(!tipo) return false;
+    var am = String(ym||'').replace('-','');
+    var srcs = (typeof _budgetSourceAreas === 'function') ? _budgetSourceAreas(area||'') : [area||''];
+    for(var i=0;i<srcs.length;i++){
+      if(_ovrByTipoAreaAm[tipo+'|'+srcs[i]+'|'+am]) return true;
+    }
+    return false;
+  }
+
   function secRow(label, icon){
     h += '<tr><td colspan="'+(months.length+2)+'" style="padding:6px 12px;background:linear-gradient(90deg,#1a2a6c,#2352c8);color:#fff;font-size:13.2px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;position:sticky;left:0;z-index:2">'+icon+' '+label+'</td></tr>';
   }
@@ -8140,6 +8170,10 @@ function renderBudget(anoFilter){
         // Para células bloqueadas (mês realizado em linha com lockRealized), envolve num span com tooltip + ícone 🔒
         if(isLockedRealized){
           display = '<span title="Mês realizado — valor da tabela otb_venda_dre (não editável)" style="cursor:help;opacity:.95">'+display+' <span style="font-size:9px;opacity:.6">🔒</span></span>';
+        }
+        // Indicador visual: pontinho vermelho se essa tipo/area/mês tem ajuste manual em ≥1 fornecedor
+        if(detailBtn && _hasOverrideForCell(detailBtn.tipo, detailBtn.area, ym)){
+          display += ' <span title="Esta despesa tem ajuste manual em pelo menos um fornecedor nos detalhes" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#e0233a;margin-left:3px;vertical-align:middle;box-shadow:0 0 0 1.5px rgba(224,35,58,.25)"></span>';
         }
       }
       monthlyEffectiveVals.push(effectiveForYear);
@@ -8379,9 +8413,11 @@ function renderBudget(anoFilter){
   var _areaTotals = {};
   areasUsadas.forEach(function(a){
     var srcs = _budgetSourceAreas(a);
+    var _excl = BUDGET_TIPO_AREA_EXCLUDE[a];
     var total = 0;
     months.forEach(function(ym){
       var desp = budgetDespByTipoArea(ym, null, srcs)||0;
+      if(_excl){ _excl.forEach(function(t){ desp -= (budgetDespByTipoArea(ym, t, srcs)||0); }); }
       var fol  = 0;
       srcs.forEach(function(s){ fol += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
       total += desp + fol + fol * _pct13fAdmForYm(ym);
@@ -8403,6 +8439,11 @@ function renderBudget(anoFilter){
       areasUsadas.forEach(function(area){
         var srcs = _budgetSourceAreas(area);
         var desp = budgetDespByTipoArea(ym, null, srcs)||0;
+        // Subtrai tipos vetados nessa área (ex: Frete em Avacy)
+        var excl = BUDGET_TIPO_AREA_EXCLUDE[area];
+        if(excl){
+          excl.forEach(function(t){ desp -= (budgetDespByTipoArea(ym, t, srcs)||0); });
+        }
         var fol  = 0;
         srcs.forEach(function(s){ fol += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
         var f13 = fol * pct13;
@@ -8424,6 +8465,7 @@ function renderBudget(anoFilter){
         var k = (r.e2_nomfor||r.E2_NOMFOR||'')+'|'+(r.e2_hist||r.E2_HIST||'');
         var c = BUDGET_CFG.classif[k]||{};
         if(sources.indexOf(c.area) < 0 || !c.tipo || c.desconsiderar === 'sim' || BUDGET_CFG.tiposIgnorados[c.tipo]) return;
+        if(_isExcludedTipoArea(c.tipo, area)) return; // regra de negócio: tipo vetado nessa área
         // Verifica ano se filtrado
         if(_anoBudget){
           var am = budgetDespAm(r) || '';
@@ -8440,6 +8482,7 @@ function renderBudget(anoFilter){
           if(sources.indexOf(oArea) < 0) return;
           if(_anoBudget && oAm.slice(0,4) !== _anoBudget) return;
           if(BUDGET_CFG.tiposIgnorados && BUDGET_CFG.tiposIgnorados[oTipo]) return;
+          if(_isExcludedTipoArea(oTipo, area)) return; // regra de negócio
           usedTiposForArea[oTipo] = true;
         });
       }
@@ -8457,8 +8500,13 @@ function renderBudget(anoFilter){
       // Total por área = soma de despesas (todos os tipos) + Salário Folha + 13°+Férias
       (function(areaCapture, sourcesCapture){
         var areaUid = 'area_'+areaCapture.replace(/\W+/g,'_');
+        var _exclTipos = BUDGET_TIPO_AREA_EXCLUDE[areaCapture] || null;
         dataRow(areaCapture, function(ym){
           var desp = budgetDespByTipoArea(ym, null, sourcesCapture)||0;
+          // Subtrai tipos vetados nessa área (regra de negócio)
+          if(_exclTipos){
+            _exclTipos.forEach(function(t){ desp -= (budgetDespByTipoArea(ym, t, sourcesCapture)||0); });
+          }
           var fol  = 0;
           sourcesCapture.forEach(function(s){ fol += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
           var f13 = fol * _pct13fAdmForYm(ym);
@@ -9299,6 +9347,50 @@ function openBudgetDetail(tipo, area, ano){
       h += '<td style="padding:5px 8px;text-align:center;font-size:11px" title="'+escHtml(tip)+'">'+(val>0?'R$ '+Math.round(val).toLocaleString('pt-BR'):'<span style="color:#bbb">—</span>')+'</td>';
     });
     h += '<td style="padding:7px 10px;text-align:center;background:#e8dff5;font-weight:700">'+(dreGrandTotal>0?'R$ '+Math.round(dreGrandTotal).toLocaleString('pt-BR'):'—')+'</td>';
+    h += '</tr>';
+  }
+
+  // ── Linha de referência: CD + Montagem Grade do DRE (só aparece pra tipo "CD") ──
+  // CD = cd_mensal por mês (DRE_CFG_PARAMS[am].cd_mensal ou FIXOS_DEF.cd_mensal)
+  // Montagem = qtd_grade_hava do mês × custoGrade do mês (DRE_CFG_PARAMS[am].custoGrade)
+  if(String(tipo).toUpperCase() === 'CD'){
+    var _dreCdMontForAm = function(am){
+      var ano = am.slice(0,4), mes = am.slice(4,6);
+      var amH = ano + '-' + mes;
+      var p = (typeof DRE_CFG_PARAMS !== 'undefined') ? (DRE_CFG_PARAMS[am] || DRE_CFG_PARAMS[amH]) : null;
+      // CD
+      var cd = 0;
+      if(p && p.cd_mensal != null){
+        var v = parseFloat(p.cd_mensal); if(!isNaN(v)) cd = v;
+      } else if(typeof FIXOS_DEF !== 'undefined' && FIXOS_DEF.cd_mensal != null){
+        cd = parseFloat(FIXOS_DEF.cd_mensal) || 0;
+      }
+      // Montagem Grade = qtd_grade_hava do mês × custoGrade
+      var qtdGrade = 0;
+      if(typeof DRE_RAW !== 'undefined' && DRE_RAW){
+        DRE_RAW.forEach(function(r){
+          if(String(r.ano||r.ANO||'') === ano && String(r.mes||r.MES||'').padStart(2,'0') === mes){
+            qtdGrade += parseFloat(r.qtd_grade_hava || r.QTD_GRADE_HAVA || 0) || 0;
+          }
+        });
+      }
+      var gradeUnit = (p && p.custoGrade != null) ? (parseFloat(p.custoGrade) || 0) : (DRE_CONFIG_DEFAULTS.custoGrade || 0);
+      var montagem = qtdGrade * gradeUnit;
+      return {cd: cd, montagem: montagem, total: cd + montagem, qtdGrade: qtdGrade, gradeUnit: gradeUnit};
+    };
+    var dreCdGrandTotal = 0;
+    h += '<tr style="background:#f3eefb;color:#4a2785;font-weight:600;font-style:italic">';
+    h += '<td style="padding:7px 10px;position:sticky;left:0;background:#f3eefb;z-index:1;font-style:italic">📊 CD + Montagem (DRE)</td>';
+    h += '<td style="padding:4px 10px;font-size:10px;color:#7a5aa0">Referência do DRE — não editável</td>';
+    months.forEach(function(am){
+      var v = _dreCdMontForAm(am);
+      dreCdGrandTotal += v.total;
+      var tip = 'CD mensal: R$ '+Math.round(v.cd).toLocaleString('pt-BR')
+              + ' • Montagem Grade: R$ '+Math.round(v.montagem).toLocaleString('pt-BR')
+              + ' ('+v.qtdGrade.toLocaleString('pt-BR')+' pares × R$ '+v.gradeUnit.toFixed(2)+'/par)';
+      h += '<td style="padding:5px 8px;text-align:center;font-size:11px" title="'+escHtml(tip)+'">'+(v.total>0?'R$ '+Math.round(v.total).toLocaleString('pt-BR'):'<span style="color:#bbb">—</span>')+'</td>';
+    });
+    h += '<td style="padding:7px 10px;text-align:center;background:#e8dff5;font-weight:700">'+(dreCdGrandTotal>0?'R$ '+Math.round(dreCdGrandTotal).toLocaleString('pt-BR'):'—')+'</td>';
     h += '</tr>';
   }
 
