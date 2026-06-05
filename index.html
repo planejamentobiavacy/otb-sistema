@@ -8027,6 +8027,50 @@ function renderBudget(anoFilter){
     return false;
   }
 
+  // ── Cache de adições do DRE: valores sintéticos que entram em (tipo|área) do Budget ──
+  // Pré-computado uma vez aqui pra evitar iterar DRE_RAW em toda célula renderizada.
+  // Hoje só temos Comissão Martins (Comercial); pode expandir pra outros casos.
+  var _martinsByYm = {};
+  if(typeof DRE_RAW !== 'undefined' && DRE_RAW && DRE_RAW.length){
+    // Soma faturamento_venda do canal MARTINS por mês
+    var _rbMartinsByAm = {};
+    DRE_RAW.forEach(function(r){
+      var canal = String(dreResolveCanal(r)||'').trim().toUpperCase();
+      if(canal !== 'MARTINS') return;
+      var ano = String(r.ano||r.ANO||''), mes = String(r.mes||r.MES||'').padStart(2,'0');
+      if(!ano || !mes) return;
+      var am = ano + mes;
+      _rbMartinsByAm[am] = (_rbMartinsByAm[am]||0) + (parseFloat(r.faturamento_venda || r.FATURAMENTO_VENDA || r.faturamento || r.FATURAMENTO || 0) || 0);
+    });
+    // Aplica % Martins por mês
+    months.forEach(function(ym){
+      var am = ym.replace('-','');
+      var rb = _rbMartinsByAm[am] || 0;
+      var cfg = (typeof DRE_CONFIG !== 'undefined') ? DRE_CONFIG.martins : null;
+      var pct = null;
+      if(cfg && typeof cfg === 'object'){
+        var v = cfg[ym] != null ? cfg[ym] : cfg[am];
+        if(v != null){ var n = parseFloat(v); if(!isNaN(n)) pct = n; }
+      }
+      if(pct == null) pct = (typeof DRE_CONFIG_DEFAULTS !== 'undefined') ? (DRE_CONFIG_DEFAULTS.martins || 0) : 0;
+      _martinsByYm[ym] = rb * pct;
+    });
+  }
+  // Helper: retorna o valor sintético do DRE pra (área, tipo, mês) — hoje só Comissão Martins em Comercial
+  function _budgetDreInject(area, tipo, ym){
+    if(area === 'Comercial' && tipo === 'Comissão'){
+      return _martinsByYm[ym] || 0;
+    }
+    return 0;
+  }
+  // Helper: retorna a soma total de injeções DRE pra (área, mês) — usado no total da área e no total geral
+  function _budgetDreInjectAreaTotal(area, ym){
+    if(area === 'Comercial'){
+      return _martinsByYm[ym] || 0;
+    }
+    return 0;
+  }
+
   function secRow(label, icon){
     h += '<tr><td colspan="'+(months.length+2)+'" style="padding:6px 12px;background:linear-gradient(90deg,#1a2a6c,#2352c8);color:#fff;font-size:13.2px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;position:sticky;left:0;z-index:2">'+icon+' '+label+'</td></tr>';
   }
@@ -8418,9 +8462,11 @@ function renderBudget(anoFilter){
     months.forEach(function(ym){
       var desp = budgetDespByTipoArea(ym, null, srcs)||0;
       if(_excl){ _excl.forEach(function(t){ desp -= (budgetDespByTipoArea(ym, t, srcs)||0); }); }
+      // Adiciona injeções DRE (ex: Comissão Martins em Comercial)
+      var dreAdd = (typeof _budgetDreInjectAreaTotal === 'function') ? _budgetDreInjectAreaTotal(a, ym) : 0;
       var fol  = 0;
       srcs.forEach(function(s){ fol += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
-      total += desp + fol + fol * _pct13fAdmForYm(ym);
+      total += desp + dreAdd + fol + fol * _pct13fAdmForYm(ym);
     });
     _areaTotals[a] = total;
   });
@@ -8444,10 +8490,12 @@ function renderBudget(anoFilter){
         if(excl){
           excl.forEach(function(t){ desp -= (budgetDespByTipoArea(ym, t, srcs)||0); });
         }
+        // Adiciona injeções DRE (ex: Comissão Martins em Comercial)
+        var dreAdd = _budgetDreInjectAreaTotal(area, ym);
         var fol  = 0;
         srcs.forEach(function(s){ fol += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
         var f13 = fol * pct13;
-        sum += (desp + fol + f13);
+        sum += (desp + dreAdd + fol + f13);
       });
       totalDespesasGeral[ym] = sum;
     });
@@ -8486,13 +8534,20 @@ function renderBudget(anoFilter){
           usedTiposForArea[oTipo] = true;
         });
       }
+      // Força aparecer "Comissão" em Comercial se houver Comissão Martins do DRE
+      if(area === 'Comercial' && months.some(function(ym){ return (_martinsByYm[ym]||0) > 0; })){
+        usedTiposForArea['Comissão'] = true;
+      }
       var tipos = BUDGET_TIPOS.filter(function(t){ return usedTiposForArea[t]; });
 
-      // Ranking: ordena tipos do maior pro menor (soma em todos os meses)
+      // Ranking: ordena tipos do maior pro menor (soma em todos os meses, incluindo injeções DRE)
       var _tipoTotals = {};
       tipos.forEach(function(t){
         var sum = 0;
-        months.forEach(function(ym){ sum += (budgetDespByTipoArea(ym, t, sources)||0); });
+        months.forEach(function(ym){
+          sum += (budgetDespByTipoArea(ym, t, sources)||0);
+          sum += _budgetDreInject(area, t, ym);
+        });
         _tipoTotals[t] = sum;
       });
       tipos.sort(function(a, b){ return (_tipoTotals[b]||0) - (_tipoTotals[a]||0); });
@@ -8507,17 +8562,24 @@ function renderBudget(anoFilter){
           if(_exclTipos){
             _exclTipos.forEach(function(t){ desp -= (budgetDespByTipoArea(ym, t, sourcesCapture)||0); });
           }
+          // Adiciona injeções do DRE (ex: Comissão Martins em Comercial)
+          var dreAdd = _budgetDreInjectAreaTotal(areaCapture, ym);
           var fol  = 0;
           sourcesCapture.forEach(function(s){ fol += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
           var f13 = fol * _pct13fAdmForYm(ym);
-          var t = desp + fol + f13;
+          var t = desp + dreAdd + fol + f13;
           return t>0 ? t : null;
         }, {bold:true, areaUid: areaUid});
         tipos.forEach(function(tipo){
           (function(tipoCapture){
             // Detail btn usa a primeira fonte como "área canônica" pra abrir o modal de detalhes
             // (no modal, o usuário vê os fornecedores com sua classificação original)
-            dataRow('↳ '+tipoCapture, function(ym){ return budgetDespByTipoArea(ym, tipoCapture, sourcesCapture)||null; }, {sub:true, detailBtn:{tipo:tipoCapture, area:areaCapture}, parentArea: areaUid});
+            dataRow('↳ '+tipoCapture, function(ym){
+              var base = budgetDespByTipoArea(ym, tipoCapture, sourcesCapture)||0;
+              var dreAdd = _budgetDreInject(areaCapture, tipoCapture, ym);
+              var v = base + dreAdd;
+              return v > 0 ? v : null;
+            }, {sub:true, detailBtn:{tipo:tipoCapture, area:areaCapture}, parentArea: areaUid});
           })(tipo);
         });
       })(area, sources);
