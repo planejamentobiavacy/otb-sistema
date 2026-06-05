@@ -7708,8 +7708,30 @@ function getBudgetClassif(nomfor, hist){
 }
 function invalidateBudgetClassifIndex(){ _budgetClassifIndex = null; }
 
+// Áreas que aparecem mescladas no Budget (Faturamento + Financeiro + Fiscal → Fin/Fat/Fisc).
+// As classificações originais ficam intactas — o merge é só no display.
+var _AREA_MERGE_DISPLAY = { 'Faturamento': 'Fin/Fat/Fisc', 'Financeiro': 'Fin/Fat/Fisc', 'Fiscal': 'Fin/Fat/Fisc' };
+function _budgetDisplayArea(src){ return _AREA_MERGE_DISPLAY[src] || src; }
+function _budgetSourceAreas(disp){
+  var sources = [disp];
+  Object.keys(_AREA_MERGE_DISPLAY).forEach(function(s){ if(_AREA_MERGE_DISPLAY[s] === disp) sources.push(s); });
+  return sources;
+}
+// Áreas que sempre aparecem na tela de Despesas (mesmo sem classificações ainda).
+// Útil pra usuários poderem fazer projeções/overrides em áreas vazias.
+var BUDGET_AREAS_ALWAYS_SHOW = ['Planejamento'];
+
 function budgetDespByTipoArea(ym, tipo, area){
   var am = ym.replace('-','');
+  // area pode ser string OU array — quando merged (Fin/Fat/Fisc) recebe array das fontes
+  var areaSet = null;
+  if(Array.isArray(area)){
+    areaSet = {};
+    area.forEach(function(a){ if(a) areaSet[a] = true; });
+  } else if(area){
+    areaSet = {};
+    areaSet[area] = true;
+  }
   // 1) Agrupa lançamentos brutos por (tipo, area, fornecedor) para podermos sobrepor com overrides
   // (a chave de override é tipo|area|nomforKey|am — mesma normalização do modal de detalhes)
   var groups = {}; // gk -> {tipo, area, nomforKey, val}
@@ -7720,7 +7742,7 @@ function budgetDespByTipoArea(ym, tipo, area){
     var hist   = String(r.e2_hist||r.E2_HIST||'');
     var classif= getBudgetClassif(nomfor, hist);
     if(tipo && classif.tipo !== tipo) return;
-    if(area && classif.area !== area) return;
+    if(areaSet && !areaSet[classif.area]) return;
     if(classif.desconsiderar === 'sim') return;
     if(BUDGET_CFG.tiposIgnorados && BUDGET_CFG.tiposIgnorados[classif.tipo]) return;
     var nomforKey = nomfor.toUpperCase().replace(/\s+/g,' ');
@@ -7735,11 +7757,10 @@ function budgetDespByTipoArea(ym, tipo, area){
       var parts = ovrKey.split('|');
       if(parts.length < 4) return;
       var oTipo = parts[0], oArea = parts[1], oNomforKey = parts[2];
-      // am pode conter '|' em casos esquisitos; reconstrói via slice
       var oAm = parts.slice(3).join('|');
       if(oAm !== am) return;
       if(tipo && oTipo !== tipo) return;
-      if(area && oArea !== area) return;
+      if(areaSet && !areaSet[oArea]) return;
       if(BUDGET_CFG.tiposIgnorados && BUDGET_CFG.tiposIgnorados[oTipo]) return;
       var gk = oTipo+'|'+oArea+'|'+oNomforKey;
       if(!groups[gk]) groups[gk] = {tipo: oTipo, area: oArea, nomforKey: oNomforKey, val: 0};
@@ -8216,12 +8237,34 @@ function renderBudget(anoFilter){
   BUDGET_DESP_RAW.forEach(function(r){
     var k = (r.e2_nomfor||r.E2_NOMFOR||'')+'|'+(r.e2_hist||r.E2_HIST||'');
     var c = BUDGET_CFG.classif[k]||{};
-    if(c.area && c.desconsiderar !== 'sim') usedAreas[c.area] = true;
+    if(c.area && c.desconsiderar !== 'sim'){
+      var disp = _budgetDisplayArea(c.area);
+      usedAreas[disp] = true;
+    }
   });
-  var areasUsadas = BUDGET_AREAS.filter(function(a){ return usedAreas[a]; });
+  // Também inclui áreas com folha/projeção mesmo sem despesa classificada
+  Object.keys(folhaByArea).forEach(function(areaUC){
+    if(!areaUC || !Object.keys(folhaByArea[areaUC]||{}).length) return;
+    // mapeia areaUC → display area (case-insensitive lookup no merge map)
+    var matched = null;
+    BUDGET_AREAS.forEach(function(a){ if(a.toUpperCase() === areaUC) matched = a; });
+    if(!matched) matched = areaUC; // fallback
+    usedAreas[_budgetDisplayArea(matched)] = true;
+  });
+  // Sempre mostra áreas marcadas como "always show" (ex: Planejamento)
+  BUDGET_AREAS_ALWAYS_SHOW.forEach(function(a){ usedAreas[a] = true; });
+  // Lista de áreas que aparecem no display — exclui as fontes de merge (Faturamento/Financeiro/Fiscal)
+  var BUDGET_AREAS_DISPLAY = BUDGET_AREAS.filter(function(a){ return !_AREA_MERGE_DISPLAY[a]; });
+  var areasUsadas = BUDGET_AREAS_DISPLAY.filter(function(a){ return usedAreas[a]; });
   // Filtra por permissão do usuário logado
   var _areasPermitidas = getBudgetAreasPermitidas();
-  if(_areasPermitidas) areasUsadas = areasUsadas.filter(function(a){ return _areasPermitidas.indexOf(a) >= 0; });
+  if(_areasPermitidas){
+    // Se usuário tem permissão para Faturamento/Financeiro/Fiscal, libera Fin/Fat/Fisc também
+    var _permExpanded = _areasPermitidas.slice();
+    var hasSomeFFF = ['Faturamento','Financeiro','Fiscal'].some(function(a){ return _permExpanded.indexOf(a) >= 0; });
+    if(hasSomeFFF && _permExpanded.indexOf('Fin/Fat/Fisc') < 0) _permExpanded.push('Fin/Fat/Fisc');
+    areasUsadas = areasUsadas.filter(function(a){ return _permExpanded.indexOf(a) >= 0; });
+  }
   // Auto-expand: se usuário tem restrição e só vê 1 área, expande automaticamente pra mostrar tipos
   if(_areasPermitidas && areasUsadas.length === 1){
     var _autoAreaUid = 'area_' + areasUsadas[0].replace(/\W+/g,'_');
@@ -8241,8 +8284,10 @@ function renderBudget(anoFilter){
     months.forEach(function(ym){
       var sum = 0;
       areasUsadas.forEach(function(area){
-        var desp = budgetDespByTipoArea(ym,null,area)||0;
-        var fol  = (folhaByArea[area.toUpperCase()]||{})[ym]||0;
+        var srcs = _budgetSourceAreas(area);
+        var desp = budgetDespByTipoArea(ym, null, srcs)||0;
+        var fol  = 0;
+        srcs.forEach(function(s){ fol += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
         sum += (desp + fol);
       });
       totalDespesasGeral[ym] = sum;
@@ -8252,6 +8297,7 @@ function renderBudget(anoFilter){
     summaryRow('Total Despesas', '💸', '#d62b3a', '#ed5a4d', function(ym){ return totalDespesasGeral[ym]||0; }, {toggleGroup:'despesas'});
 
     areasUsadas.forEach(function(area){
+      var sources = _budgetSourceAreas(area);
       var usedTiposForArea = {};
       // Filtra também pelo ano atual — não mostra subitem se a classificação só tem
       // lançamentos em anos anteriores (linha apareceria vazia, confunde o usuário)
@@ -8259,7 +8305,7 @@ function renderBudget(anoFilter){
       BUDGET_DESP_RAW.forEach(function(r){
         var k = (r.e2_nomfor||r.E2_NOMFOR||'')+'|'+(r.e2_hist||r.E2_HIST||'');
         var c = BUDGET_CFG.classif[k]||{};
-        if(c.area!==area || !c.tipo || c.desconsiderar === 'sim' || BUDGET_CFG.tiposIgnorados[c.tipo]) return;
+        if(sources.indexOf(c.area) < 0 || !c.tipo || c.desconsiderar === 'sim' || BUDGET_CFG.tiposIgnorados[c.tipo]) return;
         // Verifica ano se filtrado
         if(_anoBudget){
           var am = budgetDespAm(r) || '';
@@ -8273,7 +8319,7 @@ function renderBudget(anoFilter){
           var parts = ovrKey.split('|'); if(parts.length < 4) return;
           var oTipo = parts[0], oArea = parts[1];
           var oAm = parts.slice(3).join('|');
-          if(oArea !== area) return;
+          if(sources.indexOf(oArea) < 0) return;
           if(_anoBudget && oAm.slice(0,4) !== _anoBudget) return;
           if(BUDGET_CFG.tiposIgnorados && BUDGET_CFG.tiposIgnorados[oTipo]) return;
           usedTiposForArea[oTipo] = true;
@@ -8282,34 +8328,40 @@ function renderBudget(anoFilter){
       var tipos = BUDGET_TIPOS.filter(function(t){ return usedTiposForArea[t]; });
 
       // Total por área = soma de despesas (todos os tipos) + Salário Folha da área
-      (function(areaCapture){
+      (function(areaCapture, sourcesCapture){
         var areaUid = 'area_'+areaCapture.replace(/\W+/g,'_');
-        var areaKeyFolha = areaCapture.toUpperCase();
         dataRow(areaCapture, function(ym){
-          var desp = budgetDespByTipoArea(ym,null,areaCapture)||0;
-          var fol  = (folhaByArea[areaKeyFolha]||{})[ym]||0;
+          var desp = budgetDespByTipoArea(ym, null, sourcesCapture)||0;
+          var fol  = 0;
+          sourcesCapture.forEach(function(s){ fol += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
           var t = desp + fol;
           return t>0 ? t : null;
         }, {bold:true, areaUid: areaUid});
         tipos.forEach(function(tipo){
           (function(tipoCapture){
-            dataRow('↳ '+tipoCapture, function(ym){ return budgetDespByTipoArea(ym,tipoCapture,areaCapture)||null; }, {sub:true, detailBtn:{tipo:tipoCapture,area:areaCapture}, parentArea: areaUid});
+            // Detail btn usa a primeira fonte como "área canônica" pra abrir o modal de detalhes
+            // (no modal, o usuário vê os fornecedores com sua classificação original)
+            dataRow('↳ '+tipoCapture, function(ym){ return budgetDespByTipoArea(ym, tipoCapture, sourcesCapture)||null; }, {sub:true, detailBtn:{tipo:tipoCapture, area:areaCapture}, parentArea: areaUid});
           })(tipo);
         });
-      })(area);
+      })(area, sources);
 
       // Linha Salário Folha dentro do bloco da área (continua como sub-linha)
-      (function(areaCapFolha){
+      (function(areaCapFolha, sourcesCapture){
         var areaUid = 'area_'+areaCapFolha.replace(/\W+/g,'_');
-        var areaKeyFolha = areaCapFolha.toUpperCase();
-        var hasFolha = months.some(function(ym){ return (folhaByArea[areaKeyFolha]||{})[ym]>0; });
+        var sumFolhaForYm = function(ym){
+          var v = 0;
+          sourcesCapture.forEach(function(s){ v += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
+          return v;
+        };
+        var hasFolha = months.some(function(ym){ return sumFolhaForYm(ym) > 0; });
         if(hasFolha){
           dataRow('↳ Salário Folha', function(ym){
-            var v=(folhaByArea[areaKeyFolha]||{})[ym];
+            var v = sumFolhaForYm(ym);
             return v>0?v:null;
-          }, {sub:true, folhaDetailArea: areaKeyFolha, selectedAno: selectedAno, parentArea: areaUid});
+          }, {sub:true, folhaDetailArea: areaCapFolha.toUpperCase(), selectedAno: selectedAno, parentArea: areaUid});
         }
-      })(area);
+      })(area, sources);
     });
     // (linha Total Despesas movida para o topo após o título)
   }
