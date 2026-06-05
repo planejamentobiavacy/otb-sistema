@@ -2298,7 +2298,9 @@ async function handleSaveAll(btn){
 
   // ── Auto-backup em chave datada (mantém últimos 7 dias) ────────────────
   // Roda em background depois do save principal; não bloqueia toast/UI.
-  if(!erros.length) _autoBackupRotate();
+  // Auto-backup desabilitado temporariamente (quota Supabase Free estourada — reduz egress).
+  // Use "📥 Exportar Backup" pra fazer backup manual periódico.
+  // if(!erros.length) _autoBackupRotate();
 }
 
 // ─── Chaves que valem backup automático (trabalho manual, não-regenerável) ───
@@ -4609,7 +4611,21 @@ function dreCalc(a,shareRB,shareQTD,canalCtx,vendedorOverride){
   // (custo bruto = custo líquido / 0.79, mesma conversão usada em CMV Bruto)
   var custoHavaBruto = (a.custo_hava||0) > 0 ? (a.custo_hava||0) / 0.79 : 0;
   var fob = custoHavaBruto * fobAvg;
-  var gradeUnit=getFixo('custoGrade', DRE_CONFIG_DEFAULTS.custoGrade||0);  var grade=(a.qtdGradeHava||0)*gradeUnit;
+  // custoGrade é CUSTO UNITÁRIO por par (R$/grade), NÃO um custo mensal total.
+  // Multiplicar pelo total de pares já dá o custo total — usamos a média entre os meses
+  // (caso a config varie por mês). NÃO usar getFixo (que soma e gera erro de Nx no TOTAL).
+  var gradeUnit = (function(){
+    if(!a.anomesList || !a.anomesList.length) return DRE_CONFIG_DEFAULTS.custoGrade||0;
+    var sum = 0, count = 0;
+    a.anomesList.forEach(function(am){
+      var amH = am.length===6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
+      var p = DRE_CFG_PARAMS[amH] || DRE_CFG_PARAMS[am];
+      var v = (p && p.custoGrade != null) ? parseFloat(p.custoGrade) : (DRE_CONFIG_DEFAULTS.custoGrade||0);
+      if(!isNaN(v)){ sum += v; count++; }
+    });
+    return count > 0 ? sum/count : (DRE_CONFIG_DEFAULTS.custoGrade||0);
+  })();
+  var grade = (a.qtdGradeHava||0) * gradeUnit;
   // Salários comerciais: % aplicado sobre a RB de cada canal específico
   // Se temos fat_v_canal (view mensal agregada), usamos o fat de cada canal
   // Se não temos (view já filtrada por canal), usamos rb_dev diretamente
