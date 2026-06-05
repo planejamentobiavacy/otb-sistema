@@ -1240,9 +1240,14 @@ async function afterLogin(){
       if(budgetClassifEarly.tiposCD)        BUDGET_CFG.tiposCD = budgetClassifEarly.tiposCD;
       if(budgetClassifEarly.budgetOverrides)BUDGET_CFG.budgetOverrides = budgetClassifEarly.budgetOverrides;
       if(budgetClassifEarly.sim)            BUDGET_CFG.sim = budgetClassifEarly.sim;
+      if(budgetClassifEarly.folhaProjecao)  BUDGET_CFG.folhaProjecao = budgetClassifEarly.folhaProjecao;
       console.log('[afterLogin] budget_classif loaded — tiposDespGerais:', Object.keys(BUDGET_CFG.tiposDespGerais||{}).length, '| tiposCD:', Object.keys(BUDGET_CFG.tiposCD||{}).length, '| overrides:', Object.keys(BUDGET_CFG.budgetOverrides||{}).length);
     } else {
       console.log('[afterLogin] budget_classif not found yet');
+    }
+    // Aplica deltas recentes (edições de células que ainda não foram consolidadas em "Salvar Tudo")
+    if(typeof _mergeBudgetClassifVol === 'function'){
+      await _mergeBudgetClassifVol(budgetClassifEarly && budgetClassifEarly.savedAt);
     }
   } catch(e){ console.warn('[afterLogin] budget_classif error:', e.message); }
 
@@ -2419,6 +2424,8 @@ async function handleSaveAll(btn){
       sim:            (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.sim)||{},
       savedAt: new Date().toISOString()
     });
+    // Limpa _vol — deltas foram consolidados na base
+    if(typeof _clearBudgetClassifVol === 'function') await _clearBudgetClassifVol();
     // 3b) Snapshot agregado de BUDGET_DESP_RAW
     var bSnapshot = (typeof BUDGET_DESP_RAW!=='undefined' && BUDGET_DESP_RAW.length) ? budgetAggregate(BUDGET_DESP_RAW) : null;
     var bPayload = {
@@ -7265,6 +7272,10 @@ async function loadBudget(forceRaw){
         '| tiposDespGerais:', Object.keys(BUDGET_CFG.tiposDespGerais||{}).length,
         '| tiposCD:', Object.keys(BUDGET_CFG.tiposCD||{}).length);
     }
+    // Aplica deltas voláteis recentes (se houver)
+    if(typeof _mergeBudgetClassifVol === 'function'){
+      await _mergeBudgetClassifVol(savedClassif && savedClassif.savedAt);
+    }
   } catch(e){ console.warn('[Budget] budget_classif não encontrado (primeira vez):', e.message); }
 
   if(!forceRaw && saved && saved.snapshot && saved.snapshot.length){
@@ -7379,25 +7390,164 @@ function budgetSetSim(ym, key, rawVal){
   var v = parseFloat(rawVal);
   if(!isNaN(v) && v >= 0) BUDGET_CFG.sim[ym][key] = v / 100;
   else delete BUDGET_CFG.sim[ym][key];
-  // Auto-salva após 1s de inatividade — SEM re-renderizar enquanto usuário está digitando
-  if(window._budgetSimSaveTimer) clearTimeout(window._budgetSimSaveTimer);
-  window._budgetSimSaveTimer = setTimeout(async function(){
-    try{
-      await supaSave(TBLS.save_dre,'budget_classif', {
-        classif: BUDGET_CFG.classif,
-        tiposIgnorados: BUDGET_CFG.tiposIgnorados,
-        tiposDespGerais: BUDGET_CFG.tiposDespGerais||{},
-        tiposCD: BUDGET_CFG.tiposCD||{},
-        budgetOverrides: BUDGET_CFG.budgetOverrides||{},
-        folhaProjecao: BUDGET_CFG.folhaProjecao||{},
-        sim: BUDGET_CFG.sim,
-        savedAt: new Date().toISOString()
-      });
-      invalidateBudgetClassifIndex();
-      // Só renderiza se o usuário NÃO estiver focado num input (evita perder o que está digitando)
-      _budgetRenderWhenIdle();
-    } catch(e){ console.warn('[budgetSetSim] save error:', e.message); }
-  }, 1500);
+  // Centralized save queue — debounce de 5s consolida múltiplas edições em 1 save
+  scheduleClassifSave();
+  // Re-render só quando idle (evita destruir input enquanto digita)
+  if(_bgtRenderTimer) clearTimeout(_bgtRenderTimer);
+  _bgtRenderTimer = setTimeout(function(){ _budgetRenderWhenIdle(); }, 5000);
+}
+
+var _bgtRenderTimer = null;
+
+// ═══════════════════════════════════════════════════════════════
+// SAVE QUEUE — consolida múltiplos saves em UM único, debounced 5s.
+// Antes: cada edição (50+ por sessão) = 1 save de ~500KB = ~25MB de upload.
+// Agora: 50 edições em 5s = 1 save de ~500KB = ~500KB de upload (50× menos).
+// Bônus: pop-up "salvar agora" pra forçar e save-on-close pra não perder edições.
+// ═══════════════════════════════════════════════════════════════
+var SAVE_DEBOUNCE_MS = 5000;
+var _saveQueue   = {};
+var _saveTimer   = null;
+var _saveActive  = false;
+
+function scheduleClassifSave(){
+  // DELTA SAVE: grava só as partes voláteis (overrides, sim, projeções) numa chave separada
+  // budget_classif_vol (~15 KB) em vez do payload inteiro budget_classif (~500 KB).
+  // Reduz egress por save em ~33×. A classif estável só é gravada via "Salvar Configurações"
+  // ou "Salvar Tudo" (que também limpa o _vol pra evitar deltas órfãos).
+  _saveQueue['budget_classif_vol'] = {
+    pending: true,
+    getPayload: function(){
+      return {
+        tiposIgnorados: BUDGET_CFG.tiposIgnorados || {},
+        tiposDespGerais:BUDGET_CFG.tiposDespGerais|| {},
+        tiposCD:        BUDGET_CFG.tiposCD        || {},
+        budgetOverrides:BUDGET_CFG.budgetOverrides|| {},
+        folhaProjecao:  BUDGET_CFG.folhaProjecao  || {},
+        sim:            BUDGET_CFG.sim            || {},
+        savedAt:        new Date().toISOString()
+      };
+    }
+  };
+  _updateSaveIndicator();
+  if(_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(flushSaveQueue, SAVE_DEBOUNCE_MS);
+}
+
+async function flushSaveQueue(){
+  if(_saveActive) return;  // evita reentrada
+  _saveActive = true;
+  _saveTimer = null;
+  try{
+    var keys = Object.keys(_saveQueue).filter(function(k){ return _saveQueue[k].pending; });
+    if(!keys.length){ _saveActive = false; return; }
+    _updateSaveIndicator('saving');
+    for(var i=0; i<keys.length; i++){
+      var key = keys[i];
+      try{
+        var payload = _saveQueue[key].getPayload();
+        _saveQueue[key].pending = false;
+        await supaSave(TBLS.save_dre, key, payload);
+      } catch(e){
+        console.warn('[saveQueue] erro em '+key+':', e.message);
+        _saveQueue[key].pending = true;  // mantém pendente pra retry
+        _updateSaveIndicator('error');
+        _saveActive = false;
+        return;
+      }
+    }
+    if(typeof invalidateBudgetClassifIndex === 'function') invalidateBudgetClassifIndex();
+    _updateSaveIndicator('saved');
+  } finally {
+    _saveActive = false;
+  }
+}
+
+// Salva pendências antes de fechar a aba/recarregar
+window.addEventListener('beforeunload', function(e){
+  var hasPending = Object.keys(_saveQueue).some(function(k){ return _saveQueue[k].pending; });
+  if(hasPending){
+    if(_saveTimer) clearTimeout(_saveTimer);
+    flushSaveQueue();  // dispara mas não bloqueia (browser não permite await aqui)
+    e.preventDefault();
+    e.returnValue = 'Há alterações sendo salvas. Aguarde uns segundos antes de fechar.';
+    return e.returnValue;
+  }
+});
+
+// Sobrepõe os campos voláteis do budget_classif_vol em cima do BUDGET_CFG já carregado.
+// Chamado depois de carregar a base de budget_classif — aplica deltas de edições recentes.
+// Retorna true se aplicou algum delta, false se não havia _vol ou era mais antigo.
+// Após gravar o budget_classif completo (via "Salvar Tudo" ou "Salvar Configurações"),
+// remove o budget_classif_vol pra evitar que deltas antigos sejam aplicados em cima.
+async function _clearBudgetClassifVol(){
+  try{
+    await supaFetch('/rest/v1/' + TBLS.save_dre + '?key=eq.budget_classif_vol', {method:'DELETE'});
+    if(typeof clearIdbCache === 'function') await clearIdbCache(TBLS.save_dre+'/budget_classif_vol');
+    // Marca a fila como vazia (não há mais nada pendente)
+    if(typeof _saveQueue !== 'undefined'){
+      _saveQueue['budget_classif_vol'] = { pending: false, getPayload: function(){ return {}; } };
+    }
+    console.log('[delta] budget_classif_vol limpo após save consolidado');
+  } catch(e){ console.warn('[delta] erro ao limpar _vol:', e.message); }
+}
+
+async function _mergeBudgetClassifVol(baseSavedAt){
+  try{
+    var vol = await supaLoad(TBLS.save_dre, 'budget_classif_vol');
+    if(!vol) return false;
+    if(baseSavedAt && vol.savedAt && vol.savedAt < baseSavedAt){
+      // _vol é mais antigo que a base — base é a fonte de verdade, descarta delta
+      return false;
+    }
+    if(vol.tiposIgnorados)  BUDGET_CFG.tiposIgnorados  = vol.tiposIgnorados;
+    if(vol.tiposDespGerais) BUDGET_CFG.tiposDespGerais = vol.tiposDespGerais;
+    if(vol.tiposCD)         BUDGET_CFG.tiposCD         = vol.tiposCD;
+    if(vol.budgetOverrides) BUDGET_CFG.budgetOverrides = vol.budgetOverrides;
+    if(vol.folhaProjecao)   BUDGET_CFG.folhaProjecao   = vol.folhaProjecao;
+    if(vol.sim)             BUDGET_CFG.sim             = vol.sim;
+    console.log('[delta] budget_classif_vol aplicado em cima da base — overrides:',
+      Object.keys(BUDGET_CFG.budgetOverrides||{}).length, '| sim:', Object.keys(BUDGET_CFG.sim||{}).length);
+    return true;
+  } catch(e){ console.warn('[delta] erro ao mergear _vol:', e.message); return false; }
+}
+
+function _updateSaveIndicator(state){
+  var el = document.getElementById('savePendingIndicator');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'savePendingIndicator';
+    el.style.cssText = 'position:fixed;bottom:14px;right:14px;padding:9px 16px;border-radius:8px;font-size:12px;font-weight:600;z-index:60;box-shadow:0 2px 12px rgba(0,0,0,.18);display:none;align-items:center;gap:8px;font-family:inherit;cursor:pointer;user-select:none;transition:opacity .2s';
+    el.onclick = function(){
+      if(_saveTimer) clearTimeout(_saveTimer);
+      flushSaveQueue();
+    };
+    document.body.appendChild(el);
+  }
+  var hasPending = Object.keys(_saveQueue).some(function(k){ return _saveQueue[k].pending; });
+  if(state === 'saving'){
+    el.style.display = 'flex';
+    el.style.background = '#e3edff'; el.style.borderLeft = '4px solid #1a56c4'; el.style.color = '#1a4d8f';
+    el.innerHTML = '⏳ Salvando…';
+  } else if(state === 'error'){
+    el.style.display = 'flex';
+    el.style.background = '#ffe2e0'; el.style.borderLeft = '4px solid #c0181a'; el.style.color = '#7a1818';
+    el.innerHTML = '⚠ Erro ao salvar — clique pra tentar novamente';
+  } else if(state === 'saved'){
+    el.style.display = 'flex';
+    el.style.background = '#e0f5e9'; el.style.borderLeft = '4px solid #1a7c3e'; el.style.color = '#0a5d29';
+    el.innerHTML = '✔ Salvo';
+    setTimeout(function(){
+      var stillPending = Object.keys(_saveQueue).some(function(k){ return _saveQueue[k].pending; });
+      if(!stillPending && el) el.style.display = 'none';
+    }, 2000);
+  } else if(hasPending){
+    el.style.display = 'flex';
+    el.style.background = '#fff3cd'; el.style.borderLeft = '4px solid #e89c40'; el.style.color = '#7a4a00';
+    el.innerHTML = '💾 Alterações não salvas — <u style="margin-left:4px">salvar agora</u>';
+  } else {
+    el.style.display = 'none';
+  }
 }
 
 // Re-renderiza o Budget só quando o usuário não está editando algo.
@@ -8561,27 +8711,12 @@ function _folhaProjScheduleSyncBudget(){
   if(_folhaProjSyncTimer) clearTimeout(_folhaProjSyncTimer);
   _folhaProjSyncTimer = setTimeout(function(){
     _folhaProjSyncTimer = null;
-    // Re-render do Budget (atrás do modal) — assim quando o usuário fechar a tela já está atualizada
+    // Re-render do Budget atrás do modal
     if(typeof renderBudget === 'function') {
       try { renderBudget(); } catch(e){ console.warn('[folhaProj] renderBudget falhou:', e.message); }
     }
-    // Auto-save: persiste projeções no Supabase (mesmo payload que o botão "Salvar Configurações" do Budget grava)
-    if(typeof supaSave === 'function' && typeof TBLS !== 'undefined' && TBLS.save_dre){
-      var payload = {
-        classif: BUDGET_CFG.classif||{},
-        tiposIgnorados: BUDGET_CFG.tiposIgnorados||{},
-        tiposDespGerais: BUDGET_CFG.tiposDespGerais||{},
-        tiposCD: BUDGET_CFG.tiposCD||{},
-        budgetOverrides: BUDGET_CFG.budgetOverrides||{},
-        folhaProjecao: BUDGET_CFG.folhaProjecao||{},
-        sim: BUDGET_CFG.sim||{},
-        savedAt: new Date().toISOString()
-      };
-      _folhaProjShowSaveStatus('saving');
-      supaSave(TBLS.save_dre, 'budget_classif', payload)
-        .then(function(){ _folhaProjShowSaveStatus('saved'); console.log('[folhaProj] auto-save OK em', new Date().toLocaleTimeString('pt-BR')); })
-        .catch(function(e){ _folhaProjShowSaveStatus('error'); console.warn('[folhaProj] auto-save falhou:', e.message); });
-    }
+    // Save via fila centralizada (debounce 5s) — não dispara save imediato
+    if(typeof scheduleClassifSave === 'function') scheduleClassifSave();
   }, 1500);
 }
 
@@ -8697,19 +8832,8 @@ function budgetSaveOverride(input){
         try { renderBudget(); } catch(e){ console.warn('[budgetOverride] renderBudget falhou:', e.message); }
       }
     }, 600);
-    // Salva de forma assíncrona — atualiza a chave budget_classif completa
-    supaSave(TBLS.save_dre,'budget_classif', {
-      classif: BUDGET_CFG.classif||{},
-      tiposIgnorados: BUDGET_CFG.tiposIgnorados||{},
-      tiposDespGerais: BUDGET_CFG.tiposDespGerais||{},
-      tiposCD: BUDGET_CFG.tiposCD||{},
-      budgetOverrides: BUDGET_CFG.budgetOverrides||{},
-      folhaProjecao: BUDGET_CFG.folhaProjecao||{},
-      sim: BUDGET_CFG.sim||{},
-      savedAt: new Date().toISOString()
-    })
-      .then(function(){ toast('💾 Valor manual salvo'); })
-      .catch(function(e){ console.warn('Erro salvando override:', e.message); toast('❌ Erro ao salvar: '+e.message,'err'); });
+    // Save via fila centralizada (debounce 5s) — antes era imediato a cada blur
+    if(typeof scheduleClassifSave === 'function') scheduleClassifSave();
   }
 }
 function budgetRenderCellValue(input){
@@ -8741,18 +8865,9 @@ function budgetRevertCell(btn){
     budgetRenderCellValue(input);
     budgetRecalcRowTotal(input);
   }
-  // Salva no Supabase
-  supaSave(TBLS.save_dre,'budget_classif', {
-    classif: BUDGET_CFG.classif||{},
-    tiposIgnorados: BUDGET_CFG.tiposIgnorados||{},
-    tiposDespGerais: BUDGET_CFG.tiposDespGerais||{},
-    tiposCD: BUDGET_CFG.tiposCD||{},
-    budgetOverrides: BUDGET_CFG.budgetOverrides||{},
-    sim: BUDGET_CFG.sim||{},
-    savedAt: new Date().toISOString()
-  })
-    .then(function(){ toast('↺ Restaurado para valor da tabela'); })
-    .catch(function(e){ console.warn('Erro restaurando:', e.message); toast('❌ Erro ao restaurar: '+e.message,'err'); });
+  // Salva via fila centralizada — antes era save imediato a cada restauração
+  if(typeof scheduleClassifSave === 'function') scheduleClassifSave();
+  toast('↺ Restaurado para valor da tabela');
   // Se estamos no main view do Budget, re-renderiza para propagar (downstream: ICMS, margens, etc.)
   if(!inDialog && typeof renderBudget === 'function'){
     setTimeout(function(){ renderBudget(BUDGET_ANO_FILTER); }, 10);
@@ -9022,6 +9137,7 @@ async function handleSaveBudget(btn){
     var kb = Math.round(JSON.stringify(payload).length/1024);
     // Salva classif em chave separada ANTES do payload (snapshot pode falhar)
     await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados||{}, tiposDespGerais: BUDGET_CFG.tiposDespGerais||{}, tiposCD: BUDGET_CFG.tiposCD||{}, budgetOverrides: BUDGET_CFG.budgetOverrides||{}, folhaProjecao: BUDGET_CFG.folhaProjecao||{}, sim: BUDGET_CFG.sim||{}, savedAt: new Date().toISOString()});
+    if(typeof _clearBudgetClassifVol === 'function') await _clearBudgetClassifVol();
     await supaSave(TBLS.save_dre,'budget_cfg', payload);
     toast('✔ Budget salvo — snapshot de '+(snapshot?snapshot.length.toLocaleString('pt-BR'):0)+' linhas ('+kb+'KB), era '+BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' linhas brutas');
     // Badge
@@ -9457,6 +9573,7 @@ async function saveBudgetCfg(btn){
   try{
     // Salva em chave dedicada (sobrevive a regeneração de snapshot)
     await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados, tiposDespGerais: BUDGET_CFG.tiposDespGerais||{}, tiposCD: BUDGET_CFG.tiposCD||{}, budgetOverrides: BUDGET_CFG.budgetOverrides||{}, folhaProjecao: BUDGET_CFG.folhaProjecao||{}, savedAt: new Date().toISOString()});
+    if(typeof _clearBudgetClassifVol === 'function') await _clearBudgetClassifVol();
     // Atualiza também budget_cfg para manter consistência
     await supaSave(TBLS.save_dre,'budget_cfg', BUDGET_CFG);
     invalidateBudgetClassifIndex();
