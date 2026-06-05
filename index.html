@@ -103,7 +103,7 @@ input.budget-cell-input[data-ss="1"]:focus{
 .app-brand h1{font-size:16px;font-weight:600;letter-spacing:.3px}
 .app-brand small{display:block;font-size:11px;opacity:.7;font-weight:400}
 .btn-back{background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.35);color:#fff;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;margin-right:8px;font-family:inherit;letter-spacing:.3px}
-.nav-pills{display:flex;gap:4px;margin-right:14px;padding:3px;background:rgba(0,0,0,.18);border-radius:6px;border:1px solid rgba(255,255,255,.08)}
+.nav-pills{display:flex;gap:4px;margin-left:18px;padding:3px;background:rgba(0,0,0,.18);border-radius:6px;border:1px solid rgba(255,255,255,.08)}
 .nav-pills a{display:inline-block;padding:5px 11px;border-radius:4px;font-size:11px;font-weight:600;color:rgba(255,255,255,.78);text-decoration:none;cursor:pointer;font-family:inherit;letter-spacing:.3px;transition:background .15s,color .15s;border:none;background:transparent}
 .nav-pills a:hover{background:rgba(255,255,255,.1);color:#fff}
 .nav-pills a.current{background:rgba(255,255,255,.18);color:#fff;cursor:default}
@@ -426,17 +426,17 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
   <header class="app-header">
     <div class="app-brand">
       <button class="btn-back" onclick="showHome()">← Início</button>
+      <div class="app-brand-mark">Plan&amp;BI</div>
+      <div>
+        <h1>Open To Buy — Sistema de Planejamento</h1>
+        <small>Análise consolidada por fornecedor · Realizado e simulado</small>
+      </div>
       <nav class="nav-pills" data-perm-nav>
         <a data-perm-otb class="current">OTB</a>
         <a onclick="openDre()">DRE</a>
         <a onclick="openBudget()">Budget</a>
         <a onclick="openFolha()">Folha</a>
       </nav>
-      <div class="app-brand-mark">Plan&amp;BI</div>
-      <div>
-        <h1>Open To Buy — Sistema de Planejamento</h1>
-        <small>Análise consolidada por fornecedor · Realizado e simulado</small>
-      </div>
     </div>
     <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
       <button class="btn save" id="btnSaveOtb" onclick="handleSaveOtb(this)">💾 Salvar</button>
@@ -484,17 +484,17 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
   <header class="app-header">
     <div class="app-brand">
       <button class="btn-back" onclick="showHome()">← Início</button>
+      <div class="app-brand-mark" style="background:var(--blue)">DRE</div>
+      <div>
+        <h1>DRE — Demonstrativo de Resultado</h1>
+        <small id="dreHeaderMeta">Carregando...</small>
+      </div>
       <nav class="nav-pills" data-perm-nav>
         <a data-perm-otb onclick="openOtb()">OTB</a>
         <a class="current">DRE</a>
         <a onclick="openBudget()">Budget</a>
         <a onclick="openFolha()">Folha</a>
       </nav>
-      <div class="app-brand-mark" style="background:var(--blue)">DRE</div>
-      <div>
-        <h1>DRE — Demonstrativo de Resultado</h1>
-        <small id="dreHeaderMeta">Carregando...</small>
-      </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn" data-perm-admin onclick="openDreCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Config</button>
@@ -516,17 +516,17 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
   <header class="app-header">
     <div class="app-brand">
       <button class="btn-back" onclick="showHome()">← Início</button>
+      <div class="app-brand-mark" style="background:#7b2d8b">RH</div>
+      <div>
+        <h1>Folha de Pagamento</h1>
+        <small id="folhaHeaderMeta">Carregando...</small>
+      </div>
       <nav class="nav-pills" data-perm-nav>
         <a data-perm-otb onclick="openOtb()">OTB</a>
         <a onclick="openDre()">DRE</a>
         <a onclick="openBudget()">Budget</a>
         <a class="current">Folha</a>
       </nav>
-      <div class="app-brand-mark" style="background:#7b2d8b">RH</div>
-      <div>
-        <h1>Folha de Pagamento</h1>
-        <small id="folhaHeaderMeta">Carregando...</small>
-      </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn" data-perm-admin onclick="openFolhaCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button>
@@ -9339,6 +9339,58 @@ function bcfgSearchInput(v){
   }, 250);
 }
 
+// Aplica o Tipo/Área selecionados a TODOS os fornecedores que estão filtrados na busca atual
+// (pendentes + classificados). Os classificados são sobrescritos.
+function bcfgBulkApply(){
+  var tipoSel = document.getElementById('bcfgBulkTipo');
+  var areaSel = document.getElementById('bcfgBulkArea');
+  var tipo = tipoSel ? tipoSel.value : '';
+  var area = areaSel ? areaSel.value : '';
+  if(!tipo && !area){ toast('Selecione pelo menos Tipo ou Área pra aplicar','err'); return; }
+
+  var dataEl = document.getElementById('budgetCfgBody');
+  if(!dataEl || !dataEl._allKeys){ toast('Erro: dados não carregados','err'); return; }
+  var allKeys = dataEl._allKeys;
+  var combos  = dataEl._combos;
+  var searchInput = document.getElementById('bcfg_search');
+  var search = searchInput ? searchInput.value : '';
+  var searchUC = (search||'').trim().toUpperCase();
+  if(!searchUC){ toast('Aplicação em lote só funciona com busca ativa','err'); return; }
+
+  // Coleta TODAS as chaves que batem com a busca (pending + classified)
+  var affected = [];
+  allKeys.forEach(function(k){
+    var matches = combos[k].nomfor.toUpperCase().indexOf(searchUC) >= 0
+               || (combos[k].hist||'').toUpperCase().indexOf(searchUC) >= 0
+               || (BUDGET_CFG.classif[k] && (BUDGET_CFG.classif[k].obs||'').toUpperCase().indexOf(searchUC) >= 0);
+    if(matches) affected.push(k);
+  });
+  if(!affected.length){ toast('Nenhum fornecedor afetado','err'); return; }
+
+  // Confirma
+  var labelParts = [];
+  if(tipo) labelParts.push('Tipo="'+tipo+'"');
+  if(area) labelParts.push('Área="'+area+'"');
+  var msg = 'Aplicar ' + labelParts.join(' e ') + ' a ' + affected.length + ' fornecedor(es)?\n\n'
+          + '⚠ Isso vai SOBRESCREVER classificações existentes nos itens filtrados.';
+  if(!confirm(msg)) return;
+
+  // Aplica
+  affected.forEach(function(k){
+    if(!BUDGET_CFG.classif[k]) BUDGET_CFG.classif[k] = {};
+    if(tipo) BUDGET_CFG.classif[k].tipo = tipo;
+    if(area) BUDGET_CFG.classif[k].area = area;
+  });
+
+  // Agenda save no Supabase via fila centralizada
+  if(typeof scheduleClassifSave === 'function') scheduleClassifSave();
+
+  toast('✔ Aplicado a ' + affected.length + ' fornecedor(es). Salvando...');
+
+  // Re-renderiza a tabela com a busca atual
+  renderBudgetCfgTable(search);
+}
+
 function renderBudgetCfgTable(search){
   var container = document.getElementById('bcfgTableWrap') || document.getElementById('budgetCfgBody');
   // Data always stored on budgetCfgBody
@@ -9412,6 +9464,19 @@ function renderBudgetCfgTable(search){
   h += '<span style="color:#1a7c3e;font-weight:700">'+classCount+'</span> classificados · ';
   h += totalCount+' total';
   h += '</div></div>';
+
+  // ── BULK APPLY: aparece só quando há busca ativa + ao menos um resultado ──
+  // Permite aplicar Tipo/Área a todos os fornecedores filtrados de uma vez
+  if(searchUC.length > 0 && (showPending.length || showClassified.length)){
+    var totalAffected = showPending.length + showClassified.length;
+    h += '<div style="background:#eef5ff;border:1.5px solid #4682c4;border-radius:8px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">';
+    h += '<div style="font-size:11px;font-weight:700;color:#1a4d8f;letter-spacing:.5px;white-space:nowrap">⚡ APLICAR EM LOTE</div>';
+    h += '<select id="bcfgBulkTipo" style="'+selStyle+';font-size:12px;padding:5px 8px;min-width:140px">'+tipoOpts+'</select>';
+    h += '<select id="bcfgBulkArea" style="'+selStyle+';font-size:12px;padding:5px 8px;min-width:140px">'+areaOpts+'</select>';
+    h += '<button type="button" onclick="bcfgBulkApply()" style="background:#1a56c4;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Aplicar aos '+totalAffected+' resultados</button>';
+    h += '<span style="font-size:10px;color:#7a8ab0">(pendentes serão classificados; classificados existentes serão sobrescritos)</span>';
+    h += '</div>';
+  }
 
   // Cabeçalho sticky — fica visível ao rolar a tabela (position:sticky funciona dentro do overflow:auto)
   var _thStyle = 'position:sticky;top:0;z-index:2;background:#1a2547;color:#fff;padding:7px 10px;font-size:10px;font-weight:700;letter-spacing:1px;';
@@ -9715,17 +9780,17 @@ async function saveBudgetCfg(btn){
   <header class="app-header">
     <div class="app-brand">
       <button class="btn-back" onclick="showHome()">← Início</button>
+      <div class="app-brand-mark" style="background:var(--green)">BGT</div>
+      <div>
+        <h1>Budget — Orçamento</h1>
+        <small id="budgetHeaderMeta">Carregando...</small>
+      </div>
       <nav class="nav-pills" data-perm-nav>
         <a data-perm-otb onclick="openOtb()">OTB</a>
         <a onclick="openDre()">DRE</a>
         <a class="current">Budget</a>
         <a onclick="openFolha()">Folha</a>
       </nav>
-      <div class="app-brand-mark" style="background:var(--green)">BGT</div>
-      <div>
-        <h1>Budget — Orçamento</h1>
-        <small id="budgetHeaderMeta">Carregando...</small>
-      </div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn" id="btnBudgetRefresh" onclick="budgetForceReload(this)" title="Recarrega os dados do Supabase" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">🔄 Atualizar</button>
