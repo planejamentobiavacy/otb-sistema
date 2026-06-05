@@ -9241,6 +9241,50 @@ function openBudgetDetail(tipo, area, ano){
   h += '<th style="padding:7px 10px;text-align:center;font-size:10px;font-weight:700;background:#0f1a3a;min-width:110px">TOTAL</th>';
   h += '</tr></thead><tbody>';
 
+  // ── Pré-computa Comissão Martins por mês (pra tipo "Comissão") ──
+  // Vira a primeira linha da tabela e ENTRA no cálculo do TOTAL.
+  var _martinsByAm = null;
+  var _isComissaoTipo = (String(tipo).toUpperCase() === 'COMISSÃO' || String(tipo).toUpperCase() === 'COMISSAO');
+  if(_isComissaoTipo && typeof DRE_RAW !== 'undefined' && DRE_RAW && DRE_RAW.length){
+    _martinsByAm = {};
+    months.forEach(function(am){
+      var anoM = am.slice(0,4), mesM = am.slice(4,6);
+      var rbMartins = 0;
+      DRE_RAW.forEach(function(r){
+        if(String(r.ano||r.ANO||'') === anoM && String(r.mes||r.MES||'').padStart(2,'0') === mesM){
+          var canal = String(dreResolveCanal(r)||'').trim().toUpperCase();
+          if(canal === 'MARTINS'){
+            rbMartins += parseFloat(r.faturamento_venda || r.FATURAMENTO_VENDA || r.faturamento || r.FATURAMENTO || 0) || 0;
+          }
+        }
+      });
+      var amH = anoM + '-' + mesM;
+      var cfg = (typeof DRE_CONFIG !== 'undefined') ? DRE_CONFIG.martins : null;
+      var pct = null;
+      if(cfg && typeof cfg === 'object'){
+        var v = cfg[amH] != null ? cfg[amH] : cfg[am];
+        if(v != null){ var n = parseFloat(v); if(!isNaN(n)) pct = n; }
+      }
+      if(pct == null) pct = (typeof DRE_CONFIG_DEFAULTS !== 'undefined') ? (DRE_CONFIG_DEFAULTS.martins || 0) : 0;
+      _martinsByAm[am] = {rb: rbMartins, pct: pct, total: rbMartins * pct};
+    });
+
+    // Renderiza como PRIMEIRA linha (entra no cálculo do TOTAL)
+    var martinsGrandTotal = 0;
+    h += '<tr style="background:#f3eefb;color:#4a2785;font-weight:600;font-style:italic">';
+    h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;font-style:italic;position:sticky;left:0;background:#f3eefb;z-index:1">📊 Comissão Martins (DRE)</td>';
+    h += '<td style="padding:4px 10px;font-size:10px;color:#7a5aa0;border-bottom:1px solid #eef1f8">Referência do DRE — não editável</td>';
+    months.forEach(function(am){
+      var v = _martinsByAm[am];
+      martinsGrandTotal += v.total;
+      var tip = 'Faturamento Martins: R$ '+Math.round(v.rb).toLocaleString('pt-BR')
+              + ' × ' + (v.pct*100).toFixed(2).replace('.',',') + '% = R$ ' + Math.round(v.total).toLocaleString('pt-BR');
+      h += '<td style="padding:5px 8px;text-align:center;font-size:11px;border-bottom:1px solid #eef1f8" title="'+escHtml(tip)+'">'+(v.total>0?'R$ '+Math.round(v.total).toLocaleString('pt-BR'):'<span style="color:#bbb">—</span>')+'</td>';
+    });
+    h += '<td style="padding:6px 10px;text-align:center;font-weight:700;background:#e8dff5;border-bottom:1px solid #eef1f8">'+(martinsGrandTotal>0?'R$ '+Math.round(martinsGrandTotal).toLocaleString('pt-BR'):'—')+'</td>';
+    h += '</tr>';
+  }
+
   fns.forEach(function(fn, i){
     var row = map[fn];
     var bg = i%2===0?'#fff':'#f7f9ff';
@@ -9299,7 +9343,7 @@ function openBudgetDetail(tipo, area, ano){
     h += '</tr>';
   });
 
-  // Total row — considera overrides
+  // Total row — considera overrides + Comissão Martins (se aplicável)
   h += '<tr style="background:#1a2547;color:#fff;font-weight:700">';
   h += '<td style="padding:7px 10px;position:sticky;left:0;background:#1a2547;z-index:1">TOTAL</td>';
   h += '<td></td>';
@@ -9311,6 +9355,8 @@ function openBudgetDetail(tipo, area, ano){
       var hasOvr = BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[k] != null;
       return s+(hasOvr ? BUDGET_CFG.budgetOverrides[k] : otb);
     },0);
+    // Soma a linha sintética de Comissão Martins se aplicável
+    if(_martinsByAm && _martinsByAm[am]) sum += _martinsByAm[am].total;
     grandTotal += sum;
     h += '<td class="budget-footer-cell" data-am="'+am+'" style="padding:7px 8px;text-align:center">'+fmtV(sum)+'</td>';
   });
@@ -9391,48 +9437,6 @@ function openBudgetDetail(tipo, area, ano){
       h += '<td style="padding:5px 8px;text-align:center;font-size:11px" title="'+escHtml(tip)+'">'+(v.total>0?'R$ '+Math.round(v.total).toLocaleString('pt-BR'):'<span style="color:#bbb">—</span>')+'</td>';
     });
     h += '<td style="padding:7px 10px;text-align:center;background:#e8dff5;font-weight:700">'+(dreCdGrandTotal>0?'R$ '+Math.round(dreCdGrandTotal).toLocaleString('pt-BR'):'—')+'</td>';
-    h += '</tr>';
-  }
-
-  // ── Linha de referência: Comissão Martins do DRE (só aparece pra tipo "Comissão") ──
-  // Comissão Martins = faturamento_venda do canal MARTINS × % Martins do DRE_CONFIG[am]
-  if((String(tipo).toUpperCase() === 'COMISSÃO' || String(tipo).toUpperCase() === 'COMISSAO')
-     && typeof DRE_RAW !== 'undefined' && DRE_RAW && DRE_RAW.length){
-    var _dreComMartinsForAm = function(am){
-      var ano = am.slice(0,4), mes = am.slice(4,6);
-      // Soma faturamento_venda do canal MARTINS para o mês
-      var rbMartins = 0;
-      DRE_RAW.forEach(function(r){
-        if(String(r.ano||r.ANO||'') === ano && String(r.mes||r.MES||'').padStart(2,'0') === mes){
-          var canal = String(dreResolveCanal(r)||'').trim().toUpperCase();
-          if(canal === 'MARTINS'){
-            rbMartins += parseFloat(r.faturamento_venda || r.FATURAMENTO_VENDA || r.faturamento || r.FATURAMENTO || 0) || 0;
-          }
-        }
-      });
-      // % Martins do mês (DRE_CONFIG.martins ou default)
-      var amH = ano + '-' + mes;
-      var cfg = (typeof DRE_CONFIG !== 'undefined') ? DRE_CONFIG.martins : null;
-      var pct = null;
-      if(cfg && typeof cfg === 'object'){
-        var v = cfg[amH] != null ? cfg[amH] : cfg[am];
-        if(v != null){ var n = parseFloat(v); if(!isNaN(n)) pct = n; }
-      }
-      if(pct == null) pct = (typeof DRE_CONFIG_DEFAULTS !== 'undefined') ? (DRE_CONFIG_DEFAULTS.martins || 0) : 0;
-      return {rb: rbMartins, pct: pct, total: rbMartins * pct};
-    };
-    var dreComMartinsGrandTotal = 0;
-    h += '<tr style="background:#f3eefb;color:#4a2785;font-weight:600;font-style:italic">';
-    h += '<td style="padding:7px 10px;position:sticky;left:0;background:#f3eefb;z-index:1;font-style:italic">📊 Comissão Martins (DRE)</td>';
-    h += '<td style="padding:4px 10px;font-size:10px;color:#7a5aa0">Referência do DRE — não editável</td>';
-    months.forEach(function(am){
-      var v = _dreComMartinsForAm(am);
-      dreComMartinsGrandTotal += v.total;
-      var tip = 'Faturamento Martins: R$ '+Math.round(v.rb).toLocaleString('pt-BR')
-              + ' × ' + (v.pct*100).toFixed(2).replace('.',',') + '% = R$ ' + Math.round(v.total).toLocaleString('pt-BR');
-      h += '<td style="padding:5px 8px;text-align:center;font-size:11px" title="'+escHtml(tip)+'">'+(v.total>0?'R$ '+Math.round(v.total).toLocaleString('pt-BR'):'<span style="color:#bbb">—</span>')+'</td>';
-    });
-    h += '<td style="padding:7px 10px;text-align:center;background:#e8dff5;font-weight:700">'+(dreComMartinsGrandTotal>0?'R$ '+Math.round(dreComMartinsGrandTotal).toLocaleString('pt-BR'):'—')+'</td>';
     h += '</tr>';
   }
 
