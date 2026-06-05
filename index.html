@@ -5076,10 +5076,12 @@ function dreKpis(dArr,dLY){
   // Cards: para não-admins, esconde os 2 últimos (EBITDA %, EBITDA R$) — visão para até Margem Contrib
   var _showEbitda = (typeof isAdmin === 'function') ? isAdmin() : true;
   var baseCards = card('Receita Bruta s/ Dev',dreBrlp(d.rb_dev),'c/ Dev: '+dreBrlp(d.rb_gross),'#2352c8',lyBlock(d.rb_dev,dLY?dLY.rb_dev:null,true))
-    +card('CD',cd_p+'%',dreBrlp(d.cd),'#c48a00',lyBlockInverse(d.rl>0?d.cd/d.rl:0, dLY&&dLY.rl>0?dLY.cd/dLY.rl:null, false))
-    +card('Salário Adm',sa_p+'%',dreBrlp(d.sa),'#7a8ab0',lyBlockInverse(d.rl>0?d.sa/d.rl:0, dLY&&dLY.rl>0?dLY.sa/dLY.rl:null, false))
     +card('% Impostos',imp_p+'%',dreBrlp(d.imp),'#7a8ab0',lyBlockInverse(d.rb>0?d.imp/d.rb:0, dLY&&dLY.rb>0?dLY.imp/dLY.rb:null, false))
-    +card('Margem Produto',mg_p+'%','&nbsp;',+mg_p>25?'#0a7c4e':+mg_p>20?'#b07a00':'#c0181a',lyBlock(d.mg_prod,dLY?dLY.mg_prod:null,false))+card('Margem Bruta',mb_p+'%',dreBrlp(d.mb),+mb_p>22?'#0a7c4e':+mb_p>16?'#b07a00':'#c0181a',lyBlock(d.mb/d.rl,dLY&&dLY.rl>0?dLY.mb/dLY.rl:null,false))+card('Margem Contrib',mc_p+'%',dreBrlp(d.mcon),+mc_p>15?'#0a7c4e':+mc_p>10?'#b07a00':'#c0181a',lyBlock(d.mcon/d.rl,dLY&&dLY.rl>0?dLY.mcon/dLY.rl:null,false));
+    +card('Margem Produto',mg_p+'%','&nbsp;',+mg_p>25?'#0a7c4e':+mg_p>20?'#b07a00':'#c0181a',lyBlock(d.mg_prod,dLY?dLY.mg_prod:null,false))
+    +card('Margem Bruta',mb_p+'%',dreBrlp(d.mb),+mb_p>22?'#0a7c4e':+mb_p>16?'#b07a00':'#c0181a',lyBlock(d.mb/d.rl,dLY&&dLY.rl>0?dLY.mb/dLY.rl:null,false))
+    +card('Margem Contrib',mc_p+'%',dreBrlp(d.mcon),+mc_p>15?'#0a7c4e':+mc_p>10?'#b07a00':'#c0181a',lyBlock(d.mcon/d.rl,dLY&&dLY.rl>0?dLY.mcon/dLY.rl:null,false))
+    +card('Salário Adm',sa_p+'%',dreBrlp(d.sa),'#7a8ab0',lyBlockInverse(d.rl>0?d.sa/d.rl:0, dLY&&dLY.rl>0?dLY.sa/dLY.rl:null, false))
+    +card('CD',cd_p+'%',dreBrlp(d.cd),'#c48a00',lyBlockInverse(d.rl>0?d.cd/d.rl:0, dLY&&dLY.rl>0?dLY.cd/dLY.rl:null, false));
   var ebitdaCards = _showEbitda
     ? card('EBITDA %',eb_p+'%','&nbsp;',+eb_p>4?'#0a7c4e':+eb_p>2?'#b07a00':'#c0181a',lyBlock(d.ebt/d.rl,dLY&&dLY.rl>0?dLY.ebt/dLY.rl:null,false))+card('EBITDA R$',dreBrlp(d.ebt),'&nbsp;',+eb_p>4?'#0a7c4e':+eb_p>2?'#b07a00':'#c0181a',lyBlock(d.ebt,dLY?dLY.ebt:null,true))
     : '';
