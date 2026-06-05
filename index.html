@@ -9,6 +9,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sistema OTB — AVACY</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
 <!-- Supabase JS SDK (Auth nativo) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
@@ -832,9 +833,53 @@ async function fetchNew(table, rows, dateCol, tableKey){
   return filtered.concat(newRows);
 }
 
+// ═══════════════════════════════════════════════════════════════
+// COMPRESSÃO GZIP — payloads > 100KB são comprimidos automaticamente.
+// Redução típica: 70-85% pra JSON (ótimo pra snapshots de DRE/Budget).
+// ═══════════════════════════════════════════════════════════════
+var COMPRESS_THRESHOLD = 100 * 1024;
+
+function _b64Encode(uint8){
+  // Para arrays grandes, btoa em chunks pra não estourar pilha
+  var CHUNK = 0x8000, s = '';
+  for(var i=0; i<uint8.length; i+=CHUNK) s += String.fromCharCode.apply(null, uint8.subarray(i, i+CHUNK));
+  return btoa(s);
+}
+function _b64Decode(b64){
+  var s = atob(b64), u = new Uint8Array(s.length);
+  for(var i=0; i<s.length; i++) u[i] = s.charCodeAt(i);
+  return u;
+}
+
+function _maybeCompress(value){
+  if(typeof fflate === 'undefined') return value;
+  var json = JSON.stringify(value);
+  if(!json || json.length < COMPRESS_THRESHOLD) return value;
+  try{
+    var bytes = new TextEncoder().encode(json);
+    var gz    = fflate.gzipSync(bytes, {level: 6});
+    var b64   = _b64Encode(gz);
+    var ratio = Math.round((1 - gz.length/bytes.length) * 100);
+    console.log('[compress]', Math.round(bytes.length/1024)+'KB → '+Math.round(gz.length/1024)+'KB ('+ratio+'% menor)');
+    return {__c:1, data:b64};
+  } catch(e){ console.warn('[compress] falhou:', e.message); return value; }
+}
+
+function _maybeDecompress(value){
+  if(!value || typeof value !== 'object' || value.__c !== 1 || !value.data) return value;
+  if(typeof fflate === 'undefined'){ console.error('[decompress] fflate não carregado'); return null; }
+  try{
+    var bytes    = _b64Decode(value.data);
+    var unzipped = fflate.gunzipSync(bytes);
+    return JSON.parse(new TextDecoder().decode(unzipped));
+  } catch(e){ console.error('[decompress] falhou:', e.message); return null; }
+}
+
 // Salvar/Carregar simulação (chave-valor na tabela save)
 async function supaSave(saveTable, rowKey, value){
-  var body = JSON.stringify({key: rowKey, value: JSON.stringify(value)});
+  // Aplica compressão se grande
+  var payload = _maybeCompress(value);
+  var body = JSON.stringify({key: rowKey, value: JSON.stringify(payload)});
   var kb = Math.round(body.length/1024);
   if(kb > 100) console.log('[supaSave] sending', kb, 'KB for key='+rowKey);
   // DELETE + POST garante unicidade sem precisar de unique constraint
@@ -856,13 +901,125 @@ async function supaLoad(saveTable, rowKey){
     if(!rows || !rows.length) return null;
     var raw = rows[0].value;
     if(!raw) return null;
-    try{ return JSON.parse(raw); }
+    var parsed;
+    try{ parsed = JSON.parse(raw); }
     catch(pe){
       console.warn('[supaLoad] JSON.parse failed for key='+rowKey+', size='+raw.length);
       return null;
     }
+    // Descomprime automaticamente se necessário
+    return _maybeDecompress(parsed);
   } catch(e){ console.warn('[supaLoad] error:', e.message); return null; }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// CACHE IndexedDB — reduz egress do Supabase em ~80% pra leituras repetidas
+// ═══════════════════════════════════════════════════════════════
+// Estratégia: cache local de tudo que vem do supaLoad por 1 hora (TTL).
+// Em cada save (supaSave), atualiza o cache local com o valor novo (zero round-trip).
+// Em cada "Atualizar"/"Recarregar Tudo", o sistema chama window.clearIdbCache().
+var _idbDB = null, _idbReady = null;
+var IDB_DB_NAME = 'avacy-otb-cache-v1';
+var IDB_STORE   = 'cache';
+var IDB_TTL_MS  = 60 * 60 * 1000; // 1 hora — saldo entre frescor e economia
+
+function _idbOpen(){
+  if(_idbReady) return _idbReady;
+  _idbReady = new Promise(function(resolve, reject){
+    if(typeof indexedDB === 'undefined'){ resolve(null); return; }
+    try{
+      var req = indexedDB.open(IDB_DB_NAME, 1);
+      req.onupgradeneeded = function(e){
+        var db = e.target.result;
+        if(!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE, {keyPath:'key'});
+      };
+      req.onsuccess = function(){ _idbDB = req.result; resolve(_idbDB); };
+      req.onerror   = function(){ console.warn('[idb] open failed:', req.error); resolve(null); };
+    } catch(e){ console.warn('[idb] open exception:', e.message); resolve(null); }
+  });
+  return _idbReady;
+}
+
+async function _idbGet(key){
+  try{
+    var db = await _idbOpen();
+    if(!db) return null;
+    return await new Promise(function(resolve){
+      try{
+        var tx = db.transaction(IDB_STORE, 'readonly');
+        var req = tx.objectStore(IDB_STORE).get(key);
+        req.onsuccess = function(){
+          var rec = req.result;
+          if(!rec) return resolve(null);
+          if((Date.now() - rec.cachedAt) > IDB_TTL_MS) return resolve(null);
+          resolve(rec.value);
+        };
+        req.onerror = function(){ resolve(null); };
+      } catch(e){ resolve(null); }
+    });
+  } catch(e){ return null; }
+}
+
+async function _idbSet(key, value){
+  try{
+    var db = await _idbOpen();
+    if(!db) return;
+    await new Promise(function(resolve){
+      try{
+        var tx = db.transaction(IDB_STORE, 'readwrite');
+        tx.objectStore(IDB_STORE).put({key:key, value:value, cachedAt:Date.now()});
+        tx.oncomplete = resolve;
+        tx.onerror    = resolve;
+        tx.onabort    = resolve;
+      } catch(e){ resolve(); }
+    });
+  } catch(e){ /* ignore */ }
+}
+
+window.clearIdbCache = async function(prefix){
+  try{
+    var db = await _idbOpen();
+    if(!db) return;
+    await new Promise(function(resolve){
+      var tx = db.transaction(IDB_STORE, 'readwrite');
+      var store = tx.objectStore(IDB_STORE);
+      if(!prefix){ store.clear(); resolve(); return; }
+      var req = store.openCursor();
+      req.onsuccess = function(){
+        var c = req.result;
+        if(c){
+          if(String(c.key).indexOf(prefix) === 0) c.delete();
+          c.continue();
+        } else { resolve(); }
+      };
+      req.onerror = function(){ resolve(); };
+    });
+    console.log('[idb] cache limpo'+(prefix?' (prefixo: '+prefix+')':' (tudo)'));
+  } catch(e){ console.warn('[idb] clear falhou:', e.message); }
+};
+
+// Wrapper: tenta cache local primeiro, vai pro Supabase se não tiver
+var _origSupaLoad = supaLoad;
+supaLoad = async function(saveTable, rowKey){
+  var cacheKey = saveTable + '/' + rowKey;
+  var cached = await _idbGet(cacheKey);
+  if(cached !== null){
+    var sizeKb = Math.round(JSON.stringify(cached).length/1024);
+    if(sizeKb > 50) console.log('[idb] HIT', cacheKey, '— economizou', sizeKb, 'KB');
+    return cached;
+  }
+  var fresh = await _origSupaLoad(saveTable, rowKey);
+  if(fresh !== null) await _idbSet(cacheKey, fresh);
+  return fresh;
+};
+
+// Wrapper: depois de salvar, atualiza cache local com o valor novo (sem round-trip)
+var _origSupaSave = supaSave;
+supaSave = async function(saveTable, rowKey, value){
+  var result = await _origSupaSave(saveTable, rowKey, value);
+  await _idbSet(saveTable + '/' + rowKey, value);
+  return result;
+};
 
 // ═══════════════════════════════════════════════════════
 //  AUTH
@@ -1816,17 +1973,21 @@ async function loadOtbFromSupabase(){
         // Rebuild from cached byYm (no fetch needed)
               applyMargByYm(state._margByYm, state._margBySupYm||null);
       } else {
-        // Fetch venda in background for MARG block
-        fetchAll(TBLS.venda, null, 'venda').then(function(rows){
-          state.venda = rows;
-          state._margProdBuilt = false;
-          buildMargProdFromDre();
-        }).catch(function(){});
+        // Fetch venda em background pra MARG block — SÓ pra admin (economiza ~30MB pra outros)
+        if(typeof isAdmin === 'function' && isAdmin()){
+          fetchAll(TBLS.venda, null, 'venda').then(function(rows){
+            state.venda = rows;
+            state._margProdBuilt = false;
+            buildMargProdFromDre();
+          }).catch(function(){});
+        } else {
+          console.log('[margProd] não-admin: skip fetch venda (economia de ~30MB de egress)');
+        }
       }
-      // ── Carrega dados brutos em background pra liberar o drill-down por categoria ──
-      // O snapshot só guarda as matrizes consolidadas; categoria-específica (ex: ALPARG/CHINEL)
-      // precisa varrer as linhas brutas. Sem isso, qualquer aba de categoria mostra zero.
-      _loadOtbRawTablesBackground();
+      // ── Lazy load on demand ──
+      // Antes carregava as 3 tabelas brutas (estoque/venda/carteira ~80MB) em background AQUI.
+      // Agora isso só dispara quando o usuário clica numa categoria específica (não-TODAS, não-AVACY).
+      // Economia: usuários que só veem AVACY ou TODAS nunca baixam essas tabelas.
     } else {
       // Nenhum dado salvo: carrega tabelas brutas
       await reloadAllOtbTables();
@@ -2086,6 +2247,8 @@ async function handleSaveOtb(btn){
 
 async function handleReloadAll(btn){
   var orig = btn.textContent; btn.disabled = true;
+  // Limpa cache local antes — usuário pediu dados frescos
+  try { if(typeof clearIdbCache === 'function') await clearIdbCache(); } catch(e){}
   gcShowLoadingBanner('Recarregando todas as tabelas...');
   var _onProg = function(tableName){ return function(loaded,total){ gcUpdateLoadingBanner(tableName,loaded,total); }; };
   var steps = [
@@ -3090,7 +3253,13 @@ function renderCatTabs(){
     btn.onclick=function(){
       state.activeCategory=cat;
       document.querySelectorAll('.cat-tab').forEach(function(x){x.classList.remove('active');});
-      btn.classList.add('active'); renderTable();
+      btn.classList.add('active');
+      // Lazy load das tabelas brutas: só dispara quando usuário CLICA numa categoria que precisa delas
+      // (TODAS usa só matrizes já agregadas; AVACY soma children). Categoria específica precisa do raw.
+      if(cat !== 'TODAS' && (state.activeSupplier||'') !== 'AVACY'){
+        if(typeof _loadOtbRawTablesBackground === 'function') _loadOtbRawTablesBackground();
+      }
+      renderTable();
     };
     catTabs.appendChild(btn);
   });
@@ -6107,6 +6276,8 @@ function _folhaRenderAll(){
 async function dreForceReload(btn){
   var orig = btn ? btn.textContent : '';
   if(btn){ btn.disabled=true; btn.textContent='⏳ Buscando...'; }
+  // Limpa cache de DRE (mantém o resto)
+  try { if(typeof clearIdbCache === 'function') await clearIdbCache('save_dre/dre_'); } catch(e){}
   DRE_LOADED = false;
   DRE_SNAPSHOT = false;
   var ok = await loadDreFromSupabase(true); // forceRaw=true
@@ -7041,6 +7212,8 @@ async function openBudget(){
 async function budgetForceReload(btn){
   var orig = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = '⏳ Atualizando...'; }
+  // Limpa cache local pra forçar leitura fresca do Supabase
+  try { if(typeof clearIdbCache === 'function') await clearIdbCache(); } catch(e){}
   try{
     // Limpa flags e estado pra forçar reload completo da base
     BUDGET_LOADED = false;
