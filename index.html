@@ -7747,6 +7747,18 @@ function _budgetSourceAreas(disp){
 // Útil pra usuários poderem fazer projeções/overrides em áreas vazias.
 var BUDGET_AREAS_ALWAYS_SHOW = ['Planejamento'];
 
+// % de 13°+Férias aplicado sobre Salário Folha — lê do DRE_CFG_PARAMS por mês.
+// Mesma lógica do DRE (sa13ferias = sa * pct13ferias_adm). Fallback: 11%.
+function _pct13fAdmForYm(ym){
+  var am = String(ym||'').replace('-','');
+  var p  = (typeof DRE_CFG_PARAMS !== 'undefined') ? (DRE_CFG_PARAMS[am] || DRE_CFG_PARAMS[ym]) : null;
+  if(p && p.pct13ferias_adm != null){
+    var v = parseFloat(p.pct13ferias_adm);
+    if(!isNaN(v) && v >= 0) return v;
+  }
+  return 0.11; // default — alinhado com dreCalc
+}
+
 function budgetDespByTipoArea(ym, tipo, area){
   var am = ym.replace('-','');
   // area pode ser string OU array — quando merged (Fin/Fat/Fisc) recebe array das fontes
@@ -8300,21 +8312,38 @@ function renderBudget(anoFilter){
     }
   }
 
+  // Ranking: ordena áreas do maior pro menor (soma de despesas + folha + 13°+Férias em todos os meses)
+  var _areaTotals = {};
+  areasUsadas.forEach(function(a){
+    var srcs = _budgetSourceAreas(a);
+    var total = 0;
+    months.forEach(function(ym){
+      var desp = budgetDespByTipoArea(ym, null, srcs)||0;
+      var fol  = 0;
+      srcs.forEach(function(s){ fol += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
+      total += desp + fol + fol * _pct13fAdmForYm(ym);
+    });
+    _areaTotals[a] = total;
+  });
+  areasUsadas.sort(function(a, b){ return (_areaTotals[b]||0) - (_areaTotals[a]||0); });
+
   // totalDespesasGeral declarado antes para que EBITDA possa usar mesmo sem áreas
   var totalDespesasGeral = {};
   months.forEach(function(ym){ totalDespesasGeral[ym] = 0; });
 
   if(areasUsadas.length){
     secRow('Despesas', '💸');
-    // Pré-computa o Total Despesas (soma de todas as áreas: despesas + folha)
+    // Pré-computa o Total Despesas (soma de todas as áreas: despesas + folha + 13°+Férias)
     months.forEach(function(ym){
       var sum = 0;
+      var pct13 = _pct13fAdmForYm(ym);
       areasUsadas.forEach(function(area){
         var srcs = _budgetSourceAreas(area);
         var desp = budgetDespByTipoArea(ym, null, srcs)||0;
         var fol  = 0;
         srcs.forEach(function(s){ fol += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
-        sum += (desp + fol);
+        var f13 = fol * pct13;
+        sum += (desp + fol + f13);
       });
       totalDespesasGeral[ym] = sum;
     });
@@ -8353,14 +8382,24 @@ function renderBudget(anoFilter){
       }
       var tipos = BUDGET_TIPOS.filter(function(t){ return usedTiposForArea[t]; });
 
-      // Total por área = soma de despesas (todos os tipos) + Salário Folha da área
+      // Ranking: ordena tipos do maior pro menor (soma em todos os meses)
+      var _tipoTotals = {};
+      tipos.forEach(function(t){
+        var sum = 0;
+        months.forEach(function(ym){ sum += (budgetDespByTipoArea(ym, t, sources)||0); });
+        _tipoTotals[t] = sum;
+      });
+      tipos.sort(function(a, b){ return (_tipoTotals[b]||0) - (_tipoTotals[a]||0); });
+
+      // Total por área = soma de despesas (todos os tipos) + Salário Folha + 13°+Férias
       (function(areaCapture, sourcesCapture){
         var areaUid = 'area_'+areaCapture.replace(/\W+/g,'_');
         dataRow(areaCapture, function(ym){
           var desp = budgetDespByTipoArea(ym, null, sourcesCapture)||0;
           var fol  = 0;
           sourcesCapture.forEach(function(s){ fol += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
-          var t = desp + fol;
+          var f13 = fol * _pct13fAdmForYm(ym);
+          var t = desp + fol + f13;
           return t>0 ? t : null;
         }, {bold:true, areaUid: areaUid});
         tipos.forEach(function(tipo){
@@ -8386,6 +8425,13 @@ function renderBudget(anoFilter){
             var v = sumFolhaForYm(ym);
             return v>0?v:null;
           }, {sub:true, folhaDetailArea: areaCapFolha.toUpperCase(), selectedAno: selectedAno, parentArea: areaUid});
+          // 13°+Férias: % de pct13ferias_adm do DRE aplicado sobre o Salário Folha do mês
+          dataRow('↳ 13°+Férias', function(ym){
+            var sal = sumFolhaForYm(ym);
+            if(sal <= 0) return null;
+            var v = sal * _pct13fAdmForYm(ym);
+            return v>0?v:null;
+          }, {sub:true, parentArea: areaUid});
         }
       })(area, sources);
     });
