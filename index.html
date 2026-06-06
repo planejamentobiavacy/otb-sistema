@@ -6043,6 +6043,10 @@ function _folhaPopulateFilters(){
   fmsBuildVerbas(verbasDisponiveis);
 }
 
+// Áreas que devem ser ocultadas da tela de Folha (ex: Diretoria — confidencial / fora do escopo do report)
+var FOLHA_AREAS_EXCLUDE = ['Diretoria'];
+var _FOLHA_AREAS_EXCLUDE_UC = FOLHA_AREAS_EXCLUDE.map(function(a){ return String(a).toUpperCase(); });
+
 function _folhaFiltrar(){
   // Restrição por área do usuário (líder vê só sua área)
   var areasUsuario = getFolhaAreasPermitidas();
@@ -6050,6 +6054,9 @@ function _folhaFiltrar(){
     var f = FOLHA_FILTROS;
     // Estado "Nenhum" em qualquer filtro → não inclui nada
     if(FOLHA_FILTROS_NONE.situacao || FOLHA_FILTROS_NONE.tipo || FOLHA_FILTROS_NONE.area || FOLHA_FILTROS_NONE.nome || FOLHA_FILTROS_NONE.ano) return false;
+    // Exclui áreas configuradas em FOLHA_AREAS_EXCLUDE (ex: Diretoria)
+    var rAreaUC = String(folhaGetArea(r)||'').toUpperCase();
+    if(_FOLHA_AREAS_EXCLUDE_UC.indexOf(rAreaUC) >= 0) return false;
     // Filtro automático por área do usuário — antes dos filtros manuais
     if(areasUsuario){
       var rArea = folhaGetArea(r);
