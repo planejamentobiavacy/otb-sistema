@@ -9538,6 +9538,53 @@ function openBudgetDetail(tipo, area, ano){
     h += '</tr>';
   }
 
+  // ── Linha final de referência: Comissão Total do DRE (Martins + RCA) ──
+  // Só pra tipo "Comissão". Útil pra comparar o TOTAL do Budget (fornecedores + Martins)
+  // com o que o DRE realmente registra (Martins + RCA).
+  if(_isComissaoTipo && typeof DRE_RAW !== 'undefined' && DRE_RAW && DRE_RAW.length){
+    // Computa RCA por mês (Martins já pré-calculado em _martinsByAm)
+    var _rcaByAm = {};
+    months.forEach(function(am){
+      var anoR = am.slice(0,4), mesR = am.slice(4,6);
+      var rbRca = 0;
+      DRE_RAW.forEach(function(r){
+        if(String(r.ano||r.ANO||'') === anoR && String(r.mes||r.MES||'').padStart(2,'0') === mesR){
+          var canal = String(dreResolveCanal(r)||'').trim().toUpperCase();
+          if(canal === 'RCA'){
+            rbRca += parseFloat(r.faturamento_venda || r.FATURAMENTO_VENDA || r.faturamento || r.FATURAMENTO || 0) || 0;
+          }
+        }
+      });
+      var amH = anoR + '-' + mesR;
+      var cfg = (typeof DRE_CONFIG !== 'undefined') ? DRE_CONFIG.rca : null;
+      var pct = null;
+      if(cfg && typeof cfg === 'object'){
+        var v = cfg[amH] != null ? cfg[amH] : cfg[am];
+        if(v != null){ var n = parseFloat(v); if(!isNaN(n)) pct = n; }
+      }
+      if(pct == null) pct = (typeof DRE_CONFIG_DEFAULTS !== 'undefined') ? (DRE_CONFIG_DEFAULTS.rca || 0) : 0;
+      _rcaByAm[am] = {rb: rbRca, pct: pct, total: rbRca * pct};
+    });
+
+    var totalComDreGrand = 0;
+    h += '<tr style="background:#eef5ff;color:#1a4d8f;font-weight:700">';
+    h += '<td style="padding:7px 10px;position:sticky;left:0;background:#eef5ff;z-index:1">📊 Comissão Total (DRE)</td>';
+    h += '<td style="padding:4px 10px;font-size:10px;color:#5a7ab0;font-style:italic">Martins + RCA — referência DRE</td>';
+    months.forEach(function(am){
+      var m = (_martinsByAm && _martinsByAm[am]) ? _martinsByAm[am] : {total:0, rb:0, pct:0};
+      var r = _rcaByAm[am] || {total:0, rb:0, pct:0};
+      var t = m.total + r.total;
+      totalComDreGrand += t;
+      var tip = 'Martins: R$ '+Math.round(m.total).toLocaleString('pt-BR')
+              + ' (Fat R$ '+Math.round(m.rb).toLocaleString('pt-BR')+' × '+(m.pct*100).toFixed(2).replace('.',',')+'%)'
+              + ' • RCA: R$ '+Math.round(r.total).toLocaleString('pt-BR')
+              + ' (Fat R$ '+Math.round(r.rb).toLocaleString('pt-BR')+' × '+(r.pct*100).toFixed(2).replace('.',',')+'%)';
+      h += '<td style="padding:5px 8px;text-align:center;font-size:11px" title="'+escHtml(tip)+'">'+(t>0?'R$ '+Math.round(t).toLocaleString('pt-BR'):'<span style="color:#bbb">—</span>')+'</td>';
+    });
+    h += '<td style="padding:7px 10px;text-align:center;background:#d8e5fa;font-weight:700">'+(totalComDreGrand>0?'R$ '+Math.round(totalComDreGrand).toLocaleString('pt-BR'):'—')+'</td>';
+    h += '</tr>';
+  }
+
   h += '</tbody></table></div>';
 
   // openFolhaDetail sobrescreve o innerHTML do overlay, destruindo budgetDetailTitle e budgetDetailBody.
