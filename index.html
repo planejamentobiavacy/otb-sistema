@@ -9319,6 +9319,16 @@ function openBudgetDetail(tipo, area, ano){
   var ml=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
   // Permissão: só admin pode editar os valores manuais nas células do modal. Não-admin vê tudo read-only.
   var _canEditDetail = (typeof canEdit==='function') ? canEdit() : true;
+  // Expande áreas mescladas (ex: Fin/Fat/Fisc → Faturamento, Financeiro, Fiscal) pra
+  // que o filtro de fornecedores funcione tanto pra áreas simples quanto pras mescladas.
+  var areaSourcesSet = null;
+  if(area){
+    var srcs = (typeof _budgetSourceAreas === 'function') ? _budgetSourceAreas(area) : [area];
+    areaSourcesSet = {};
+    srcs.forEach(function(s){ areaSourcesSet[s] = true; });
+    // Também aceita a versão display (caso override esteja salvo com chave do nome mesclado)
+    areaSourcesSet[area] = true;
+  }
   // Aggregate: fornecedor → { total, byMonth }
   // Constrói índice reverso: nomfor normalizado → classif (suporta chave antiga e nova)
   var _classifIndex = {};
@@ -9337,7 +9347,7 @@ function openBudgetDetail(tipo, area, ano){
     var k      = nomfor+'|'+hist;
     var classif= getBudgetClassif(nomfor, hist);
     if(classif.tipo !== tipo) return;
-    if(area && classif.area !== area) return;
+    if(areaSourcesSet && !areaSourcesSet[classif.area]) return;
     if(classif.desconsiderar === 'sim') return;
     var am = budgetDespAm(r);
     if(!am || (ano && !am.startsWith(ano))) return;
@@ -9368,7 +9378,7 @@ function openBudgetDetail(tipo, area, ano){
       if(parts.length < 4) return;
       var oTipo = parts[0], oArea = parts[1], oAm = parts.slice(3).join('|');
       if(oTipo !== tipo) return;
-      if(area && oArea !== area) return;
+      if(areaSourcesSet && !areaSourcesSet[oArea]) return;
       if(ano && !oAm.startsWith(ano)) return;
       monthSet[oAm] = 1;
     });
