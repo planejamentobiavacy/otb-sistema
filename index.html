@@ -9232,6 +9232,16 @@ function budgetRecalcRowTotal(input){
   // Recalcula footer (coluna por coluna + grand total)
   var tbody = tr.closest('tbody');
   if(!tbody) return;
+  // Pega linha Martins (DRE) — entra no cálculo do TOTAL mas não é um input
+  var martinsRow = tbody.querySelector('tr.budget-martins-row');
+  var martinsByAm = {};
+  if(martinsRow){
+    martinsRow.querySelectorAll('td[data-am]').forEach(function(td){
+      var am = td.getAttribute('data-am');
+      var v  = parseFloat(td.getAttribute('data-martins-val'))||0;
+      martinsByAm[am] = v;
+    });
+  }
   var footerCells = tbody.querySelectorAll('.budget-footer-cell');
   var grand = 0;
   footerCells.forEach(function(fc){
@@ -9247,6 +9257,8 @@ function budgetRecalcRowTotal(input){
       var hasOvr = BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[key] != null;
       colSum += hasOvr ? BUDGET_CFG.budgetOverrides[key] : otbRaw;
     });
+    // Soma a linha Martins (referência DRE) se aplicável
+    colSum += (martinsByAm[am] || 0);
     fc.textContent = colSum ? 'R$ '+Math.round(colSum).toLocaleString('pt-BR') : '—';
     grand += colSum;
   });
@@ -9369,7 +9381,7 @@ function openBudgetDetail(tipo, area, ano){
 
     // Renderiza como PRIMEIRA linha (entra no cálculo do TOTAL)
     var martinsGrandTotal = 0;
-    h += '<tr style="background:#f3eefb;color:#4a2785;font-weight:600;font-style:italic">';
+    h += '<tr class="budget-martins-row" style="background:#f3eefb;color:#4a2785;font-weight:600;font-style:italic">';
     h += '<td style="padding:6px 10px;border-bottom:1px solid #eef1f8;font-style:italic;position:sticky;left:0;background:#f3eefb;z-index:1">📊 Comissão Martins (DRE)</td>';
     h += '<td style="padding:4px 10px;font-size:10px;color:#7a5aa0;border-bottom:1px solid #eef1f8">Referência do DRE — não editável</td>';
     months.forEach(function(am){
@@ -9377,7 +9389,7 @@ function openBudgetDetail(tipo, area, ano){
       martinsGrandTotal += v.total;
       var tip = 'Faturamento Martins: R$ '+Math.round(v.rb).toLocaleString('pt-BR')
               + ' × ' + (v.pct*100).toFixed(2).replace('.',',') + '% = R$ ' + Math.round(v.total).toLocaleString('pt-BR');
-      h += '<td style="padding:5px 8px;text-align:center;font-size:11px;border-bottom:1px solid #eef1f8" title="'+escHtml(tip)+'">'+(v.total>0?'R$ '+Math.round(v.total).toLocaleString('pt-BR'):'<span style="color:#bbb">—</span>')+'</td>';
+      h += '<td data-am="'+am+'" data-martins-val="'+v.total+'" style="padding:5px 8px;text-align:center;font-size:11px;border-bottom:1px solid #eef1f8" title="'+escHtml(tip)+'">'+(v.total>0?'R$ '+Math.round(v.total).toLocaleString('pt-BR'):'<span style="color:#bbb">—</span>')+'</td>';
     });
     h += '<td style="padding:6px 10px;text-align:center;font-weight:700;background:#e8dff5;border-bottom:1px solid #eef1f8">'+(martinsGrandTotal>0?'R$ '+Math.round(martinsGrandTotal).toLocaleString('pt-BR'):'—')+'</td>';
     h += '</tr>';
