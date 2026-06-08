@@ -8960,6 +8960,7 @@ function folhaProjReplicarLinha(btn, area, nome){
   });
   folhaProjClearCache();
   folhaProjAtualizarTotal();
+  _folhaProjScheduleSyncBudget(); // dispara save (debounce 1.5s)
   toast('✔ '+nome+': '+changed+' meses projetados com média de R$ '+Math.round(media).toLocaleString('pt-BR'));
 }
 
@@ -9006,6 +9007,7 @@ function folhaProjReplicarTodos(area, ano){
   });
   folhaProjClearCache();
   folhaProjAtualizarTotal();
+  _folhaProjScheduleSyncBudget(); // dispara save (debounce 1.5s)
   toast('✔ '+totalPpl+' colaboradores · '+totalChanged+' projeções criadas');
 }
 
