@@ -261,7 +261,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
 
 /* ── DRE Config overlay ─────────────────────────────── */
 .dre-cfg-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:none;align-items:flex-start;justify-content:center;padding-top:40px;overflow-y:auto}
-.dre-cfg-box{background:#fff;border-radius:10px;width:min(680px,96vw);box-shadow:0 24px 64px rgba(0,0,0,.3);overflow:hidden;margin-bottom:40px}
+.dre-cfg-box{background:#fff;border-radius:10px;width:min(950px,96vw);box-shadow:0 24px 64px rgba(0,0,0,.3);overflow:hidden;margin-bottom:40px}
 .dre-cfg-hd{background:linear-gradient(90deg,#0f1830,#1a2547);color:#fff;padding:16px 22px;display:flex;justify-content:space-between;align-items:center}
 .dre-cfg-hd h2{font-size:15px;font-weight:700;margin:0}
 .dre-cfg-hd small{font-size:11px;opacity:.6;display:block;margin-top:2px}
@@ -9594,6 +9594,36 @@ function openBudgetDetail(tipo, area, ano){
       h += '<td style="padding:5px 8px;text-align:center;font-size:11px" title="'+escHtml(tip)+'">'+(t>0?'R$ '+Math.round(t).toLocaleString('pt-BR'):'<span style="color:#bbb">—</span>')+'</td>';
     });
     h += '<td style="padding:7px 10px;text-align:center;background:#d8e5fa;font-weight:700">'+(totalComDreGrand>0?'R$ '+Math.round(totalComDreGrand).toLocaleString('pt-BR'):'—')+'</td>';
+    h += '</tr>';
+  }
+
+  // ── Linha de referência: Marketing do DRE (só aparece pra tipo "Invest Mkt") ──
+  // Marketing no DRE = DRE_CFG_PARAMS[am].desp_mkt por mês (fallback FIXOS_DEF.marketing)
+  if(String(tipo).toUpperCase() === 'INVEST MKT'){
+    var _dreMktForAm = function(am){
+      var amH = am.length === 6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
+      var p = (typeof DRE_CFG_PARAMS !== 'undefined') ? (DRE_CFG_PARAMS[am] || DRE_CFG_PARAMS[amH]) : null;
+      if(p && p.desp_mkt != null){
+        var v = parseFloat(p.desp_mkt);
+        if(!isNaN(v) && v >= 0) return v;
+      }
+      if(typeof FIXOS_DEF !== 'undefined' && FIXOS_DEF.marketing != null) return parseFloat(FIXOS_DEF.marketing) || 0;
+      return 0;
+    };
+    var dreMktGrand = 0;
+    h += '<tr style="background:#eef5ff;color:#1a4d8f;font-weight:700">';
+    h += '<td style="padding:7px 10px;position:sticky;left:0;background:#eef5ff;z-index:1">📊 Marketing (DRE)</td>';
+    h += '<td style="padding:4px 10px;font-size:10px;color:#5a7ab0;font-style:italic">desp_mkt do DRE Config — referência</td>';
+    months.forEach(function(am){
+      var v = _dreMktForAm(am);
+      dreMktGrand += v;
+      var amH = am.length === 6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
+      var pSrc = (typeof DRE_CFG_PARAMS !== 'undefined') ? (DRE_CFG_PARAMS[am] || DRE_CFG_PARAMS[amH]) : null;
+      var srcLabel = (pSrc && pSrc.desp_mkt != null) ? 'desp_mkt do DRE Config' : 'default global (FIXOS_DEF.marketing)';
+      var tip = 'Marketing mensal: R$ '+Math.round(v).toLocaleString('pt-BR')+' • origem: '+srcLabel;
+      h += '<td style="padding:5px 8px;text-align:center;font-size:11px" title="'+escHtml(tip)+'">'+(v>0?'R$ '+Math.round(v).toLocaleString('pt-BR'):'<span style="color:#bbb">—</span>')+'</td>';
+    });
+    h += '<td style="padding:7px 10px;text-align:center;background:#d8e5fa;font-weight:700">'+(dreMktGrand>0?'R$ '+Math.round(dreMktGrand).toLocaleString('pt-BR'):'—')+'</td>';
     h += '</tr>';
   }
 
