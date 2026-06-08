@@ -1052,6 +1052,16 @@ supaSave = async function(saveTable, rowKey, value){
 //  AUTH
 // ═══════════════════════════════════════════════════════
 function showScreen(id){
+  // Garante que qualquer edição pendente seja salva antes de trocar de tela.
+  // Especialmente importante quando o usuário acabou de editar (overrides, projeções)
+  // e ainda está dentro da janela de debounce (5s) — sem flush, edições seriam perdidas.
+  if(typeof _saveQueue !== 'undefined' && typeof flushSaveQueue === 'function'){
+    var hasPending = Object.keys(_saveQueue).some(function(k){ return _saveQueue[k].pending; });
+    if(hasPending){
+      if(typeof _saveTimer !== 'undefined' && _saveTimer){ clearTimeout(_saveTimer); _saveTimer = null; }
+      flushSaveQueue();
+    }
+  }
   ['screenLogin','screenHome','screenOtb','screenDre','screenFolha','screenBudget'].forEach(function(s){
     var el = document.getElementById(s);
     if(el) el.classList.remove('screen-active');
@@ -9556,6 +9566,16 @@ function openBudgetDetail(tipo, area, ano){
 }
 
 function closeBudgetDetail(){
+  // Garante que qualquer edição pendente (overrides, projeções) seja salva antes de fechar.
+  // Sem isso, debounce de 5s no scheduleClassifSave pode "perder" edições se usuário
+  // fechar modal e navegar pra outra tela antes do timer disparar.
+  if(typeof flushSaveQueue === 'function'){
+    var hasPending = (typeof _saveQueue !== 'undefined') && Object.keys(_saveQueue).some(function(k){ return _saveQueue[k].pending; });
+    if(hasPending){
+      if(typeof _saveTimer !== 'undefined' && _saveTimer){ clearTimeout(_saveTimer); _saveTimer = null; }
+      flushSaveQueue();
+    }
+  }
   document.getElementById('budgetDetailOverlay').style.display = 'none';
 }
 
