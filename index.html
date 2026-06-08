@@ -6409,6 +6409,54 @@ async function openDreCfg(){
   function pct(v){ return parseFloat((v*100).toFixed(4)); }
   function brl(v){ return Math.round(v); }
 
+  // ── Helpers de projeção: somam projeções do "Detalhes Folha" (BUDGET_CFG.folhaProjecao) ──
+  // Usados pra que o BASE exibido no DRE Config reflita as edições feitas no Folha Detail modal.
+  function _folhaProjForCanal(canal, am){
+    if(!BUDGET_CFG || !BUDGET_CFG.folhaProjecao) return 0;
+    if(typeof FOLHA_CFG === 'undefined' || !FOLHA_CFG.classif) return 0;
+    var canalUC = String(canal||'').toUpperCase();
+    var ym = am.length === 6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
+    var total = 0;
+    Object.keys(BUDGET_CFG.folhaProjecao).forEach(function(k){
+      var parts = k.split('|');
+      if(parts.length < 3) return;
+      var pNome = parts[1];
+      var pYm   = parts.slice(2).join('|');
+      if(pYm !== ym) return;
+      var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
+      if(isNaN(v) || v <= 0) return;
+      var c = FOLHA_CFG.classif[pNome];
+      if(!c || !c.canal) return;
+      var canais = Array.isArray(c.canal) ? c.canal : [c.canal];
+      var hasCanal = canais.some(function(ca){ return String(ca).toUpperCase() === canalUC; });
+      if(!hasCanal) return;
+      // Divide proporcionalmente quando a pessoa tem múltiplos canais (mesma lógica de folhaTotalCanal)
+      total += v / Math.max(1, canais.length);
+    });
+    return total;
+  }
+  function _folhaProjForAdm(am){
+    if(!BUDGET_CFG || !BUDGET_CFG.folhaProjecao) return 0;
+    if(typeof FOLHA_CFG === 'undefined' || !FOLHA_CFG.classif) return 0;
+    var ym = am.length === 6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
+    var total = 0;
+    Object.keys(BUDGET_CFG.folhaProjecao).forEach(function(k){
+      var parts = k.split('|');
+      if(parts.length < 3) return;
+      var pNome = parts[1];
+      var pYm   = parts.slice(2).join('|');
+      if(pYm !== ym) return;
+      var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
+      if(isNaN(v) || v <= 0) return;
+      var c = FOLHA_CFG.classif[pNome];
+      if(!c) return;
+      // Pessoa Admin (flag admin='sim' OU área Administrativo)
+      var isAdm = (c.admin === 'sim') || (c.area && String(c.area).toUpperCase() === 'ADMINISTRATIVO');
+      if(isAdm) total += v;
+    });
+    return total;
+  }
+
   // Calcula totais da folha por canal/área para o ano_mes selecionado
   // Multi-canal: se pessoa pertence a N canais, soma 1/N do salário neste canal
   function folhaTotalCanal(canal, am){
@@ -6468,6 +6516,8 @@ async function openDreCfg(){
     });
     totalRows = filtered.length;
     totalVal = filtered.reduce(function(s,r){ return s + folhaTotal(r); }, 0);
+    // Adiciona projeções de Folha pra Administrativo (BUDGET_CFG.folhaProjecao)
+    try { totalVal += _folhaProjForAdm(am); } catch(e){}
     console.log('[DRE Cfg] folhaTotalAdm — linhas filtradas:', totalRows, '| total: R$', totalVal.toLocaleString('pt-BR',{maximumFractionDigits:2}));
     return totalVal;
   }
@@ -6666,9 +6716,13 @@ async function openDreCfg(){
       return s + (total - total13) * prorate;
     }, 0);
 
+    // Adiciona projeções de Folha (BUDGET_CFG.folhaProjecao) pra que o BASE reflita edições futuras
+    var amProj = _folhaAmRef || am;
+    if(amProj){
+      try { result += _folhaProjForCanal(canal, amProj); } catch(e){}
+    }
     return result;
   }
-  // Debug: log DRE_FOLHA_RAW size and sample
 
 
   var folhaCloserS13    = folhaTotalCanalS13('CLOSER',am);
@@ -6681,24 +6735,19 @@ async function openDreCfg(){
   var folhaRca    = folhaTotalCanal('RCA',am);
   var despMkt     = despTotal('MARKETING',am)||despTotal('MKT',am);
   // Despesas Gerais: se tiposDespGerais configurado, soma do Budget; senão usa despTotal
+  // Despesas Gerais: se tiposDespGerais configurado, soma do Budget (via budgetDespByTipoArea
+  // pra considerar overrides feitos no modal de Detalhes); senão usa despTotal.
   var despGerais = (function(){
     var tipos = Object.keys(BUDGET_CFG.tiposDespGerais||{}).filter(function(k){ return BUDGET_CFG.tiposDespGerais[k]; });
     console.log('[DRE Cfg] despGerais — tipos flagados:', tipos, '| BUDGET_DESP_RAW:', (BUDGET_DESP_RAW||[]).length, '| classif entries:', Object.keys(BUDGET_CFG.classif||{}).length);
-    if(tipos.length && BUDGET_DESP_RAW && BUDGET_DESP_RAW.length){
-      var total=0; var matchedClassif=0, matchedTipo=0, matchedAm=0;
-      BUDGET_DESP_RAW.forEach(function(r){
-        var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
-        var hist=String(r.e2_hist||r.E2_HIST||'').trim();
-        var k=nomfor+'|'+hist;
-        var classif=BUDGET_CFG.classif[k]||BUDGET_CFG.classif[nomfor]||{};
-        if(!classif.tipo) return; matchedClassif++;
-        if(!tipos.includes(classif.tipo)) return; matchedTipo++;
-        if(classif.desconsiderar==='sim') return;
-        var rAm=budgetDespAm(r);
-        if(rAm!==am) return; matchedAm++;
-        total+=parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0);
+    if(tipos.length && BUDGET_DESP_RAW && BUDGET_DESP_RAW.length && typeof budgetDespByTipoArea === 'function'){
+      var ym = am.length === 6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
+      var total = 0;
+      tipos.forEach(function(t){
+        var v = budgetDespByTipoArea(ym, t, null) || 0; // null area = soma de TODAS as áreas
+        total += v;
       });
-      console.log('[DRE Cfg] despGerais — am='+am+' | linhas com classif:', matchedClassif, '| com tipo flagado:', matchedTipo, '| do mês:', matchedAm, '| total: R$', total.toLocaleString('pt-BR',{maximumFractionDigits:2}));
+      console.log('[DRE Cfg] despGerais — am='+am+' (ym='+ym+') | tipos: '+tipos.length+' | total: R$', total.toLocaleString('pt-BR',{maximumFractionDigits:2}), '(considera overrides)');
       return total;
     }
     return despTotal('DESPESA GERAL',am)||despTotal('DESP GERAL',am)||despTotal('GERAL',am);
