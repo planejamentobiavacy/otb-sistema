@@ -6357,6 +6357,37 @@ async function dreForceReload(btn){
   if(btn){ btn.disabled=false; btn.textContent=orig; }
 }
 
+// Recarrega Folha do Supabase — limpa cache local e re-renderiza DRE Config se aberto.
+// Usado quando o usuário atualizou dw_otb_folha direto no Supabase e quer ver os novos valores.
+async function folhaForceReload(btn){
+  var orig = btn ? btn.textContent : '';
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Buscando Folha...'; }
+  try {
+    // Limpa cache IDB de tudo relacionado a folha
+    if(typeof clearIdbCache === 'function'){
+      await clearIdbCache('folha');     // dw_otb_folha
+      await clearIdbCache('FOLHA');
+    }
+    // Reseta estado em memória
+    FOLHA_RAW = [];
+    FOLHA_LOADED = false;
+    if(typeof DRE_FOLHA_RAW !== 'undefined') DRE_FOLHA_RAW = [];
+    // Recarrega
+    await loadFolhaFromSupabase();
+    // Re-renderiza DRE Config se estiver aberto (pra atualizar os "Base" valores)
+    var dreCfgOpen = document.getElementById('dreCfgOverlay');
+    if(dreCfgOpen && dreCfgOpen.style.display !== 'none' && typeof openDreCfg === 'function'){
+      // Reabre/re-renderiza preservando o mês selecionado
+      await openDreCfg();
+    }
+    toast('✔ Folha recarregada — '+FOLHA_RAW.length.toLocaleString('pt-BR')+' registros');
+  } catch(e){
+    console.error('[folhaForceReload]', e);
+    toast('❌ Erro ao recarregar Folha: '+e.message, 'err');
+  }
+  if(btn){ btn.disabled=false; btn.textContent=orig; }
+}
+
 // ═══════════════════════════════════════════════════════
 //  DRE CONFIG PANEL
 // ═══════════════════════════════════════════════════════
@@ -7890,6 +7921,10 @@ function _budgetSourceAreas(disp){
 // Útil pra usuários poderem fazer projeções/overrides em áreas vazias.
 var BUDGET_AREAS_ALWAYS_SHOW = ['Planejamento'];
 
+// Horas úteis mensais — usado pra calcular H/H (custo por hora-homem)
+// Padrão Brasil: 44h semanais × ~5 semanas = 220h. Pode ser ajustado se Avacy tiver convenção diferente.
+var BUDGET_HORAS_UTEIS_MES = 220;
+
 // Regra de negócio: tipos que NÃO devem aparecer em determinadas áreas.
 // Mesmo que algum fornecedor esteja classificado nessa combinação, ela é ocultada.
 var BUDGET_TIPO_AREA_EXCLUDE = {
@@ -8160,6 +8195,7 @@ function renderBudget(anoFilter){
   function dataRow(label, fn, opts){
     opts = opts||{};
     var bold = opts.bold, sub = opts.sub, isPct = opts.pct, detailBtn = opts.detailBtn, simKey = opts.simKey||null;
+    var isCount = opts.isCount; // valor é contagem inteira (ex: Colaboradores) — formata sem R$
     var ss = opts.summaryStyle; // {gradStart, gradEnd, icon} — visual de linha-resumo colorida
     var grad = ss ? 'linear-gradient(90deg,'+ss.gradStart+' 0%,'+ss.gradEnd+' 100%)' : null;
     var bg = ss ? grad : (bold ? '#eef2fc' : sub ? '#fafbff' : '#fff');
@@ -8292,7 +8328,7 @@ function renderBudget(anoFilter){
         display = '<span style="display:inline-flex;align-items:center;gap:2px">'+inp.outerHTML+'<span style="color:'+_simClr+';font-size:10px;font-weight:600;opacity:.7">%</span></span>';
         effectiveForYear = simVal ? parseFloat(simVal)/100 : null;
       } else {
-        display = val===null ? (ss?'<span style="color:rgba(255,255,255,.5)">—</span>':'<span style="color:#ccc">—</span>') : isPct ? _bPct(val) : _bFmt(val);
+        display = val===null ? (ss?'<span style="color:rgba(255,255,255,.5)">—</span>':'<span style="color:#ccc">—</span>') : isPct ? _bPct(val) : isCount ? String(Math.round(val)) : _bFmt(val);
         effectiveForYear = val;
         // Para células bloqueadas (mês realizado em linha com lockRealized), envolve num span com tooltip + ícone 🔒
         if(isLockedRealized){
@@ -8312,15 +8348,15 @@ function renderBudget(anoFilter){
       var cellPad = ss ? ('padding:'+pTop+' 8px') : 'padding:4px 8px';
       h += '<td style="text-align:center;'+cellPad+';background:'+cellBg+';font-weight:'+fw+';font-size:'+valueFontSize+';color:'+color+';border-bottom:1px solid '+cellBorderBottom+';white-space:nowrap">'+display+'</td>';
     });
-    // Coluna ANO: soma para R$ ou média para %
+    // Coluna ANO: soma para R$, média para % ou contagem (Colaboradores)
     var yearVal;
-    if(isPct){
+    if(isPct || isCount){
       var valid = monthlyEffectiveVals.filter(function(v){return v != null && !isNaN(v) && v !== 0;});
       yearVal = valid.length ? valid.reduce(function(s,v){return s+v;},0)/valid.length : null;
     } else {
       yearVal = monthlyEffectiveVals.reduce(function(s,v){return s+((typeof v === 'number')?v:0);},0);
     }
-    var yearDisplay = (yearVal == null || yearVal === 0) ? (ss?'<span style="color:rgba(255,255,255,.5)">—</span>':'<span style="color:#ccc">—</span>') : (isPct ? _bPct(yearVal) : _bFmt(yearVal));
+    var yearDisplay = (yearVal == null || yearVal === 0) ? (ss?'<span style="color:rgba(255,255,255,.5)">—</span>':'<span style="color:#ccc">—</span>') : (isPct ? _bPct(yearVal) : isCount ? String(Math.round(yearVal)) : _bFmt(yearVal));
     var yearColor = ss ? '#fff' : ((typeof yearVal==='number' && yearVal<0) ? '#c0181a' : '#0f1a3a');
     var yearStyle = ss
       ? 'text-align:center;padding:'+pTop+' 8px;background:'+grad+';font-weight:800;font-size:'+valueFontSize+';color:#fff;border-bottom:1px solid '+ss.gradStart+';border-left:2px solid rgba(255,255,255,.25);white-space:nowrap;position:sticky;right:0;z-index:1;box-shadow:inset 0 0 0 9999px rgba(0,0,0,.15)'
@@ -8444,6 +8480,8 @@ function renderBudget(anoFilter){
   // (Outras pessoas da mesma área podem ter realizado — não importa)
   var folhaByArea = {};
   var folhaPessoasByArea = {};
+  // folhaCountByAreaYm[area][ym] = Set de nomes com pagamento naquele mês (pra contagem de colaboradores)
+  var folhaCountByAreaYm = {};
   // Set de (area|nome|ym) com realizado — usado pra decidir se projeção entra
   var _realPersonSet = {};
   if(FOLHA_RAW && FOLHA_RAW.length){
@@ -8468,6 +8506,12 @@ function renderBudget(anoFilter){
       folhaByArea[area][am_ym]=(folhaByArea[area][am_ym]||0)+totalVerbas;
       if(!folhaPessoasByArea[area]) folhaPessoasByArea[area]={};
       folhaPessoasByArea[area][nome]=1;
+      // Conta nome único por mês (pra linha "Colaboradores" do Budget)
+      if(totalVerbas > 0){
+        if(!folhaCountByAreaYm[area]) folhaCountByAreaYm[area]={};
+        if(!folhaCountByAreaYm[area][am_ym]) folhaCountByAreaYm[area][am_ym]={};
+        folhaCountByAreaYm[area][am_ym][nome]=1;
+      }
       // Marca pessoa+mês como tendo realizado (só se valor > 0)
       if(totalVerbas > 0) _realPersonSet[area+'|'+nome+'|'+am_ym] = 1;
     });
@@ -8486,6 +8530,10 @@ function renderBudget(anoFilter){
       if(isNaN(v) || v <= 0) return;
       if(!folhaByArea[area]) folhaByArea[area]={};
       folhaByArea[area][ym] = (folhaByArea[area][ym]||0) + v;
+      // Conta nome também como colaborador "projetado" se ele não tem realizado nesse mês
+      if(!folhaCountByAreaYm[area]) folhaCountByAreaYm[area]={};
+      if(!folhaCountByAreaYm[area][ym]) folhaCountByAreaYm[area][ym]={};
+      folhaCountByAreaYm[area][ym][nome]=1;
       _projDiag.applied++;
       _projDiag.byArea[area] = (_projDiag.byArea[area]||0) + v;
     });
@@ -8675,6 +8723,15 @@ function renderBudget(anoFilter){
           sourcesCapture.forEach(function(s){ v += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
           return v;
         };
+        // Conta colaboradores únicos no mês somando os Set de nomes das áreas-fonte
+        var countColabForYm = function(ym){
+          var nomes = {};
+          sourcesCapture.forEach(function(s){
+            var bySrc = (folhaCountByAreaYm[s.toUpperCase()]||{})[ym];
+            if(bySrc) Object.keys(bySrc).forEach(function(n){ nomes[n]=1; });
+          });
+          return Object.keys(nomes).length;
+        };
         var hasFolha = months.some(function(ym){ return sumFolhaForYm(ym) > 0; });
         if(hasFolha){
           dataRow('↳ Salário Folha', function(ym){
@@ -8687,6 +8744,21 @@ function renderBudget(anoFilter){
             if(sal <= 0) return null;
             var v = sal * _pct13fAdmForYm(ym);
             return v>0?v:null;
+          }, {sub:true, parentArea: areaUid});
+          // Colaboradores: contagem de pessoas únicas com pagamento no mês (vem da Folha)
+          // Nota: NÃO é valor monetário — passa flag {count:true} pra dataRow formatar como número inteiro
+          dataRow('↳ Colaboradores', function(ym){
+            var c = countColabForYm(ym);
+            return c > 0 ? c : null;
+          }, {sub:true, parentArea: areaUid, isCount:true});
+          // H/H: custo por hora-homem = (Salário + 13°+Férias) / (Colaboradores × Horas Úteis Mensal)
+          dataRow('↳ H/H', function(ym){
+            var sal = sumFolhaForYm(ym);
+            var c   = countColabForYm(ym);
+            if(sal <= 0 || c <= 0) return null;
+            var f13 = sal * _pct13fAdmForYm(ym);
+            var v = (sal + f13) / (c * BUDGET_HORAS_UTEIS_MES);
+            return v > 0 ? v : null;
           }, {sub:true, parentArea: areaUid});
         }
       })(area, sources);
@@ -10377,6 +10449,7 @@ async function saveBudgetCfg(btn){
       <!-- preenchido por openDreCfg() -->
     </div>
     <div class="dre-cfg-ft">
+      <button class="btn" onclick="folhaForceReload(this)" title="Limpa o cache local e busca os dados de Folha direto do Supabase (use quando atualizar dw_otb_folha externamente)" style="background:#f5efff;border-color:#d4c0e8;color:#5a1d7a;font-size:12px">🔄 Recarregar Folha</button>
       <button class="btn" onclick="dreForceReload(this);closeDreCfg();" style="background:#f0f3fa;border-color:#d0d8ee;color:#0f1a3a;font-size:12px">🔄 Recarregar Dados</button>
       <button class="btn save" id="btnApplyDreCfg" onclick="saveAndApplyDreCfg(this)">💾 Salvar</button>
       <button class="btn" onclick="closeDreCfg()">Cancelar</button>
