@@ -6518,6 +6518,7 @@ function _breakdownSalAdm(am){
   if(!am) return [];
   var ym = am.length === 6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
   var byNome = {};
+  var realizedNames = {};
   var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
           : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW.length) ? FOLHA_RAW : [];
   var hasAdminConfig = false;
@@ -6540,16 +6541,18 @@ function _breakdownSalAdm(am){
       isAdm = !['CLOSER','DEVELOPER','FARMER'].some(function(c){ return area.includes(c); });
     }
     if(!isAdm) return;
+    realizedNames[nome] = 1; // marca pra não duplicar com projeção depois
     var v = _folhaRowS13(r);
     if(v > 0) byNome[nome] = (byNome[nome]||0) + v;
   });
-  // Projeções
+  // Projeções — IGNORA se a mesma pessoa tem realizado no mês
   if((BUDGET_CFG||{}).folhaProjecao){
     Object.keys(BUDGET_CFG.folhaProjecao).forEach(function(k){
       var parts = k.split('|'); if(parts.length < 3) return;
       var pNome = parts[1];
       var pYm   = parts.slice(2).join('|');
       if(pYm !== ym) return;
+      if(realizedNames[pNome]) return; // ✋ evita double-counting
       var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
       if(isNaN(v) || v <= 0) return;
       var c = (FOLHA_CFG.classif||{})[pNome];
@@ -6570,6 +6573,7 @@ function _breakdownSalCanal(canal, am){
   var canalUC = canal.toUpperCase();
   var ym = am.length === 6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
   var byNome = {};
+  var realizedNames = {};
   var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW : [];
   var _lkp = (typeof _folhaCanalLookup !== 'undefined' && _folhaCanalLookup) ? _folhaCanalLookup : {};
   src.forEach(function(r){
@@ -6579,17 +6583,19 @@ function _breakdownSalCanal(canal, am){
     if(anomes !== am) return;
     var personCanais = _lkp[nome];
     if(!personCanais || personCanais.indexOf(canalUC) < 0) return;
+    realizedNames[nome] = 1;
     var prorate = 1 / Math.max(1, personCanais.length);
     var v = _folhaRowS13(r) * prorate;
     if(v > 0) byNome[nome] = (byNome[nome]||0) + v;
   });
-  // Projeções
+  // Projeções — IGNORA se a mesma pessoa tem realizado no mês
   if((BUDGET_CFG||{}).folhaProjecao){
     Object.keys(BUDGET_CFG.folhaProjecao).forEach(function(k){
       var parts = k.split('|'); if(parts.length < 3) return;
       var pNome = parts[1];
       var pYm   = parts.slice(2).join('|');
       if(pYm !== ym) return;
+      if(realizedNames[pNome]) return; // ✋ evita double-counting
       var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
       if(isNaN(v) || v <= 0) return;
       var c = (FOLHA_CFG.classif||{})[pNome];
@@ -6697,6 +6703,16 @@ async function openDreCfg(){
     if(typeof FOLHA_CFG === 'undefined' || !FOLHA_CFG.classif) return 0;
     var canalUC = String(canal||'').toUpperCase();
     var ym = am.length === 6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
+    // Pré-computa: pessoas com realizado nesse mês (pra evitar double-counting)
+    var realizedNames = {};
+    var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
+            : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW.length) ? FOLHA_RAW : [];
+    src.forEach(function(r){
+      var nome = (typeof folhaGetNome === 'function') ? folhaGetNome(r) : '';
+      if(!nome) return;
+      var anomes = String((typeof folhaGetPeriodo === 'function' ? folhaGetPeriodo(r) : '')||'').replace(/\D/g,'').slice(0,6);
+      if(anomes === am) realizedNames[nome] = 1;
+    });
     var total = 0;
     Object.keys(BUDGET_CFG.folhaProjecao).forEach(function(k){
       var parts = k.split('|');
@@ -6704,6 +6720,8 @@ async function openDreCfg(){
       var pNome = parts[1];
       var pYm   = parts.slice(2).join('|');
       if(pYm !== ym) return;
+      // ✋ SKIP se pessoa tem realizado neste mês — evita somar projeção + realizado da mesma pessoa
+      if(realizedNames[pNome]) return;
       var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
       if(isNaN(v) || v <= 0) return;
       var c = FOLHA_CFG.classif[pNome];
@@ -6711,7 +6729,6 @@ async function openDreCfg(){
       var canais = Array.isArray(c.canal) ? c.canal : [c.canal];
       var hasCanal = canais.some(function(ca){ return String(ca).toUpperCase() === canalUC; });
       if(!hasCanal) return;
-      // Divide proporcionalmente quando a pessoa tem múltiplos canais (mesma lógica de folhaTotalCanal)
       total += v / Math.max(1, canais.length);
     });
     return total;
@@ -6720,6 +6737,16 @@ async function openDreCfg(){
     if(!BUDGET_CFG || !BUDGET_CFG.folhaProjecao) return 0;
     if(typeof FOLHA_CFG === 'undefined' || !FOLHA_CFG.classif) return 0;
     var ym = am.length === 6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
+    // Pré-computa: pessoas com realizado nesse mês (pra evitar double-counting)
+    var realizedNames = {};
+    var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
+            : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW.length) ? FOLHA_RAW : [];
+    src.forEach(function(r){
+      var nome = (typeof folhaGetNome === 'function') ? folhaGetNome(r) : '';
+      if(!nome) return;
+      var anomes = String((typeof folhaGetPeriodo === 'function' ? folhaGetPeriodo(r) : '')||'').replace(/\D/g,'').slice(0,6);
+      if(anomes === am) realizedNames[nome] = 1;
+    });
     var total = 0;
     Object.keys(BUDGET_CFG.folhaProjecao).forEach(function(k){
       var parts = k.split('|');
@@ -6727,11 +6754,12 @@ async function openDreCfg(){
       var pNome = parts[1];
       var pYm   = parts.slice(2).join('|');
       if(pYm !== ym) return;
+      // ✋ SKIP se pessoa tem realizado neste mês
+      if(realizedNames[pNome]) return;
       var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
       if(isNaN(v) || v <= 0) return;
       var c = FOLHA_CFG.classif[pNome];
       if(!c) return;
-      // Pessoa Admin (flag admin='sim' OU área Administrativo)
       var isAdm = (c.admin === 'sim') || (c.area && String(c.area).toUpperCase() === 'ADMINISTRATIVO');
       if(isAdm) total += v;
     });
