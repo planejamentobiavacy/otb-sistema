@@ -6357,6 +6357,256 @@ async function dreForceReload(btn){
   if(btn){ btn.disabled=false; btn.textContent=orig; }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// POPOVER DE BREAKDOWN DOS VALORES BASE (DRE Config)
+// ═══════════════════════════════════════════════════════════════════════════
+// Ao passar mouse no "Base: R$ X" abaixo de um campo, mostra um popover com
+// a composição (por tipo, por fornecedor ou por colaborador).
+// ═══════════════════════════════════════════════════════════════════════════
+var _basePopoverHideTimer = null;
+
+function _showBasePopover(el){
+  if(_basePopoverHideTimer){ clearTimeout(_basePopoverHideTimer); _basePopoverHideTimer = null; }
+  var type  = el.getAttribute('data-base-type');
+  var am    = el.getAttribute('data-base-am') || '';
+  var canal = el.getAttribute('data-base-canal') || '';
+  var items = [], title = '';
+  try {
+    if(type === 'desp_gerais'){ items = _breakdownDespGerais(am); title = '🔍 Despesas Gerais — composição por tipo'; }
+    else if(type === 'cd'){     items = _breakdownCd(am);          title = '🔍 CD (Operações) — composição por fornecedor'; }
+    else if(type === 'sal_adm'){items = _breakdownSalAdm(am);      title = '🔍 Salário Adm — composição por colaborador'; }
+    else if(type === 'sal_canal'){ items = _breakdownSalCanal(canal, am); title = '🔍 Salário ' + canal + ' — composição por colaborador'; }
+  } catch(e){ console.error('[basePopover]', e); items = []; }
+
+  var pop = document.getElementById('basePopover');
+  if(!pop){
+    pop = document.createElement('div');
+    pop.id = 'basePopover';
+    pop.style.cssText = 'position:fixed;z-index:99999;background:#fff;border:1px solid #d0d8ee;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.2);padding:12px 14px;font-size:11px;display:none;min-width:280px;max-width:440px;max-height:440px;overflow-y:auto';
+    pop.addEventListener('mouseenter', function(){ if(_basePopoverHideTimer){ clearTimeout(_basePopoverHideTimer); _basePopoverHideTimer = null; } });
+    pop.addEventListener('mouseleave', _scheduleHideBasePopover);
+    document.body.appendChild(pop);
+  }
+  var total = items.reduce(function(s,it){ return s + (it.value||0); }, 0);
+  items.sort(function(a,b){ return (b.value||0) - (a.value||0); });
+  var amLabel = am.length === 6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
+  var html = '<div style="font-weight:700;color:#0f1a3a;font-size:11.5px;margin-bottom:8px;border-bottom:1px solid #eef1f8;padding-bottom:6px">'+escHtml(title)+' <span style="color:#7a8ab0;font-weight:400;font-size:10px">'+amLabel+'</span></div>';
+  if(!items.length){
+    html += '<div style="color:#7a8ab0;font-style:italic;padding:8px 0">Sem composição disponível neste mês.</div>';
+  } else {
+    var TOP_N = 25;
+    items.slice(0, TOP_N).forEach(function(it){
+      var pct = total > 0 ? (it.value/total*100).toFixed(1).replace('.', ',') : '0,0';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dotted #f0f3fa;gap:12px">';
+      html += '<span style="color:#0f1a3a;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+escHtml(it.label)+'">'+escHtml(it.label)+'</span>';
+      html += '<span style="color:#0f1a3a;font-weight:600;white-space:nowrap">R$ '+Math.round(it.value).toLocaleString('pt-BR')+' <span style="color:#7a8ab0;font-weight:400;font-size:10px;margin-left:4px">'+pct+'%</span></span>';
+      html += '</div>';
+    });
+    if(items.length > TOP_N){
+      html += '<div style="font-size:10px;color:#7a8ab0;font-style:italic;padding:4px 0">(+'+(items.length - TOP_N)+' não exibidos — exibindo top '+TOP_N+')</div>';
+    }
+    html += '<div style="display:flex;justify-content:space-between;padding-top:8px;border-top:2px solid #1a2547;margin-top:6px;font-weight:700;color:#0f1a3a">';
+    html += '<span>TOTAL</span><span>R$ '+Math.round(total).toLocaleString('pt-BR')+'</span>';
+    html += '</div>';
+  }
+  pop.innerHTML = html;
+  pop.style.display = 'block';
+  var rect = el.getBoundingClientRect();
+  var popW = pop.offsetWidth, popH = pop.offsetHeight;
+  var leftPos = Math.min(Math.max(8, rect.left), window.innerWidth - popW - 8);
+  var topPos  = rect.bottom + 6;
+  if(topPos + popH > window.innerHeight - 8) topPos = Math.max(8, rect.top - popH - 6);
+  pop.style.left = leftPos + 'px';
+  pop.style.top  = topPos  + 'px';
+}
+
+function _scheduleHideBasePopover(){
+  if(_basePopoverHideTimer) clearTimeout(_basePopoverHideTimer);
+  _basePopoverHideTimer = setTimeout(function(){
+    var pop = document.getElementById('basePopover');
+    if(pop) pop.style.display = 'none';
+    _basePopoverHideTimer = null;
+  }, 250);
+}
+
+// ─── Detector de verbas 13° (usado em breakdowns) ───
+function _isVerba13(colName){
+  var n = String(colName||'').toUpperCase();
+  if(n === 'S13_PARC' || n === 'S13' || n === 'D13' || n === 'F13') return true;
+  if(/DECIMO[\s_]?TERC/.test(n)) return true;
+  if(/^DEC[_\s]?TERC/.test(n)) return true;
+  if(/13[_\s]?SAL/.test(n)) return true;
+  if(/SAL[_\s]?13/.test(n)) return true;
+  if(/TRIZE/.test(n)) return true;
+  return false;
+}
+
+// Soma verbas s/13° pra uma linha da folha (mesma lógica de folhaTotalCanalS13)
+function _folhaRowS13(r){
+  if(!r) return 0;
+  var keys = Object.keys(r);
+  var totalVerbas = 0;
+  if(typeof FOLHA_VERBAS !== 'undefined' && FOLHA_VERBAS){
+    var verbas = FOLHA_VERBAS.filter(function(k){ return !_isVerba13(k); });
+    verbas.forEach(function(k){
+      var found = keys.find(function(rk){ return rk.toUpperCase() === k; });
+      if(found) totalVerbas += (typeof folhaNum === 'function' ? folhaNum(r[found]) : (parseFloat(r[found])||0));
+    });
+  }
+  if(totalVerbas > 0) return totalVerbas;
+  // Fallback: total da linha menos colunas 13°
+  var total = parseFloat(r.valor||r.VALOR)||0;
+  var total13 = 0;
+  keys.forEach(function(k){
+    if(_isVerba13(k)) total13 += (typeof folhaNum === 'function' ? folhaNum(r[k]) : (parseFloat(r[k])||0));
+  });
+  return total - total13;
+}
+
+// ─── BREAKDOWNS ───
+function _breakdownDespGerais(am){
+  if(!am || typeof BUDGET_CFG === 'undefined') return [];
+  var tipos = Object.keys((BUDGET_CFG.tiposDespGerais)||{}).filter(function(k){ return BUDGET_CFG.tiposDespGerais[k]; });
+  var ym = am.length === 6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
+  var items = [];
+  tipos.forEach(function(t){
+    var v = (typeof budgetDespByTipoArea === 'function') ? (budgetDespByTipoArea(ym, t, null)||0) : 0;
+    if(v > 0) items.push({label: t, value: v});
+  });
+  return items;
+}
+
+function _breakdownCd(am){
+  if(!am || typeof BUDGET_DESP_RAW === 'undefined' || !BUDGET_DESP_RAW) return [];
+  var byFor = {};
+  var displayFor = {};
+  BUDGET_DESP_RAW.forEach(function(r){
+    var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
+    var hist   = String(r.e2_hist||r.E2_HIST||'').trim();
+    var k = nomfor+'|'+hist;
+    var classif = (BUDGET_CFG.classif||{})[k] || (BUDGET_CFG.classif||{})[nomfor] || {};
+    if(classif.tipo !== 'CD') return;
+    if(String(classif.area||'').toUpperCase() !== 'OPERAÇÕES' && String(classif.area||'').toUpperCase() !== 'OPERACOES') return;
+    if(classif.desconsiderar === 'sim') return;
+    var rAm = (typeof budgetDespAm === 'function') ? budgetDespAm(r) : '';
+    if(rAm !== am) return;
+    var v = parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0)||0;
+    var nfNorm = nomfor.toUpperCase().replace(/\s+/g,' ');
+    if(!displayFor[nfNorm]) displayFor[nfNorm] = nomfor;
+    byFor[nfNorm] = (byFor[nfNorm]||0) + v;
+  });
+  // Override substitui o agregado bruto por (fornecedor, am)
+  if(BUDGET_CFG.budgetOverrides){
+    Object.keys(BUDGET_CFG.budgetOverrides).forEach(function(k){
+      var parts = k.split('|'); if(parts.length<4) return;
+      if(parts[0] !== 'CD') return;
+      var oArea = String(parts[1]).toUpperCase();
+      if(oArea !== 'OPERAÇÕES' && oArea !== 'OPERACOES') return;
+      var oAm = parts.slice(3).join('|');
+      if(oAm !== am) return;
+      var nfNorm = String(parts[2]).toUpperCase().replace(/\s+/g,' ');
+      if(!displayFor[nfNorm]) displayFor[nfNorm] = parts[2];
+      byFor[nfNorm] = parseFloat(BUDGET_CFG.budgetOverrides[k])||0;
+    });
+  }
+  var items = [];
+  Object.keys(byFor).forEach(function(nf){ if(byFor[nf] > 0) items.push({label: displayFor[nf]||nf, value: byFor[nf]}); });
+  return items;
+}
+
+function _breakdownSalAdm(am){
+  if(!am) return [];
+  var ym = am.length === 6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
+  var byNome = {};
+  var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
+          : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW.length) ? FOLHA_RAW : [];
+  var hasAdminConfig = false;
+  if(typeof FOLHA_CFG !== 'undefined' && FOLHA_CFG.classif){
+    hasAdminConfig = Object.values(FOLHA_CFG.classif).some(function(c){ return c.admin==='sim'; });
+  }
+  src.forEach(function(r){
+    var nome = (typeof folhaGetNome === 'function') ? folhaGetNome(r) : '';
+    if(!nome) return;
+    var anomes = String((typeof folhaGetPeriodo === 'function' ? folhaGetPeriodo(r) : '')||'').replace(/\D/g,'').slice(0,6);
+    if(anomes !== am) return;
+    var cfg = (FOLHA_CFG.classif||{})[nome];
+    var isAdm = false;
+    if(hasAdminConfig){
+      isAdm = cfg && cfg.admin === 'sim';
+    } else if(cfg && cfg.area){
+      isAdm = String(cfg.area).toUpperCase() === 'ADMINISTRATIVO';
+    } else {
+      var area = String(r.area||r.AREA||'').toUpperCase();
+      isAdm = !['CLOSER','DEVELOPER','FARMER'].some(function(c){ return area.includes(c); });
+    }
+    if(!isAdm) return;
+    var v = _folhaRowS13(r);
+    if(v > 0) byNome[nome] = (byNome[nome]||0) + v;
+  });
+  // Projeções
+  if((BUDGET_CFG||{}).folhaProjecao){
+    Object.keys(BUDGET_CFG.folhaProjecao).forEach(function(k){
+      var parts = k.split('|'); if(parts.length < 3) return;
+      var pNome = parts[1];
+      var pYm   = parts.slice(2).join('|');
+      if(pYm !== ym) return;
+      var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
+      if(isNaN(v) || v <= 0) return;
+      var c = (FOLHA_CFG.classif||{})[pNome];
+      if(!c) return;
+      var isAdm = (c.admin === 'sim') || (c.area && String(c.area).toUpperCase() === 'ADMINISTRATIVO');
+      if(!isAdm) return;
+      var key = pNome + ' (projetado)';
+      byNome[key] = (byNome[key]||0) + v;
+    });
+  }
+  var items = [];
+  Object.keys(byNome).forEach(function(n){ items.push({label: n, value: byNome[n]}); });
+  return items;
+}
+
+function _breakdownSalCanal(canal, am){
+  if(!canal || !am) return [];
+  var canalUC = canal.toUpperCase();
+  var ym = am.length === 6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
+  var byNome = {};
+  var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW : [];
+  var _lkp = (typeof _folhaCanalLookup !== 'undefined' && _folhaCanalLookup) ? _folhaCanalLookup : {};
+  src.forEach(function(r){
+    var nome = (typeof folhaGetNome === 'function') ? folhaGetNome(r) : '';
+    if(!nome) return;
+    var anomes = String((typeof folhaGetPeriodo === 'function' ? folhaGetPeriodo(r) : '')||'').replace(/\D/g,'').slice(0,6);
+    if(anomes !== am) return;
+    var personCanais = _lkp[nome];
+    if(!personCanais || personCanais.indexOf(canalUC) < 0) return;
+    var prorate = 1 / Math.max(1, personCanais.length);
+    var v = _folhaRowS13(r) * prorate;
+    if(v > 0) byNome[nome] = (byNome[nome]||0) + v;
+  });
+  // Projeções
+  if((BUDGET_CFG||{}).folhaProjecao){
+    Object.keys(BUDGET_CFG.folhaProjecao).forEach(function(k){
+      var parts = k.split('|'); if(parts.length < 3) return;
+      var pNome = parts[1];
+      var pYm   = parts.slice(2).join('|');
+      if(pYm !== ym) return;
+      var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
+      if(isNaN(v) || v <= 0) return;
+      var c = (FOLHA_CFG.classif||{})[pNome];
+      if(!c || !c.canal) return;
+      var canais = Array.isArray(c.canal) ? c.canal : [c.canal];
+      var hasCanal = canais.some(function(ca){ return String(ca).toUpperCase() === canalUC; });
+      if(!hasCanal) return;
+      var prorate = 1 / Math.max(1, canais.length);
+      var key = pNome + ' (projetado)';
+      byNome[key] = (byNome[key]||0) + v * prorate;
+    });
+  }
+  var items = [];
+  Object.keys(byNome).forEach(function(n){ items.push({label: n, value: byNome[n]}); });
+  return items;
+}
+
 // Recarrega Folha do Supabase — limpa cache local e re-renderiza DRE Config se aberto.
 // Usado quando o usuário atualizou dw_otb_folha direto no Supabase e quer ver os novos valores.
 async function folhaForceReload(btn){
@@ -6843,23 +7093,33 @@ async function openDreCfg(){
     +fieldBrl('Sal. Closer (R$)', 'closer_abs',
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].closer_abs!=null) ? DRE_CFG_PARAMS[am].closer_abs : folhaCloserS13,
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].closer_abs!=null ? '✏️ Override manual · ' : '')
-       + _salMsgRef('CLOSER', folhaCloserS13, function(p){ return folhaTotalCanalS13('CLOSER', p); }))
+       + '<span class="base-with-tip" data-base-type="sal_canal" data-base-am="'+am+'" data-base-canal="CLOSER" onmouseenter="_showBasePopover(this)" onmouseleave="_scheduleHideBasePopover()" style="cursor:help;border-bottom:1px dotted #1a56c4">'
+       + _salMsgRef('CLOSER', folhaCloserS13, function(p){ return folhaTotalCanalS13('CLOSER', p); })
+       + ' <span style="font-size:9px;color:#7a8ab0">▾</span></span>')
     +fieldBrl('Sal. Developer (R$)', 'developer_abs',
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].developer_abs!=null) ? DRE_CFG_PARAMS[am].developer_abs : folhaDeveloperS13,
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].developer_abs!=null ? '✏️ Override manual · ' : '')
-       + _salMsgRef('DEVELOPER', folhaDeveloperS13, function(p){ return folhaTotalCanalS13('DEVELOPER', p); }))
+       + '<span class="base-with-tip" data-base-type="sal_canal" data-base-am="'+am+'" data-base-canal="DEVELOPER" onmouseenter="_showBasePopover(this)" onmouseleave="_scheduleHideBasePopover()" style="cursor:help;border-bottom:1px dotted #1a56c4">'
+       + _salMsgRef('DEVELOPER', folhaDeveloperS13, function(p){ return folhaTotalCanalS13('DEVELOPER', p); })
+       + ' <span style="font-size:9px;color:#7a8ab0">▾</span></span>')
     +fieldBrl('Sal. Farmer (R$)', 'farmer_abs',
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].farmer_abs!=null) ? DRE_CFG_PARAMS[am].farmer_abs : folhaFarmerS13,
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].farmer_abs!=null ? '✏️ Override manual · ' : '')
-       + _salMsgRef('FARMER', folhaFarmerS13, function(p){ return folhaTotalCanalS13('FARMER', p); }))
+       + '<span class="base-with-tip" data-base-type="sal_canal" data-base-am="'+am+'" data-base-canal="FARMER" onmouseenter="_showBasePopover(this)" onmouseleave="_scheduleHideBasePopover()" style="cursor:help;border-bottom:1px dotted #1a56c4">'
+       + _salMsgRef('FARMER', folhaFarmerS13, function(p){ return folhaTotalCanalS13('FARMER', p); })
+       + ' <span style="font-size:9px;color:#7a8ab0">▾</span></span>')
     +fieldBrl('Sal. Hava (R$)', 'hava_abs',
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].hava_abs!=null) ? DRE_CFG_PARAMS[am].hava_abs : folhaHavaS13,
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].hava_abs!=null ? '✏️ Override manual · ' : '')
-       + _salMsgRef('HAVA', folhaHavaS13, function(p){ return folhaTotalCanalS13('HAVA', p); }))
+       + '<span class="base-with-tip" data-base-type="sal_canal" data-base-am="'+am+'" data-base-canal="HAVA" onmouseenter="_showBasePopover(this)" onmouseleave="_scheduleHideBasePopover()" style="cursor:help;border-bottom:1px dotted #1a56c4">'
+       + _salMsgRef('HAVA', folhaHavaS13, function(p){ return folhaTotalCanalS13('HAVA', p); })
+       + ' <span style="font-size:9px;color:#7a8ab0">▾</span></span>')
     +fieldBrl('Sal. KA (R$)', 'ka_abs',
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].ka_abs!=null) ? DRE_CFG_PARAMS[am].ka_abs : folhaKaS13,
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].ka_abs!=null ? '✏️ Override manual · ' : '')
-       + _salMsgRef('KA', folhaKaS13, function(p){ return folhaTotalCanalS13('KA', p); }))
+       + '<span class="base-with-tip" data-base-type="sal_canal" data-base-am="'+am+'" data-base-canal="KA" onmouseenter="_showBasePopover(this)" onmouseleave="_scheduleHideBasePopover()" style="cursor:help;border-bottom:1px dotted #1a56c4">'
+       + _salMsgRef('KA', folhaKaS13, function(p){ return folhaTotalCanalS13('KA', p); })
+       + ' <span style="font-size:9px;color:#7a8ab0">▾</span></span>')
     +'</div>'    +'<div class="dre-cfg-grid" style="margin-top:12px;padding-top:12px;border-top:1px dashed #d0d8ee">'    +fieldPct('% 13º + Férias', 'pct13ferias', (function(){ var v=getP('pct13ferias'); return (!v||v<=0) ? 0.11 : v; })(),      '📐 Aplicado sobre o total de salários — resultado em 13º + Férias (-)'    )    +'</div></div>'
 
     // ── COMISSÕES ──
@@ -6896,11 +7156,13 @@ async function openDreCfg(){
     +fieldBrl('Salários Adm (R$)', 'sal_adm',
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].sal_adm!=null) ? DRE_CFG_PARAMS[am].sal_adm : folhaAdm,
        (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].sal_adm!=null ? '✏️ Override manual · ' : '')
-       + _salMsgRef('ADM', folhaAdm, function(p){ return folhaTotalAdm(p); }))
+       + '<span class="base-with-tip" data-base-type="sal_adm" data-base-am="'+am+'" onmouseenter="_showBasePopover(this)" onmouseleave="_scheduleHideBasePopover()" style="cursor:help;border-bottom:1px dotted #1a56c4">'
+       + _salMsgRef('ADM', folhaAdm, function(p){ return folhaTotalAdm(p); })
+       + ' <span style="font-size:9px;color:#7a8ab0">▾</span></span>')
     +fieldBrl('Despesas Gerais (R$)', 'desp_gerais', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].desp_gerais!=null)?DRE_CFG_PARAMS[am].desp_gerais:FIXOS_DEF.desp_gerais,
-      despGerais ? '💸 Base: '+fmt(despGerais) : '')
+      despGerais ? '<span class="base-with-tip" data-base-type="desp_gerais" data-base-am="'+am+'" onmouseenter="_showBasePopover(this)" onmouseleave="_scheduleHideBasePopover()" style="cursor:help;border-bottom:1px dotted #1a56c4">💸 Base: '+fmt(despGerais)+' <span style="font-size:9px;color:#7a8ab0">▾</span></span>' : '')
     +fieldBrl('CD — Centro de Dist. (R$)', 'cd_mensal', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].cd_mensal!=null)?DRE_CFG_PARAMS[am].cd_mensal:FIXOS_DEF.cd_mensal,
-      despCd ? '💸 Base: '+fmt(despCd) : '')
+      despCd ? '<span class="base-with-tip" data-base-type="cd" data-base-am="'+am+'" onmouseenter="_showBasePopover(this)" onmouseleave="_scheduleHideBasePopover()" style="cursor:help;border-bottom:1px dotted #1a56c4">💸 Base: '+fmt(despCd)+' <span style="font-size:9px;color:#7a8ab0">▾</span></span>' : '')
     +'</div>'
     +'<div class="dre-cfg-grid" style="margin-top:12px;padding-top:12px;border-top:1px dashed #d0d8ee">'
     +fieldPct('% 13º + Férias Adm', 'pct13ferias_adm', (function(){
