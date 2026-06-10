@@ -4614,20 +4614,53 @@ function dreRenderMensal(){
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
   var ano=dreGv('dre-ano-mensal'),q=dreGv('dre-q-mensal'),mes=dreGv('dre-mes-mensal'),canal=dreGv('dre-canal-mensal'),cluster=dreGv('dre-cluster-mensal'),regiao=dreGv('dre-reg-mensal'),forn=dreGv('dre-forn-mensal'),transp=dreGv('dre-transp-mensal');
   var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn,transp);
-  var meses=Array.from(new Set(rows.map(function(r){return String(r.mes||r.MES||'').padStart(2,'0');}))).filter(function(m){return m!=='00';}).sort();
+  // Detecta se há comparação multi-ano (ano='TODOS' OU array com múltiplos valores)
+  var anosFiltro = Array.isArray(ano) ? ano.map(String) : (ano !== 'TODOS' && ano != null ? [String(ano)] : null);
+  var isMultiAno = (ano === 'TODOS') || (anosFiltro && anosFiltro.length > 1);
   // Passa o canal filtrado como canalCtx — necessário para rateio correto de marketing
   var canalCtxMensal = (canal && canal !== 'TODOS' && canal !== 'null' && !Array.isArray(canal)) ? String(canal).toUpperCase() : null;
-  var cols=meses.map(function(m){return{label:ml(m)+(ano!=='TODOS'?'/'+String(ano).slice(-2):''),d:dreCalc(dreAgg(rows.filter(function(r){return String(r.mes||r.MES||'').padStart(2,'0')===m;})),1,1,canalCtxMensal)};});
+
+  var cols;
+  if(isMultiAno){
+    // Multi-ano: gera coluna por par (ano, mes) — ex: "Mai/25" + "Mai/26" lado a lado
+    var anoMesPairs = Array.from(new Set(rows.map(function(r){
+      var ra = String(r.ano||r.ANO||'').trim();
+      var rm = String(r.mes||r.MES||'').padStart(2,'0');
+      return ra+'|'+rm;
+    }))).filter(function(p){ var parts=p.split('|'); return parts[0] && parts[1] && parts[1]!=='00'; }).sort();
+    cols = anoMesPairs.map(function(pair){
+      var parts = pair.split('|'), a = parts[0], m = parts[1];
+      return {
+        label: ml(m)+'/'+a.slice(-2),
+        d: dreCalc(dreAgg(rows.filter(function(r){
+          return String(r.ano||r.ANO||'')===a && String(r.mes||r.MES||'').padStart(2,'0')===m;
+        })), 1, 1, canalCtxMensal)
+      };
+    });
+  } else {
+    var meses = Array.from(new Set(rows.map(function(r){return String(r.mes||r.MES||'').padStart(2,'0');}))).filter(function(m){return m!=='00';}).sort();
+    cols = meses.map(function(m){
+      return { label: ml(m)+(ano!=='TODOS' && ano!=null?'/'+String(ano).slice(-2):''),
+               d: dreCalc(dreAgg(rows.filter(function(r){return String(r.mes||r.MES||'').padStart(2,'0')===m;})),1,1,canalCtxMensal) };
+    });
+  }
   if(cols.length>1) cols=cols.concat([{label:'<strong>Total</strong>',d:dreCalc(dreAgg(rows),1,1,canalCtxMensal),isTotal:true}]);
   var anoLY=ano==='TODOS'?null:(Array.isArray(ano)?String(+ano[0]-1):String(+ano-1));
   // LY deve filtrar pelo MESMO período: ano-1 + mesmos meses selecionados
-  var rowsLY=anoLY?DRE_RAW.filter(function(r){
+  var rowsLY=(!isMultiAno && anoLY)?DRE_RAW.filter(function(r){
     if(String(r.ano||r.ANO)!==anoLY) return false;
     var rMes=String(r.mes||r.MES||'').padStart(2,'0');
-    return meses.indexOf(rMes)>=0;
+    // Reusa os meses únicos dos rows atuais
+    return cols.some(function(c){ return !c.isTotal && c.label.indexOf(ml(rMes))===0; });
   }):[];
   var dLY=rowsLY.length?dreCalc(dreAgg(rowsLY),1,1):null;
-  var kpiData=cols.filter(function(c){return c.isTotal;});if(!kpiData.length) kpiData=cols;
+  // KPIs ficam VAZIOS em modo multi-ano (não faz sentido agregar 2 anos)
+  var kpiData;
+  if(isMultiAno){
+    kpiData = []; // cards vazios
+  } else {
+    kpiData=cols.filter(function(c){return c.isTotal;});if(!kpiData.length) kpiData=cols;
+  }
   document.getElementById('dreKpi-mensal').innerHTML=kpiData.length?dreKpis(kpiData.map(function(c){return c.d;}),dLY):'';
   document.getElementById('dreTable-mensal').innerHTML=cols.length?dreTabela(cols):'<div style="text-align:center;padding:60px;color:#7a8ab0;font-size:13px">Sem dados.</div>';
   if(typeof dreApplySectionsState==='function') dreApplySectionsState();
