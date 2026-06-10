@@ -917,6 +917,8 @@ async function supaSave(saveTable, rowKey, value){
       method:'POST', body: body, headers:{'Prefer':'return=minimal','Content-Type':'application/json'}
     });
     console.log('[supaSave] ok:', rowKey, kb+'KB');
+    // Atualiza checksum local pra não disparar polling de "outro user atualizou"
+    try { if(typeof _otbAfterSave === 'function') _otbAfterSave(rowKey, JSON.stringify(payload)); } catch(e){}
     return r;
   } catch(e){
     console.error('[supaSave] falhou:', rowKey, e.message);
@@ -1216,6 +1218,13 @@ async function afterLogin(){
   // Verifica banner de cache desatualizado (>24h) — agendado pra rodar após carregamentos iniciais
   if(typeof _checkStaleBanner === 'function'){
     setTimeout(_checkStaleBanner, 1500);
+  }
+  // Inicializa chksums + inicia polling de atualizações de outros usuários
+  if(typeof _refreshAllChksums === 'function'){
+    setTimeout(async function(){
+      await _refreshAllChksums();
+      if(typeof _startUpdatePoller === 'function') _startUpdatePoller();
+    }, 3000);
   }
   // Aplica regras visuais (esconde botões admin/edit pra não-admins)
   applyPermissionsToUI();
@@ -6367,6 +6376,164 @@ async function dreForceReload(btn){
     toast('Erro ao recarregar dados','err');
   }
   if(btn){ btn.disabled=false; btn.textContent=orig; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DETECTOR DE ATUALIZAÇÕES DE OUTROS USUÁRIOS
+// ═══════════════════════════════════════════════════════════════════════════
+// Polling a cada 60s no Supabase. Compara o tamanho dos `value` das chaves
+// críticas (budget_classif, dre_cfg_params, etc) com o que está em localStorage.
+// Se mudou e não foi feito por este client, alerta o usuário.
+// ═══════════════════════════════════════════════════════════════════════════
+var _UPDATE_POLL_INTERVAL_MS = 60000; // 60 segundos
+var _updatePollTimer = null;
+var _updateAlertShown = false;
+var CRITICAL_KEYS = ['budget_classif', 'budget_cfg', 'dre_cfg_params', 'folha_cfg', 'budget_classif_vol'];
+
+function _otbChksumGet(key){
+  return parseInt(localStorage.getItem('_otb_chksum_' + key) || '0', 10);
+}
+function _otbChksumSet(key, len){
+  try { localStorage.setItem('_otb_chksum_' + key, String(len)); } catch(e){}
+}
+
+// Atualiza checksums de TODAS as chaves críticas — usado após reload (sync com Supabase)
+async function _refreshAllChksums(){
+  for(var i=0; i<CRITICAL_KEYS.length; i++){
+    var key = CRITICAL_KEYS[i];
+    try {
+      var rows = await supaFetch('/rest/v1/' + TBLS.save_dre + '?key=eq.' + key + '&select=value&limit=1');
+      if(rows && rows.length){
+        _otbChksumSet(key, (rows[0].value || '').length);
+      } else {
+        _otbChksumSet(key, 0); // chave não existe
+      }
+    } catch(e){}
+  }
+}
+
+// Chamado após cada supaSave bem-sucedido — guarda o tamanho local (evita falso positivo)
+function _otbAfterSave(rowKey, payloadJsonStr){
+  if(CRITICAL_KEYS.indexOf(rowKey) >= 0){
+    _otbChksumSet(rowKey, (payloadJsonStr||'').length);
+  }
+}
+
+async function _checkForUpdates(){
+  if(_updateAlertShown) return;
+  if(typeof _session === 'undefined' || !_session) return;
+  var screen = document.querySelector('.screen-active');
+  if(!screen || screen.id === 'screenLogin') return;
+
+  var changedKeys = [];
+  for(var i=0; i<CRITICAL_KEYS.length; i++){
+    var key = CRITICAL_KEYS[i];
+    try {
+      var rows = await supaFetch('/rest/v1/' + TBLS.save_dre + '?key=eq.' + key + '&select=value&limit=1');
+      var remoteLen = (rows && rows.length) ? (rows[0].value || '').length : 0;
+      var storedLen = _otbChksumGet(key);
+      if(storedLen === 0 && remoteLen > 0){
+        // Primeira vez — inicializa sem alertar
+        _otbChksumSet(key, remoteLen);
+        continue;
+      }
+      if(storedLen !== remoteLen){
+        changedKeys.push(key);
+      }
+    } catch(e){ /* silencioso — fail-safe */ }
+  }
+  if(changedKeys.length){
+    _showUpdateAlert(changedKeys);
+  }
+}
+
+function _showUpdateAlert(changedKeys){
+  _updateAlertShown = true;
+  var b = document.getElementById('updateAlert');
+  if(!b){
+    b = document.createElement('div');
+    b.id = 'updateAlert';
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;background:linear-gradient(90deg,#dde9fa 0%,#a8c5f0 100%);border-bottom:2px solid #1a4d8f;color:#0f1a3a;padding:10px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,.15)';
+    document.body.appendChild(b);
+  }
+  // Identifica áreas afetadas
+  var keysStr = changedKeys.join(' ');
+  var hasBudget = /budget/.test(keysStr);
+  var hasDre    = /dre/.test(keysStr);
+  var hasFolha  = /folha/.test(keysStr);
+
+  // Botão contextual baseado na tela atual + áreas afetadas
+  var screen = document.querySelector('.screen-active');
+  var screenId = screen ? screen.id : '';
+  var actionBtnHtml;
+  if(screenId === 'screenBudget' && hasBudget){
+    actionBtnHtml = '<button onclick="_updateAlertReload(\'budget\', this)" style="background:#0f1a3a;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer">🔄 Recarregar Dados</button>';
+  } else if(screenId === 'screenDre' && hasDre){
+    actionBtnHtml = '<button onclick="_updateAlertReload(\'dre\', this)" style="background:#0f1a3a;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer">🔄 Recarregar Dados</button>';
+  } else if(screenId === 'screenFolha' && hasFolha){
+    actionBtnHtml = '<button onclick="_updateAlertReload(\'folha\', this)" style="background:#0f1a3a;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer">🔄 Recarregar Folha</button>';
+  } else {
+    actionBtnHtml = '<button onclick="_updateAlertReload(\'all\', this)" style="background:#0f1a3a;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer">↺ Recarregar Tudo</button>';
+  }
+
+  // Label legível das áreas
+  var labelParts = [];
+  if(hasBudget) labelParts.push('Budget');
+  if(hasDre) labelParts.push('DRE');
+  if(hasFolha) labelParts.push('Folha');
+  if(!labelParts.length) labelParts.push('configurações');
+  var label = labelParts.join(' / ');
+
+  b.innerHTML = '<span>🔄 Outro usuário fez alterações em <strong>'+escHtml(label)+'</strong>. Recarregue para ver as mudanças.</span>'
+    +'<span style="display:flex;gap:8px;align-items:center">'
+    +actionBtnHtml
+    +'<button onclick="_dismissUpdateAlert()" title="Dispensar — vou voltar a alertar na próxima atualização" style="background:transparent;border:none;font-size:18px;cursor:pointer;color:#0f1a3a;padding:0 4px">×</button>'
+    +'</span>';
+  b.style.display = 'flex';
+  // Update alert tem prioridade sobre stale banner
+  if(typeof _hideStaleBanner === 'function') _hideStaleBanner();
+}
+
+async function _dismissUpdateAlert(){
+  // Refresca chksums pra não disparar de novo na próxima polling
+  await _refreshAllChksums();
+  _updateAlertShown = false;
+  var b = document.getElementById('updateAlert');
+  if(b) b.style.display = 'none';
+}
+
+async function _updateAlertReload(scope, btn){
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Recarregando...'; }
+  try {
+    if(scope === 'budget' && typeof budgetForceReload === 'function'){
+      await budgetForceReload(btn);
+    } else if(scope === 'dre' && typeof dreForceReload === 'function'){
+      await dreForceReload(btn);
+    } else if(scope === 'folha' && typeof folhaForceReload === 'function'){
+      await folhaForceReload(btn);
+    } else if(typeof handleReloadAll === 'function'){
+      var fakeBtn = document.createElement('button');
+      await handleReloadAll(fakeBtn);
+    }
+    await _refreshAllChksums();
+    if(typeof _markLastReloadNow === 'function') _markLastReloadNow();
+    _updateAlertShown = false;
+    var b = document.getElementById('updateAlert');
+    if(b) b.style.display = 'none';
+  } catch(e){
+    console.error('[updateAlert] reload error', e);
+    if(btn){ btn.disabled = false; btn.textContent = '🔄 Tentar de novo'; }
+  }
+}
+
+function _startUpdatePoller(){
+  if(_updatePollTimer) return;
+  _updatePollTimer = setInterval(_checkForUpdates, _UPDATE_POLL_INTERVAL_MS);
+  // Primeira checagem ~15s após início (dá tempo do client carregar inicial)
+  setTimeout(_checkForUpdates, 15000);
+}
+function _stopUpdatePoller(){
+  if(_updatePollTimer){ clearInterval(_updatePollTimer); _updatePollTimer = null; }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
