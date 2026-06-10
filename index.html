@@ -501,7 +501,6 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       </nav>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn" data-perm-admin onclick="dreForceReload(this)" title="Recarrega o DRE direto do Supabase — use quando precisar ver dados atualizados recentemente" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">🔄 Recarregar</button>
       <button class="btn" data-perm-admin onclick="dreForceReload(this)" title="Limpa o cache local e busca dados do DRE direto do Supabase. Use quando dw_otb_venda_dre foi atualizado externamente." style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">🔄 Recarregar Dados</button>
       <button class="btn" data-perm-admin onclick="openDreCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Config</button>
       <button class="btn save" data-perm-edit id="btnSaveDre" onclick="handleSaveDre(this)">💾 Salvar</button>
@@ -10838,7 +10837,6 @@ async function saveBudgetCfg(btn){
       </nav>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn" data-perm-admin onclick="budgetForceReload(this)" title="Recarrega o Budget (despesas + classificações) direto do Supabase — use quando algum dado foi atualizado por outro device" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">🔄 Recarregar</button>
       <button class="btn" data-perm-admin onclick="budgetForceReload(this)" title="Limpa o cache local e busca despesas direto do Supabase. Use quando despesas foram atualizadas externamente." style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">🔄 Recarregar Dados</button>
       <button class="btn" data-perm-admin onclick="openBudgetCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button>
       <button class="btn save" data-perm-edit id="btnSaveBudget" onclick="handleSaveBudget(this)">💾 Salvar</button>
