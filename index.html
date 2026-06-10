@@ -6889,14 +6889,28 @@ function _breakdownSalCanal(canal, am){
   var ym = am.length === 6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
   var byNome = {};
   var realizedNames = {};
-  var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW : [];
-  var _lkp = (typeof _folhaCanalLookup !== 'undefined' && _folhaCanalLookup) ? _folhaCanalLookup : {};
+  // Constrói o lookup nome → canais inline (o _folhaCanalLookup global pode não estar disponível)
+  var lookup = {};
+  if(typeof FOLHA_CFG !== 'undefined' && FOLHA_CFG.classif){
+    Object.keys(FOLHA_CFG.classif).forEach(function(nome){
+      var cfg = FOLHA_CFG.classif[nome];
+      if(!cfg || !cfg.canal) return;
+      var canais;
+      if(Array.isArray(cfg.canal)) canais = cfg.canal;
+      else if(cfg.canal !== '—') canais = [cfg.canal];
+      else canais = [];
+      canais = canais.map(function(c){ return String(c).toUpperCase(); }).filter(Boolean);
+      if(canais.length) lookup[nome] = canais;
+    });
+  }
+  var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
+          : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW.length) ? FOLHA_RAW : [];
   src.forEach(function(r){
     var nome = (typeof folhaGetNome === 'function') ? folhaGetNome(r) : '';
     if(!nome) return;
     var anomes = String((typeof folhaGetPeriodo === 'function' ? folhaGetPeriodo(r) : '')||'').replace(/\D/g,'').slice(0,6);
     if(anomes !== am) return;
-    var personCanais = _lkp[nome];
+    var personCanais = lookup[nome];
     if(!personCanais || personCanais.indexOf(canalUC) < 0) return;
     realizedNames[nome] = 1;
     var prorate = 1 / Math.max(1, personCanais.length);
