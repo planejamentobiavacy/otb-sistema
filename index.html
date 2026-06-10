@@ -10439,11 +10439,29 @@ function openBudgetDetail(tipo, area, ano){
   // ── Linha de referência: CD + Montagem Grade do DRE (só aparece pra tipo "CD") ──
   // CD = cd_mensal por mês (DRE_CFG_PARAMS[am].cd_mensal ou FIXOS_DEF.cd_mensal)
   // Montagem = qtd_grade_hava do mês × custoGrade do mês (DRE_CFG_PARAMS[am].custoGrade)
+  // IMPORTANTE: o DRE oficial calcula CD = cd_unit × shareQTD, então em meses SEM venda
+  // (qtd=0), CD vira 0 automaticamente. Replica esse comportamento aqui pra ficar
+  // consistente: meses sem dados de venda no DRE_RAW mostram "—" em vez do cd_mensal cheio.
   if(String(tipo).toUpperCase() === 'CD'){
     var _dreCdMontForAm = function(am){
       var ano = am.slice(0,4), mes = am.slice(4,6);
       var amH = ano + '-' + mes;
       var p = (typeof DRE_CFG_PARAMS !== 'undefined') ? (DRE_CFG_PARAMS[am] || DRE_CFG_PARAMS[amH]) : null;
+      // Detecta se o mês tem dados realizados em DRE_RAW (qtd > 0) — mesma regra do DRE
+      var qtdGrade = 0;
+      var qtdTotal = 0;
+      if(typeof DRE_RAW !== 'undefined' && DRE_RAW){
+        DRE_RAW.forEach(function(r){
+          if(String(r.ano||r.ANO||'') === ano && String(r.mes||r.MES||'').padStart(2,'0') === mes){
+            qtdGrade += parseFloat(r.qtd_grade_hava || r.QTD_GRADE_HAVA || 0) || 0;
+            qtdTotal += parseFloat(r.qtd || r.QTD || 0) || 0;
+          }
+        });
+      }
+      // Mês não-realizado (sem pares no DRE) → retorna vazio pra ficar consistente com o DRE
+      if(qtdTotal <= 0){
+        return {cd: 0, montagem: 0, total: 0, qtdGrade: 0, gradeUnit: 0, realized: false};
+      }
       // CD
       var cd = 0;
       if(p && p.cd_mensal != null){
@@ -10452,17 +10470,9 @@ function openBudgetDetail(tipo, area, ano){
         cd = parseFloat(FIXOS_DEF.cd_mensal) || 0;
       }
       // Montagem Grade = qtd_grade_hava do mês × custoGrade
-      var qtdGrade = 0;
-      if(typeof DRE_RAW !== 'undefined' && DRE_RAW){
-        DRE_RAW.forEach(function(r){
-          if(String(r.ano||r.ANO||'') === ano && String(r.mes||r.MES||'').padStart(2,'0') === mes){
-            qtdGrade += parseFloat(r.qtd_grade_hava || r.QTD_GRADE_HAVA || 0) || 0;
-          }
-        });
-      }
       var gradeUnit = (p && p.custoGrade != null) ? (parseFloat(p.custoGrade) || 0) : (DRE_CONFIG_DEFAULTS.custoGrade || 0);
       var montagem = qtdGrade * gradeUnit;
-      return {cd: cd, montagem: montagem, total: cd + montagem, qtdGrade: qtdGrade, gradeUnit: gradeUnit};
+      return {cd: cd, montagem: montagem, total: cd + montagem, qtdGrade: qtdGrade, gradeUnit: gradeUnit, realized: true};
     };
     var dreCdGrandTotal = 0;
     h += '<tr style="background:#f3eefb;color:#4a2785;font-weight:600;font-style:italic">';
@@ -10471,10 +10481,12 @@ function openBudgetDetail(tipo, area, ano){
     months.forEach(function(am){
       var v = _dreCdMontForAm(am);
       dreCdGrandTotal += v.total;
-      var tip = 'CD mensal: R$ '+Math.round(v.cd).toLocaleString('pt-BR')
-              + ' • Montagem Grade: R$ '+Math.round(v.montagem).toLocaleString('pt-BR')
-              + ' ('+v.qtdGrade.toLocaleString('pt-BR')+' pares × R$ '+v.gradeUnit.toFixed(2)+'/par)';
-      h += '<td style="padding:5px 8px;text-align:center;font-size:11px" title="'+escHtml(tip)+'">'+(v.total>0?'R$ '+Math.round(v.total).toLocaleString('pt-BR'):'<span style="color:#bbb">—</span>')+'</td>';
+      var tip = v.realized
+        ? 'CD mensal: R$ '+Math.round(v.cd).toLocaleString('pt-BR')
+          + ' • Montagem Grade: R$ '+Math.round(v.montagem).toLocaleString('pt-BR')
+          + ' ('+v.qtdGrade.toLocaleString('pt-BR')+' pares × R$ '+v.gradeUnit.toFixed(2)+'/par)'
+        : 'Mês sem venda realizada no DRE — CD não é alocado (mesma regra do DRE: cd = cd_unit × shareQTD)';
+      h += '<td style="padding:5px 8px;text-align:center;font-size:11px" title="'+escHtml(tip)+'">'+(v.realized && v.total>0?'R$ '+Math.round(v.total).toLocaleString('pt-BR'):'<span style="color:#bbb">—</span>')+'</td>';
     });
     h += '<td style="padding:7px 10px;text-align:center;background:#e8dff5;font-weight:700">'+(dreCdGrandTotal>0?'R$ '+Math.round(dreCdGrandTotal).toLocaleString('pt-BR'):'—')+'</td>';
     h += '</tr>';
