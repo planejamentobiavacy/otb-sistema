@@ -659,7 +659,7 @@ var TBLS = (function(){
     venda_dre: localStorage.getItem('otb_tbl_venda_dre') || 'dw_otb_venda_dre',
     frete_dre: localStorage.getItem('otb_tbl_frete_dre') || 'dw_otb_frete_dre',
     despesa:   (localStorage.getItem('otb_tbl_despesa')==='otb_despesa'?(localStorage.removeItem('otb_tbl_despesa'),null):localStorage.getItem('otb_tbl_despesa')) || 'dw_otb_despesa',
-    folha:     localStorage.getItem('otb_tbl_folha')     || 'otb_folha',
+    folha:     (localStorage.getItem('otb_tbl_folha')==='otb_folha'?(localStorage.removeItem('otb_tbl_folha'),null):localStorage.getItem('otb_tbl_folha')) || 'dw_otb_folha',
     canais:    localStorage.getItem('otb_tbl_canais')    || 'otb_canais',
     cluster:   localStorage.getItem('otb_tbl_cluster')   || 'otb_cluster',
     save_otb:  localStorage.getItem('otb_tbl_save_otb')  || 'otb_simulations',
