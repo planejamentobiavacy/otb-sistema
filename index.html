@@ -501,6 +501,8 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       </nav>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn" data-perm-admin onclick="dreForceReload(this)" title="Recarrega o DRE direto do Supabase — use quando precisar ver dados atualizados recentemente" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">🔄 Recarregar</button>
+      <button class="btn" data-perm-admin onclick="dreForceReload(this)" title="Limpa o cache local e busca dados do DRE direto do Supabase. Use quando dw_otb_venda_dre foi atualizado externamente." style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">🔄 Recarregar Dados</button>
       <button class="btn" data-perm-admin onclick="openDreCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Config</button>
       <button class="btn save" data-perm-edit id="btnSaveDre" onclick="handleSaveDre(this)">💾 Salvar</button>
     </div>
@@ -1212,6 +1214,10 @@ async function afterLogin(){
     var permSaved = await supaLoad(TBLS.save_dre, 'user_permissions');
     if(permSaved) USER_PERMISSIONS = permSaved;
   } catch(e){ console.warn('[permissions] erro ao carregar:', e.message); }
+  // Verifica banner de cache desatualizado (>24h) — agendado pra rodar após carregamentos iniciais
+  if(typeof _checkStaleBanner === 'function'){
+    setTimeout(_checkStaleBanner, 1500);
+  }
   // Aplica regras visuais (esconde botões admin/edit pra não-admins)
   applyPermissionsToUI();
   // Verifica se o usuário tem acesso ao sistema
@@ -1892,6 +1898,10 @@ function gcHideLoadingBanner(){
 function showHome(){
   // volta para home, sem perder dados
   showScreen('screenHome');
+  // Checa se o cache local está velho (>24h) e mostra banner se necessário
+  if(typeof _checkStaleBanner === 'function'){
+    setTimeout(_checkStaleBanner, 300);
+  }
 }
 
 function openOtb(){
@@ -2325,6 +2335,8 @@ async function handleReloadAll(btn){
     toast('⚠️ ' + erros.join(' | '), 'err', 8000);
   } else {
     toast('✅ Todas as tabelas recarregadas!');
+    if(typeof _markLastReloadNow === 'function') _markLastReloadNow();
+    if(typeof _hideStaleBanner === 'function') _hideStaleBanner();
   }
   btn.disabled = false; btn.textContent = orig;
 }
@@ -6351,10 +6363,85 @@ async function dreForceReload(btn){
   if(ok){
     await initDre();
     toast('✔ Dados brutos recarregados — '+DRE_RAW.length.toLocaleString('pt-BR')+' linhas. Salve o DRE para atualizar o snapshot.');
+    if(typeof _markLastReloadNow === 'function') _markLastReloadNow();
   } else {
     toast('Erro ao recarregar dados','err');
   }
   if(btn){ btn.disabled=false; btn.textContent=orig; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BANNER DE CACHE DESATUALIZADO (>24h)
+// ═══════════════════════════════════════════════════════════════════════════
+// Mostra um banner amarelo no topo quando o cache local está velho. Avisa o
+// usuário pra recarregar (especialmente útil em ambientes multi-usuário onde
+// alguém atualiza o Supabase enquanto outra máquina tá com cache antigo).
+// ═══════════════════════════════════════════════════════════════════════════
+var STALE_BANNER_THRESHOLD_HOURS = 24;
+var _staleBannerDismissedThisSession = false;
+
+function _getLastReloadAt(){
+  try {
+    var ts = localStorage.getItem('otb_lastFullReloadAt');
+    return ts ? new Date(ts).getTime() : 0;
+  } catch(e){ return 0; }
+}
+function _markLastReloadNow(){
+  try { localStorage.setItem('otb_lastFullReloadAt', new Date().toISOString()); } catch(e){}
+}
+function _checkStaleBanner(){
+  if(_staleBannerDismissedThisSession) return;
+  var last = _getLastReloadAt();
+  if(!last){
+    // Primeira vez — marca agora (assume que login acabou de trazer dados frescos)
+    _markLastReloadNow();
+    return;
+  }
+  var ageMs = Date.now() - last;
+  var ageHrs = ageMs / 3600000;
+  if(ageHrs < STALE_BANNER_THRESHOLD_HOURS){ _hideStaleBanner(); return; }
+  _showStaleBanner(ageHrs);
+}
+function _showStaleBanner(ageHrs){
+  var b = document.getElementById('staleBanner');
+  if(!b){
+    b = document.createElement('div');
+    b.id = 'staleBanner';
+    b.style.cssText = 'position:fixed;top:0;left:0;right:0;background:linear-gradient(90deg,#fff3cd 0%,#ffe69c 100%);border-bottom:2px solid #d4a017;color:#5a4500;padding:10px 16px;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:12px;z-index:9998;box-shadow:0 2px 8px rgba(0,0,0,.1)';
+    document.body.appendChild(b);
+  }
+  var ageLabel;
+  if(ageHrs >= 24*7){ var ws=Math.round(ageHrs/(24*7)); ageLabel = ws + ' semana'+(ws>1?'s':'')+' atrás'; }
+  else if(ageHrs >= 24){ var ds=Math.round(ageHrs/24); ageLabel = ds + ' dia'+(ds>1?'s':'')+' atrás'; }
+  else { ageLabel = Math.round(ageHrs) + 'h atrás'; }
+  b.innerHTML = '<span>⚠️ Cache local desatualizado — última atualização '+ageLabel+'. Os dados podem não refletir o estado atual do Supabase.</span>'
+    +'<span style="display:flex;gap:8px;align-items:center">'
+    +'<button onclick="_staleBannerReload(this)" style="background:#0f1a3a;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer">↺ Recarregar Tudo</button>'
+    +'<button onclick="_dismissStaleBanner()" title="Dispensar até a próxima sessão" style="background:transparent;border:none;font-size:18px;cursor:pointer;color:#5a4500;padding:0 4px">×</button>'
+    +'</span>';
+  b.style.display = 'flex';
+}
+function _hideStaleBanner(){
+  var b = document.getElementById('staleBanner');
+  if(b) b.style.display = 'none';
+}
+function _dismissStaleBanner(){
+  _staleBannerDismissedThisSession = true;
+  _hideStaleBanner();
+}
+async function _staleBannerReload(btn){
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Recarregando...'; }
+  var fakeBtn = document.createElement('button');
+  fakeBtn.textContent = '↺ Recarregar Tudo';
+  try {
+    await handleReloadAll(fakeBtn);
+    _markLastReloadNow();
+    _hideStaleBanner();
+  } catch(e){
+    console.error('[staleBanner] reload failed', e);
+    if(btn){ btn.disabled = false; btn.textContent = '↺ Recarregar Tudo'; }
+    toast('❌ Erro ao recarregar: '+e.message,'err');
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -7703,28 +7790,23 @@ async function openBudget(){
 async function budgetForceReload(btn){
   var orig = btn ? btn.textContent : '';
   if(btn){ btn.disabled = true; btn.textContent = '⏳ Atualizando...'; }
-  // Limpa cache local pra forçar leitura fresca do Supabase
-  try { if(typeof clearIdbCache === 'function') await clearIdbCache(); } catch(e){}
-  try{
-    // Limpa flags e estado pra forçar reload completo da base
+  try {
+    // Limpa cache local de despesas — força leitura fresca do Supabase
+    if(typeof clearIdbCache === 'function'){
+      try { await clearIdbCache('despesa'); } catch(e){}
+    }
     BUDGET_LOADED = false;
     BUDGET_DESP_RAW = [];
     BUDGET_RAW = [];
-    // Limpa também a Folha pra dados consistentes (salário Folha por área)
-    if(typeof FOLHA_LOADED !== 'undefined'){ FOLHA_LOADED = false; FOLHA_RAW = []; }
-    // Limpa cache de salário
-    if(typeof clearFolhaSalCache === 'function') clearFolhaSalCache();
-    // Recarrega Folha (precede Budget pra que a coluna Salário Folha apareça correta)
-    if(typeof TBLS !== 'undefined' && TBLS.folha){
-      try{ FOLHA_RAW = await fetchAll(TBLS.folha, null, null); FOLHA_LOADED = FOLHA_RAW.length>0; } catch(e){ console.warn('[budgetForceReload] erro Folha:', e.message); }
-    }
     // forceRaw=true ignora snapshot e busca a base direto
     await loadBudget(true);
     renderBudget(typeof BUDGET_ANO_FILTER !== 'undefined' ? BUDGET_ANO_FILTER : null);
-    toast('✔ Dados do Budget atualizados');
+    toast('✔ Despesas recarregadas — '+(BUDGET_DESP_RAW||[]).length.toLocaleString('pt-BR')+' linhas');
+    // Marca reload pra possíveis banners staleness
+    if(typeof _markLastReloadNow === 'function') _markLastReloadNow();
   } catch(e){
     console.error('[budgetForceReload] erro:', e);
-    toast('Erro ao atualizar: '+e.message,'err');
+    toast('❌ Erro ao atualizar: '+e.message,'err');
   }
   if(btn){ btn.disabled = false; btn.textContent = orig; }
 }
@@ -10133,15 +10215,7 @@ async function handleSaveBudget(btn){
   btn.disabled=false; btn.textContent=orig;
 }
 
-async function budgetForceReload(btn){
-  var orig=btn?btn.textContent:''; if(btn){btn.disabled=true;btn.textContent='⏳';}
-  BUDGET_LOADED=false; BUDGET_DESP_RAW=[];
-  try{ BUDGET_DESP_RAW = await fetchAll(TBLS.despesa, null, 'despesa'); } catch(e){ BUDGET_DESP_RAW=[]; }
-  BUDGET_LOADED=true;
-  renderBudget();
-  toast('✔ Despesas recarregadas — '+BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' linhas. Salve para atualizar o snapshot.');
-  if(btn){btn.disabled=false;btn.textContent=orig;}
-}
+async function _legacyBudgetReloadStub(){ /* removido — substituído pela versão consolidada acima */ }
 
 function openBudgetCfg(){
   if(!isAdmin()){ toast('🔒 Acesso restrito a administradores.','err'); return; }
@@ -10764,6 +10838,8 @@ async function saveBudgetCfg(btn){
       </nav>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn" data-perm-admin onclick="budgetForceReload(this)" title="Recarrega o Budget (despesas + classificações) direto do Supabase — use quando algum dado foi atualizado por outro device" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">🔄 Recarregar</button>
+      <button class="btn" data-perm-admin onclick="budgetForceReload(this)" title="Limpa o cache local e busca despesas direto do Supabase. Use quando despesas foram atualizadas externamente." style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">🔄 Recarregar Dados</button>
       <button class="btn" data-perm-admin onclick="openBudgetCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button>
       <button class="btn save" data-perm-edit id="btnSaveBudget" onclick="handleSaveBudget(this)">💾 Salvar</button>
     </div>
