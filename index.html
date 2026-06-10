@@ -2422,6 +2422,10 @@ async function handleSaveAll(btn){
 
     // 2b) Snapshot agregado — só se DRE_RAW está em memória
     if(DRE_RAW && DRE_RAW.length){
+      // Garante que custo de frete estará no snapshot (sem isso, cf=0 em todas as linhas)
+      var freteOk = await _dreEnsureFreteReady(function(msg){ setStep(msg); });
+      if(!freteOk){ erros.push('DRE: usuário cancelou por falta de frete'); }
+      else {
       setStep('Agregando DRE ('+DRE_RAW.length.toLocaleString('pt-BR')+' linhas)...');
       var snapshot;
       if(DRE_RAW.length > 50000){
@@ -2462,6 +2466,7 @@ async function handleSaveAll(btn){
         if(typeof DRE_SNAPSHOT !== 'undefined') DRE_SNAPSHOT = true;
         steps.push({name:'DRE ('+snapshot.length.toLocaleString('pt-BR')+' linhas, '+kb+'KB)', dt:Date.now()-tDre});
       }
+      } // fecha else do freteOk
     } else {
       steps.push({name:'DRE (só params — dados não carregados)', dt:Date.now()-tDre});
     }
@@ -3978,6 +3983,15 @@ function dreAggregateFull(raw){
   var map = {};
   var nk = function(v){ return dreNum(v)||0; };
 
+  // Diagnóstico: se for agregar dados brutos (com filial_nf_serie) mas o lookup
+  // de frete estiver vazio, avisa — senão o snapshot vai zerar custo_frete em todas as linhas.
+  if(raw && raw.length && (raw[0].filial_nf_serie || raw[0].FILIAL_NF_SERIE)){
+    var lookupKeys = DRE_FRETE_LOOKUP ? Object.keys(DRE_FRETE_LOOKUP).length : 0;
+    if(lookupKeys === 0){
+      console.warn('[dreAggregateFull] ⚠ DRE_FRETE_LOOKUP vazio mas dados brutos têm filial_nf_serie — snapshot vai ter cf=0! Chame _dreEnsureFreteReady() antes.');
+    }
+  }
+
   // Constrói lookup cod_vendedor -> nome_vendedor a partir dos próprios dados brutos
   // (cobre casos onde NOME_VENDEDOR existe na tabela mas DRE_VENDEDOR_LOOKUP ainda não foi populado via otb_canais)
   var _vLookup = Object.assign({}, DRE_VENDEDOR_LOOKUP);
@@ -4149,26 +4163,42 @@ function dreEnrichWithCanais(raw, canaisRaw, clusterRaw){
 
 var SNAP_CHUNK = 3500000; // ~3.5MB por chave — margem segura
 
+// Garante que DRE_FRETE_RAW está carregado e DRE_FRETE_LOOKUP construído antes
+// de regenerar snapshot. Sem isso, snapshot fica com cf=0 em todas as linhas,
+// fazendo a seção FRETE do DRE aparecer zerada quando outros usuários carregam.
+// Retorna true se o frete está pronto pra agregação, false se usuário cancelou.
+async function _dreEnsureFreteReady(progressCb){
+  if(!DRE_RAW || !DRE_RAW.length) return true; // sem dados brutos, nada a fazer
+  var hasNfSerie = !!(DRE_RAW[0].filial_nf_serie || DRE_RAW[0].FILIAL_NF_SERIE);
+  if(!hasNfSerie) return true; // dados não são brutos (snapshot) — cf já vem calculado
+  // Se DRE_FRETE_LOOKUP está populado, lookup já foi construído — só checar
+  var lookupReady = DRE_FRETE_LOOKUP && Object.keys(DRE_FRETE_LOOKUP).length > 0;
+  if(lookupReady) return true;
+  // Se DRE_FRETE_RAW está em memória mas lookup vazio, só reconstrói
+  if(DRE_FRETE_RAW && DRE_FRETE_RAW.length){
+    dreBuildFreteLookup();
+    return true;
+  }
+  // Caso crítico: precisa fazer fetch on-demand
+  if(typeof progressCb === 'function') progressCb('Carregando frete...');
+  try{
+    DRE_FRETE_RAW = await fetchAll(TBLS.frete_dre);
+    console.log('[dre ensure frete] carregado on-demand:', DRE_FRETE_RAW.length, 'linhas');
+    dreBuildFreteLookup();
+    return true;
+  } catch(e){
+    console.warn('[dre ensure frete] falhou:', e.message);
+    return confirm('Não foi possível carregar dw_otb_frete_dre.\n\nSalvar mesmo assim? (custo de frete ficará zero no snapshot)');
+  }
+}
+
 async function handleSaveDre(btn){
   if(!canEdit()){ toast('🔒 Você não tem permissão para salvar.','err'); return; }
   var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
   try{
-    // Verificação: se DRE_RAW tem filial_nf_serie mas DRE_FRETE_RAW está vazio,
-    // tenta carregar antes da agregação para garantir rateio correto do frete
-    var hasNfSerie = DRE_RAW.length && (DRE_RAW[0].filial_nf_serie || DRE_RAW[0].FILIAL_NF_SERIE);
-    if(hasNfSerie && (!DRE_FRETE_RAW || DRE_FRETE_RAW.length === 0)){
-      btn.textContent = '⏳ Carregando frete...';
-      try{
-        DRE_FRETE_RAW = await fetchAll(TBLS.frete_dre);
-        console.log('[DRE save] frete carregado on-demand:', DRE_FRETE_RAW.length, 'linhas');
-        dreBuildFreteLookup();
-      } catch(e){
-        console.warn('[DRE save] frete on-demand falhou:', e.message);
-        if(!confirm('Não foi possível carregar dw_otb_frete_dre.\n\nSalvar mesmo assim? (custo de frete ficará zero)')){
-          btn.disabled=false; btn.textContent=orig; return;
-        }
-      }
-    }
+    // Garante que custo de frete estará no snapshot
+    var freteReady = await _dreEnsureFreteReady(function(msg){ btn.textContent = '⏳ ' + msg; });
+    if(!freteReady){ btn.disabled=false; btn.textContent=orig; return; }
     btn.textContent = '⏳ Agregando...';
     var snapshot;
     if(DRE_RAW.length){
@@ -7624,6 +7654,9 @@ async function saveAndApplyDreCfg(btn){
     });
 
     // Também atualiza o payload principal (com snapshot se disponível)
+    // Garante que custo de frete estará no snapshot (sem isso, cf=0 em todas as linhas)
+    var freteOkCfg = await _dreEnsureFreteReady(function(msg){ btn.textContent = '⏳ ' + msg; });
+    if(!freteOkCfg){ btn.disabled=false; btn.textContent=orig; return; }
     var snapshot = DRE_RAW.length ? dreAggregateFull(DRE_RAW) : null;
     var payload = {
       config: DRE_CONFIG,
