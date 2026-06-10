@@ -1210,6 +1210,29 @@ async function afterLogin(){
   showScreen('screenHome');
   // Captura e-mail do usuário logado
   CURRENT_USER_EMAIL = (_session && _session.user && _session.user.email) ? _session.user.email.toLowerCase().trim() : '';
+  // CRÍTICO: invalida IDB cache de chaves que mudaram desde a última sessão.
+  // Sem isso, usuários veem dados desatualizados por até 1h (TTL do IDB) mesmo
+  // após o admin salvar e eles darem Ctrl+Shift+R (que não limpa IDB).
+  // Faz UM round-trip pegando todas as CRITICAL_KEYS de uma vez.
+  try {
+    if(typeof CRITICAL_KEYS !== 'undefined' && CRITICAL_KEYS.length && typeof clearIdbCache === 'function'){
+      var inList = CRITICAL_KEYS.map(function(k){ return '"'+k+'"'; }).join(',');
+      var rows = await supaFetch('/rest/v1/' + TBLS.save_dre + '?key=in.(' + inList + ')&select=key,value');
+      var remoteLens = {};
+      (rows||[]).forEach(function(r){ remoteLens[r.key] = (r.value||'').length; });
+      var invalidated = 0;
+      for(var ck=0; ck<CRITICAL_KEYS.length; ck++){
+        var k = CRITICAL_KEYS[ck];
+        var remote = remoteLens[k] || 0;
+        var local  = (typeof _otbChksumGet === 'function') ? _otbChksumGet(k) : 0;
+        if(remote !== local){
+          try { await clearIdbCache(TBLS.save_dre + '/' + k); invalidated++; } catch(e){}
+          if(typeof _otbChksumSet === 'function') _otbChksumSet(k, remote);
+        }
+      }
+      if(invalidated > 0) console.log('[afterLogin] IDB invalidado pra '+invalidated+' chave(s) stale');
+    }
+  } catch(e){ console.warn('[afterLogin] check stale IDB falhou:', e.message); }
   // Carrega permissões salvas
   try{
     var permSaved = await supaLoad(TBLS.save_dre, 'user_permissions');
@@ -3815,6 +3838,22 @@ async function loadDreFromSupabase(forceRaw){
       DRE_SNAPSHOT = true;
       dreShowProgress(100, 100);
       console.log('[DRE] snapshot OK:', DRE_RAW.length, 'linhas');
+      // DIAGNÓSTICO FRETE: se o snapshot tem rf/cf zerados em TUDO, o snapshot é o problema.
+      // Mostra totais pra usuário identificar se precisa "Recarregar Dados" + "Salvar" pra regerar.
+      try {
+        var _totRf=0, _totCf=0, _nz=0;
+        DRE_RAW.forEach(function(r){
+          var rfv = parseFloat(r.rec_frete||r.REC_FRETE||0)||0;
+          var cfv = parseFloat(r.custo_frete||r.CUSTO_FRETE||0)||0;
+          _totRf += rfv; _totCf += cfv;
+          if(rfv>0 || cfv>0) _nz++;
+        });
+        if(_totRf===0 && _totCf===0 && DRE_RAW.length>0){
+          console.warn('[DRE] ⚠ SNAPSHOT TEM rf=0 E cf=0 EM TODAS AS '+DRE_RAW.length+' LINHAS — clique em "🔄 Recarregar Dados" e depois "💾 Salvar" pra regerar o snapshot com os valores corretos da base.');
+        } else {
+          console.log('[DRE] snapshot frete — Receita Frete total: R$ '+Math.round(_totRf).toLocaleString('pt-BR')+' | Custo Frete total: R$ '+Math.round(_totCf).toLocaleString('pt-BR')+' | linhas com frete>0: '+_nz+'/'+DRE_RAW.length);
+        }
+      } catch(_e){}
     } else {
       // Busca dados brutos — carrega tabelas em paralelo para ser mais rápido
       DRE_SNAPSHOT = false;
@@ -6591,6 +6630,14 @@ async function _dismissUpdateAlert(){
 // Muito mais leve que handleReloadAll (que recarrega tudo, ~25 MB).
 async function _smartReloadKeys(changedKeys){
   var rerenderTargets = {};
+  // CRÍTICO: bypassa o cache IDB pra essas chaves. Sem isso, _smartReloadKeys leria do
+  // IDB local desatualizado (TTL 1h) e o usuário continuaria vendo a versão antiga
+  // mesmo depois de clicar em "🔄 Atualizar Agora".
+  if(typeof clearIdbCache === 'function'){
+    for(var ck=0; ck<changedKeys.length; ck++){
+      try { await clearIdbCache(TBLS.save_dre + '/' + changedKeys[ck]); } catch(e){}
+    }
+  }
   for(var i=0; i<changedKeys.length; i++){
     var key = changedKeys[i];
     try {
