@@ -8282,14 +8282,16 @@ var _saveTimer   = null;
 var _saveActive  = false;
 
 function scheduleClassifSave(){
-  // DELTA SAVE: grava só as partes voláteis (overrides, sim, projeções) numa chave separada
-  // budget_classif_vol (~15 KB) em vez do payload inteiro budget_classif (~500 KB).
-  // Reduz egress por save em ~33×. A classif estável só é gravada via "Salvar Configurações"
-  // ou "Salvar Tudo" (que também limpa o _vol pra evitar deltas órfãos).
+  // AUTOSAVE COMPLETO: grava todos os campos voláteis + classif numa chave dedicada
+  // budget_classif_vol. Antes pulava classif pra economizar ingress, mas isso causava
+  // bug: edições em massa de tipo/área ficavam só no navegador do admin (outros usuários
+  // não viam até clicarem em "Salvar"). Como supaSave usa return=minimal e gzip
+  // comprime classif (~500KB) pra ~75-125KB, o impacto em egress/cota Pro é zero.
   _saveQueue['budget_classif_vol'] = {
     pending: true,
     getPayload: function(){
       return {
+        classif:        BUDGET_CFG.classif        || {},
         tiposIgnorados: BUDGET_CFG.tiposIgnorados || {},
         tiposDespGerais:BUDGET_CFG.tiposDespGerais|| {},
         tiposCD:        BUDGET_CFG.tiposCD        || {},
@@ -8374,13 +8376,19 @@ async function _mergeBudgetClassifVol(baseSavedAt){
     // Safety net: NÃO sobrescreve campo da base com um vol VAZIO
     // (evita perda de dados se um save antigo tiver gravado o campo sem conteúdo)
     var _hasContent = function(obj){ return obj && typeof obj === 'object' && Object.keys(obj).length > 0; };
+    if(_hasContent(vol.classif))         BUDGET_CFG.classif         = vol.classif;
     if(_hasContent(vol.tiposIgnorados))  BUDGET_CFG.tiposIgnorados  = vol.tiposIgnorados;
     if(_hasContent(vol.tiposDespGerais)) BUDGET_CFG.tiposDespGerais = vol.tiposDespGerais;
     if(_hasContent(vol.tiposCD))         BUDGET_CFG.tiposCD         = vol.tiposCD;
     if(_hasContent(vol.budgetOverrides)) BUDGET_CFG.budgetOverrides = vol.budgetOverrides;
     if(_hasContent(vol.folhaProjecao))   BUDGET_CFG.folhaProjecao   = vol.folhaProjecao;
     if(_hasContent(vol.sim))             BUDGET_CFG.sim             = vol.sim;
-    console.log('[delta] budget_classif_vol aplicado em cima da base — overrides:',
+    // Invalida índice de classif pra que getBudgetClassif reconstrua com os deltas aplicados
+    if(_hasContent(vol.classif) && typeof invalidateBudgetClassifIndex === 'function'){
+      invalidateBudgetClassifIndex();
+    }
+    console.log('[delta] budget_classif_vol aplicado em cima da base — classif:',
+      Object.keys(BUDGET_CFG.classif||{}).length, '| overrides:',
       Object.keys(BUDGET_CFG.budgetOverrides||{}).length, '| sim:', Object.keys(BUDGET_CFG.sim||{}).length);
     return true;
   } catch(e){ console.warn('[delta] erro ao mergear _vol:', e.message); return false; }
@@ -10728,6 +10736,9 @@ function bcfgBulkApply(){
     if(tipo) BUDGET_CFG.classif[k].tipo = tipo;
     if(area) BUDGET_CFG.classif[k].area = area;
   });
+
+  // Invalida índice imediatamente pra render usar classif atualizado
+  if(typeof invalidateBudgetClassifIndex === 'function') invalidateBudgetClassifIndex();
 
   // Agenda save no Supabase via fila centralizada
   if(typeof scheduleClassifSave === 'function') scheduleClassifSave();
