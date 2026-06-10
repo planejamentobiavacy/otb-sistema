@@ -1274,7 +1274,7 @@ async function afterLogin(){
           // Normaliza pct13ferias se corrompido (>1 = estava em %, converte para decimal)
           if(DRE_CFG_PARAMS[am].pct13ferias > 1) DRE_CFG_PARAMS[am].pct13ferias /= 100;
           // Sanitiza NaN e outliers de percentuais
-          ['desp_mkt','sal_adm','desp_gerais','cd_mensal','custoGrade'].forEach(function(k){
+          ['desp_mkt','sal_adm','desp_gerais','cd_mensal','custoGrade','custo_etiquetagem'].forEach(function(k){
             if(DRE_CFG_PARAMS[am][k] != null){
               var _v = parseFloat(DRE_CFG_PARAMS[am][k]);
               if(isNaN(_v)||_v<0) delete DRE_CFG_PARAMS[am][k];
@@ -1287,7 +1287,7 @@ async function afterLogin(){
             else DRE_CFG_PARAMS[am].ajuste_cmv = _ac;
           }
           // Sanitiza percentuais: se valor > 1 (ex: 6.5 em vez de 0.065), converte
-          ['fob','closer','developer','farmer','martins','rca','branding','leads'].forEach(function(k){
+          ['fob','closer','developer','farmer','martins','rca','branding','leads','frete_dev_pct'].forEach(function(k){
             if(DRE_CFG_PARAMS[am][k] != null){
               var _pv = parseFloat(DRE_CFG_PARAMS[am][k]);
               if(isNaN(_pv)||_pv<0) delete DRE_CFG_PARAMS[am][k];
@@ -1295,6 +1295,17 @@ async function afterLogin(){
               else if(_pv > 1) DRE_CFG_PARAMS[am][k] = parseFloat((_pv/100).toFixed(6));
             }
           });
+          // frete_dev_canais: garante que é array de strings UPPERCASE
+          if(DRE_CFG_PARAMS[am].frete_dev_canais != null){
+            if(!Array.isArray(DRE_CFG_PARAMS[am].frete_dev_canais)){
+              delete DRE_CFG_PARAMS[am].frete_dev_canais;
+            } else {
+              DRE_CFG_PARAMS[am].frete_dev_canais = DRE_CFG_PARAMS[am].frete_dev_canais
+                .filter(function(c){ return c && typeof c === 'string'; })
+                .map(function(c){ return c.toUpperCase().trim(); });
+              if(!DRE_CFG_PARAMS[am].frete_dev_canais.length) delete DRE_CFG_PARAMS[am].frete_dev_canais;
+            }
+          }
         });
       }
       console.log('[afterLogin] dre_cfg_params loaded, 202604='+JSON.stringify(DRE_CFG_PARAMS['202604']));
@@ -4872,6 +4883,9 @@ function dreAgg(rows){
   var fat=0,fat_v=0,dev=0,qtd=0,custo=0,icms=0,cofins=0,pis=0,fecpst=0,rf=0,cf=0,qtdGradeHava=0;
   // Agregados específicos da HAVAIANAS — usados para calcular FOB só sobre essa marca
   var custo_hava=0, fat_v_hava=0;
+  // Custo Frete Dev: aplica pct sobre devolução dos canais selecionados (config por mês)
+  // Custo Etiquetagem: aplica R$/par sobre pares da transportadora EBAZAR.COM.BR LTDA (config por mês)
+  var custo_frete_dev=0, custo_etiquetagem=0;
   rows.forEach(function(r){
     fat    += dreNum(r.faturamento       || r.FATURAMENTO       || 0);
     fat_v  += dreNum(r.faturamento_venda || r.FATURAMENTO_VENDA || r.faturamento || r.FATURAMENTO || 0);
@@ -4892,6 +4906,33 @@ function dreAgg(rows){
       custo_hava += _custo;
       fat_v_hava += dreNum(r.faturamento_venda || r.FATURAMENTO_VENDA || r.faturamento || r.FATURAMENTO || 0);
     }
+    // Custo Frete Dev e Etiquetagem — usam config por mês (DRE_CFG_PARAMS[am])
+    var _ano = String(r.ano||r.ANO||'');
+    var _mes = String(r.mes||r.MES||'').padStart(2,'0');
+    if(_ano && _mes && _mes!=='00'){
+      var _am = _ano + _mes;
+      var _amH = _ano + '-' + _mes;
+      var _p = (typeof DRE_CFG_PARAMS !== 'undefined') ? (DRE_CFG_PARAMS[_am] || DRE_CFG_PARAMS[_amH]) : null;
+      if(_p){
+        // Frete Dev: pct sobre devolução do canal selecionado
+        var _pctDev = parseFloat(_p.frete_dev_pct);
+        var _canDev = Array.isArray(_p.frete_dev_canais) ? _p.frete_dev_canais : [];
+        if(!isNaN(_pctDev) && _pctDev > 0 && _canDev.length){
+          var _canalLinha = String(dreResolveCanal(r)||'').trim().toUpperCase();
+          if(_canDev.indexOf(_canalLinha) >= 0){
+            custo_frete_dev += dreNum(r.devolucao_venda||r.DEVOLUCAO_VENDA||0) * _pctDev;
+          }
+        }
+        // Etiquetagem: R$/par sobre transportadora EBAZAR.COM.BR LTDA
+        var _custoEtqUnit = parseFloat(_p.custo_etiquetagem);
+        if(!isNaN(_custoEtqUnit) && _custoEtqUnit > 0){
+          var _tr = String(r.transportadora||r.TRANSPORTADORA||'').toUpperCase().trim();
+          if(_tr.indexOf('EBAZAR') >= 0){
+            custo_etiquetagem += dreNum(r.qtd||r.QTD||0) * _custoEtqUnit;
+          }
+        }
+      }
+    }
   });
   var _aSet={};
   rows.forEach(function(r){
@@ -4906,7 +4947,7 @@ function dreAgg(rows){
     if(!c) return;
     fat_v_canal[c]=(fat_v_canal[c]||0)+dreNum(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO||0);
   });
-  return{fat,fat_v,dev,qtd,custo,icms,cofins,pis,fecpst,rec_frete:rf,custo_frete:cf,qtdGradeHava,anomesList,fat_v_canal,custo_hava,fat_v_hava};
+  return{fat,fat_v,dev,qtd,custo,icms,cofins,pis,fecpst,rec_frete:rf,custo_frete:cf,qtdGradeHava,anomesList,fat_v_canal,custo_hava,fat_v_hava,custo_frete_dev:custo_frete_dev,custo_etiquetagem:custo_etiquetagem};
 }
 function dreCalc(a,shareRB,shareQTD,canalCtx,vendedorOverride){
   shareRB=shareRB||1;shareQTD=shareQTD||1;
@@ -5041,7 +5082,9 @@ function dreCalc(a,shareRB,shareQTD,canalCtx,vendedorOverride){
   // Apply shareRB to sv13ferias when not in canal context
   var sv13ferias_share = _salShare;
   var sv=sv_closer+sv_developer+sv_farmer+sv_hava+sv_ka,com=com_martins+com_rca;
-  var mb=rl-cmv-fob-grade; var pct13f=getSalPct('pct13ferias'); var sv13ferias=sv*(pct13f>0?pct13f:0.11); var mc=mb-sv-com-sv13ferias;
+  // Custo Etiquetagem entra ANTES de Margem Bruta (junto com FOB e Montagem Grade)
+  var etq = a.custo_etiquetagem||0;
+  var mb=rl-cmv-fob-grade-etq; var pct13f=getSalPct('pct13ferias'); var sv13ferias=sv*(pct13f>0?pct13f:0.11); var mc=mb-sv-com-sv13ferias;
   var rf_rec=a.rec_frete;
   // freteMetodo: 'base' = estima 3,1% da Receita Líquida | 'qtd' (default) = valor real da base (pode ser zero)
   var cf;
@@ -5159,7 +5202,9 @@ function dreCalc(a,shareRB,shareQTD,canalCtx,vendedorOverride){
   var dg_unit = getFixo('desp_gerais', FIXOS_DEF.desp_gerais);
   var cd_unit = getFixo('cd_mensal', FIXOS_DEF.cd_mensal);
   // sa_unit já é a soma total dos meses; sa = sa_unit * shareRB (rateio por compartilhamento)
-  var mcon=mc+rf_rec-cf-mkt,sa=sa_unit*shareRB,dg=dg_unit*shareRB,cd=cd_unit*shareQTD;
+  // Custo Frete Dev entra junto com Custo Frete na Margem de Contribuição
+  var cf_dev = a.custo_frete_dev||0;
+  var mcon=mc+rf_rec-cf-cf_dev-mkt,sa=sa_unit*shareRB,dg=dg_unit*shareRB,cd=cd_unit*shareQTD;
   // 13º + Férias Adm: usa pct13ferias_adm se configurado, senão fallback para pct13ferias
   var pct13Adm = (function(){
     if(!a.anomesList || !a.anomesList.length) return null;
@@ -5175,7 +5220,7 @@ function dreCalc(a,shareRB,shareQTD,canalCtx,vendedorOverride){
   var pct13fAdmEff = pct13Adm != null ? pct13Adm : (pct13f>0?pct13f:0.11);
   var sa13ferias = sa * pct13fAdmEff;
   var ebt=mcon-sa-sa13ferias-dg-cd;
-  return{rb_dev,dev,rb_gross,rb,imp,icms:a.icms,pc:a.cofins+a.pis+a.fecpst,rl,qtd:a.qtd,cmv_b,cmv,cmv_base,ajuste_cmv:ajusteCmv,mkp,mg_prod,fob,mb,sv,sv_closer,sv_developer,sv_farmer,sv_hava,sv_ka,sv13ferias,com,com_martins,com_rca,mc,rf:rf_rec,cf,mkt,mkt_branding,mkt_leads,mcon,grade,sa,sa13ferias,dg,cd,ebt};
+  return{rb_dev,dev,rb_gross,rb,imp,icms:a.icms,pc:a.cofins+a.pis+a.fecpst,rl,qtd:a.qtd,cmv_b,cmv,cmv_base,ajuste_cmv:ajusteCmv,mkp,mg_prod,fob,mb,sv,sv_closer,sv_developer,sv_farmer,sv_hava,sv_ka,sv13ferias,com,com_martins,com_rca,mc,rf:rf_rec,cf,cf_dev:cf_dev,etq:etq,mkt,mkt_branding,mkt_leads,mcon,grade,sa,sa13ferias,dg,cd,ebt};
 }
 var dreBrl=function(v){var n=Math.round(v);return n<0?'<span style="color:#c0181a;font-weight:700">-R$ '+Math.abs(n).toLocaleString('pt-BR')+'</span>':'R$ '+n.toLocaleString('pt-BR');};
 var dreBrlp=function(v){return'R$ '+Math.round(v).toLocaleString('pt-BR');};
@@ -5276,9 +5321,9 @@ function dreTabela(cols){
   +sp()+row('Impostos (-)',function(d){return dreBrl(d.imp);},'row-sub')+row('&nbsp;&nbsp;ICMS',function(d){return dreBrl(d.icms);},'row-sub')+rowP('&nbsp;&nbsp;% ICMS',function(d){return drePct(d.icms,d.rb);})+row('&nbsp;&nbsp;PIS/COFINS',function(d){return dreBrl(d.pc);},'row-sub')+rowP('&nbsp;&nbsp;% PIS/COFINS',function(d){return drePct(d.pc,d.rb);})+rowT('Receita Líquida',function(d){return dreBrl(d.rl);})
   +sp()+sec('📦 VOLUME')+row('Pares',function(d){return dreNum2(d.qtd);})+row('Preço Médio',function(d){return d.qtd>0?'R$ '+(d.rb/d.qtd).toFixed(1):'-';})
   +sp()+sec('💲 CMV')+rowT('CMV (-)',function(d){return dreBrl(d.cmv_base!=null?d.cmv_base:d.cmv);})+row('Ajuste CMV (-)',function(d){return dreBrl(d.ajuste_cmv||0);},'row-sub')+rowT('CMV Total (-)',function(d){return dreBrl(d.cmv);})+rowP('% CMV',function(d){return drePct(d.cmv,d.rl);})+rowP('CMV Bruto',function(d){return d.cmv_b>0?dreBrlp(d.cmv_b):'-';})+rowP('MKP %',function(d){return d.cmv_b>0?drePctD(d.mkp):'-';})+rowP('Margem Produto %',function(d){return drePctD(d.mg_prod);})
-  +sp()+row('FOB (-)',function(d){return dreBrl(d.fob);},'row-sub')+rowP('% FOB',function(d){return drePct(d.fob,d.rl);})+row('Montagem Grade (-)',function(d){return dreBrl(d.grade||0);},'row-sub')+rowP('% Montagem Grade',function(d){return drePct(d.grade||0,d.rl);})+sp()+rowT('Margem Bruta',function(d){return dreBrl(d.mb);})+rowP('Margem Bruta %',function(d){return drePct(d.mb,d.rl);})
+  +sp()+row('FOB (-)',function(d){return dreBrl(d.fob);},'row-sub')+rowP('% FOB',function(d){return drePct(d.fob,d.rl);})+row('Montagem Grade (-)',function(d){return dreBrl(d.grade||0);},'row-sub')+rowP('% Montagem Grade',function(d){return drePct(d.grade||0,d.rl);})+row('Custo Etiquetagem (-)',function(d){return dreBrl(d.etq||0);},'row-sub')+rowP('% Etiquetagem',function(d){return drePct(d.etq||0,d.rl);})+sp()+rowT('Margem Bruta',function(d){return dreBrl(d.mb);})+rowP('Margem Bruta %',function(d){return drePct(d.mb,d.rl);})
   +sp()+sec('🏷 DESPESAS COMERCIAIS')+row('Salários (-)',function(d){return dreBrl(d.sv||0);},'row-sub')+row('Comissão (-)',function(d){return dreBrl((d.com||0));},'row-sub')+row('13º + Férias (-)',function(d){return dreBrl(d.sv13ferias||0);},'row-sub')+rowT('Total Comercial',function(d){return dreBrl((d.sv||0)+(d.com||0)+(d.sv13ferias||0));})+rowP('% Total Comercial',function(d){return drePct((d.sv||0)+(d.com||0)+(d.sv13ferias||0),d.rl);})
-  +sp()+sec('🚚 FRETE')+row('Receita Frete (+)',function(d){return dreBrl(d.rf);},'row-sub')+row('Custo Frete (-)',function(d){return dreBrl(d.cf);},'row-sub')+rowP('% Frete / Rec Líq',function(d){return drePct(d.cf,d.rl);})+rowP('Frete / Par',function(d){return d.qtd>0?'R$ '+(d.cf/d.qtd).toFixed(2):'-';})
+  +sp()+sec('🚚 FRETE')+row('Receita Frete (+)',function(d){return dreBrl(d.rf);},'row-sub')+row('Custo Frete (-)',function(d){return dreBrl(d.cf);},'row-sub')+rowP('% Frete / Rec Líq',function(d){return drePct(d.cf,d.rl);})+row('Custo Frete Dev (-)',function(d){return dreBrl(d.cf_dev||0);},'row-sub')+rowP('% Frete Dev / Rec Líq',function(d){return drePct(d.cf_dev||0,d.rl);})+rowP('Frete / Par',function(d){return d.qtd>0?'R$ '+(d.cf/d.qtd).toFixed(2):'-';})
   +sp()+sec('📢 MARKETING')+row('Branding (-)',function(d){return dreBrl(d.mkt_branding!=null?d.mkt_branding:(d.mkt||0)/2);},'row-sub')+row('Leads Novos (-)',function(d){return dreBrl(d.mkt_leads!=null?d.mkt_leads:(d.mkt||0)/2);},'row-sub')+rowT('Total Marketing',function(d){return dreBrl(d.mkt||0);})+rowP('% Marketing',function(d){return drePct(d.mkt||0,d.rl);})
   +sp()+sec('💡 MARGEM DE CONTRIBUIÇÃO')+rowBig('Margem de Contribuição',function(d){return dreBrl(d.mcon);},16)+rowBigP('Margem Contrib %',function(d){return drePct(d.mcon,d.rl);},16)+rowP('Margem Contrib / Par',function(d){return d.qtd>0?'R$ '+(d.mcon/d.qtd).toFixed(2):'-';})
   +afterMcon+'</tbody></table></div>';
@@ -7580,6 +7625,34 @@ async function openDreCfg(){
       'Valor que será adicionado ao CMV (-) do DRE neste mês')
     +fieldBrlDec('Montagem Grade — Custo por Par (R$)', 'custoGrade', (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].custoGrade!=null)?DRE_CFG_PARAMS[am].custoGrade:(DRE_CONFIG_DEFAULTS.custoGrade||0),
       '👟 Custo unitário aplicado às qtd_grade_hava do mês')
+    +fieldBrlDec('Etiquetagem — Custo por Par (R$)', 'custo_etiquetagem',
+      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].custo_etiquetagem!=null)?DRE_CFG_PARAMS[am].custo_etiquetagem:0,
+      '🏷 Custo unitário aplicado aos pares da transportadora <strong>EBAZAR.COM.BR LTDA</strong>')
+    +'</div>'
+    // ── Frete Dev: % aplicado à devolução dos canais selecionados ──
+    +'<div style="padding:10px 14px 0;border-top:1px dashed #d0d8ee;margin-top:10px">'
+    +'<div style="font-size:11px;color:#7a8ab0;margin-bottom:8px;line-height:1.5">🚚 <strong>Custo Frete Dev</strong> — aparece na seção FRETE do DRE. Pega a devolução dos canais marcados abaixo e aplica o %.</div>'
+    +'<div class="dre-cfg-grid">'
+    +fieldPct('% Frete Dev', 'frete_dev_pct',
+      (DRE_CFG_PARAMS[am]&&DRE_CFG_PARAMS[am].frete_dev_pct!=null)?DRE_CFG_PARAMS[am].frete_dev_pct:0,
+      'Percentual aplicado sobre a devolução dos canais selecionados')
+    +(function(){
+      var selected = (DRE_CFG_PARAMS[am] && Array.isArray(DRE_CFG_PARAMS[am].frete_dev_canais)) ? DRE_CFG_PARAMS[am].frete_dev_canais : [];
+      var canaisDisp = ['MARTINS','RCA','CLOSER','DEVELOPER','FARMER','HAVA','KA'];
+      var chk = canaisDisp.map(function(c){
+        var on = selected.indexOf(c) >= 0;
+        return '<label style="display:inline-flex;align-items:center;gap:4px;padding:5px 9px;border:1.5px solid '+(on?'#2352c8':'#d0d8ee')+';border-radius:14px;font-size:11px;font-weight:600;background:'+(on?'#2352c8':'#f7f9ff')+';color:'+(on?'#fff':'#0f1a3a')+';cursor:pointer;font-family:inherit;transition:all .1s">'
+          +'<input type="checkbox" data-frete-dev-canal value="'+c+'"'+(on?' checked':'')+' onchange="this.parentElement.style.background=this.checked?\'#2352c8\':\'#f7f9ff\';this.parentElement.style.color=this.checked?\'#fff\':\'#0f1a3a\';this.parentElement.style.borderColor=this.checked?\'#2352c8\':\'#d0d8ee\'" style="margin:0">'
+          +c.charAt(0)+c.slice(1).toLowerCase()
+          +'</label>';
+      }).join('');
+      return '<div class="dre-cfg-field" style="grid-column:span 2">'
+        +'<label>Canais aplicados</label>'
+        +'<div style="display:flex;flex-wrap:wrap;gap:5px;padding:4px 0">'+chk+'</div>'
+        +'<span class="hint" style="color:#7a8ab0">💡 Marque os canais cuja devolução entra no cálculo. Vazio = Frete Dev fica zero.</span>'
+        +'</div>';
+    })()
+    +'</div>'
     +'</div></div>'
 
     // ── SALÁRIOS COMERCIAIS (editáveis, sobrepõem Folha quando preenchidos) ──
@@ -7798,6 +7871,20 @@ function applyDreCfg(){
     DRE_CFG_PARAMS[am].cd_mensal  = gv('cd_mensal');
     DRE_CFG_PARAMS[am].custoGrade = gv('custoGrade');
     DRE_CFG_PARAMS[am].ajuste_cmv = gv('ajuste_cmv');
+    // Etiquetagem — custo por par. Vazio/0 → remove pra não ocupar espaço no payload.
+    var _etqVal = gv('custo_etiquetagem');
+    if(_etqVal > 0){ DRE_CFG_PARAMS[am].custo_etiquetagem = _etqVal; }
+    else { delete DRE_CFG_PARAMS[am].custo_etiquetagem; }
+    // Frete Dev — % e canais selecionados
+    var _freteDevPct = pctVal('frete_dev_pct');
+    if(_freteDevPct > 0){ DRE_CFG_PARAMS[am].frete_dev_pct = _freteDevPct; }
+    else { delete DRE_CFG_PARAMS[am].frete_dev_pct; }
+    var _freteDevCanais = Array.prototype.map.call(
+      document.querySelectorAll('input[data-frete-dev-canal]:checked'),
+      function(cb){ return cb.value; }
+    );
+    if(_freteDevCanais.length){ DRE_CFG_PARAMS[am].frete_dev_canais = _freteDevCanais; }
+    else { delete DRE_CFG_PARAMS[am].frete_dev_canais; }
   } else {
     // Sem mês: atualiza defaults globais (sal_adm preservado pra fallback caso Folha não carregue)
     FIXOS_DEF.marketing   = gv('desp_mkt');
