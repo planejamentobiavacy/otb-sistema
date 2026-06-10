@@ -6526,19 +6526,9 @@ function _showUpdateAlert(changedKeys){
   var hasDre    = /dre/.test(keysStr);
   var hasFolha  = /folha/.test(keysStr);
 
-  // Botão contextual baseado na tela atual + áreas afetadas
-  var screen = document.querySelector('.screen-active');
-  var screenId = screen ? screen.id : '';
-  var actionBtnHtml;
-  if(screenId === 'screenBudget' && hasBudget){
-    actionBtnHtml = '<button onclick="_updateAlertReload(\'budget\', this)" style="background:#0f1a3a;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer">🔄 Recarregar Dados</button>';
-  } else if(screenId === 'screenDre' && hasDre){
-    actionBtnHtml = '<button onclick="_updateAlertReload(\'dre\', this)" style="background:#0f1a3a;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer">🔄 Recarregar Dados</button>';
-  } else if(screenId === 'screenFolha' && hasFolha){
-    actionBtnHtml = '<button onclick="_updateAlertReload(\'folha\', this)" style="background:#0f1a3a;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer">🔄 Recarregar Folha</button>';
-  } else {
-    actionBtnHtml = '<button onclick="_updateAlertReload(\'all\', this)" style="background:#0f1a3a;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer">↺ Recarregar Tudo</button>';
-  }
+  // Guarda changedKeys numa propriedade global pro botão acessar (não passa via onclick HTML — evita problemas de escape)
+  window._lastUpdateChangedKeys = changedKeys.slice();
+  var actionBtnHtml = '<button onclick="_updateAlertReload(window._lastUpdateChangedKeys, this)" style="background:#0f1a3a;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer">🔄 Atualizar Agora</button>';
 
   // Label legível das áreas
   var labelParts = [];
@@ -6548,7 +6538,7 @@ function _showUpdateAlert(changedKeys){
   if(!labelParts.length) labelParts.push('configurações');
   var label = labelParts.join(' / ');
 
-  b.innerHTML = '<span>🔄 Outro usuário fez alterações em <strong>'+escHtml(label)+'</strong>. Recarregue para ver as mudanças.</span>'
+  b.innerHTML = '<span>🔄 Outro usuário fez alterações em <strong>'+escHtml(label)+'</strong>. Clique para atualizar.</span>'
     +'<span style="display:flex;gap:8px;align-items:center">'
     +actionBtnHtml
     +'<button onclick="_dismissUpdateAlert()" title="Dispensar — vou voltar a alertar na próxima atualização" style="background:transparent;border:none;font-size:18px;cursor:pointer;color:#0f1a3a;padding:0 4px">×</button>'
@@ -6566,21 +6556,83 @@ async function _dismissUpdateAlert(){
   if(b) b.style.display = 'none';
 }
 
-async function _updateAlertReload(scope, btn){
-  if(btn){ btn.disabled = true; btn.textContent = '⏳ Recarregando...'; }
+// Smart reload: recarrega APENAS as keys de save_dre que mudaram e atualiza memória.
+// NÃO recarrega dados brutos (despesa, venda, folha) — só configs e classificações.
+// Muito mais leve que handleReloadAll (que recarrega tudo, ~25 MB).
+async function _smartReloadKeys(changedKeys){
+  var rerenderTargets = {};
+  for(var i=0; i<changedKeys.length; i++){
+    var key = changedKeys[i];
+    try {
+      var data = await supaLoad(TBLS.save_dre, key);
+      if(!data) continue;
+      if(key === 'budget_classif'){
+        if(data.classif) BUDGET_CFG.classif = data.classif;
+        if(data.tiposIgnorados) BUDGET_CFG.tiposIgnorados = data.tiposIgnorados;
+        if(data.tiposDespGerais) BUDGET_CFG.tiposDespGerais = data.tiposDespGerais;
+        if(data.tiposCd) BUDGET_CFG.tiposCd = data.tiposCd;
+        rerenderTargets.budget = true;
+        rerenderTargets.dreCfg = true; // base de Desp Gerais/CD muda
+      } else if(key === 'budget_cfg'){
+        // Merge cuidadoso pra não sobrescrever campos não-configurados remotamente
+        Object.keys(data).forEach(function(k){ BUDGET_CFG[k] = data[k]; });
+        rerenderTargets.budget = true;
+        rerenderTargets.dreCfg = true;
+      } else if(key === 'budget_classif_vol'){
+        if(data.budgetOverrides != null) BUDGET_CFG.budgetOverrides = data.budgetOverrides;
+        if(data.folhaProjecao != null) BUDGET_CFG.folhaProjecao = data.folhaProjecao;
+        rerenderTargets.budget = true;
+        rerenderTargets.dreCfg = true;
+      } else if(key === 'dre_cfg_params'){
+        // Atualiza DRE_CFG_PARAMS — merge
+        if(typeof data === 'object'){
+          Object.keys(data).forEach(function(k){ DRE_CFG_PARAMS[k] = data[k]; });
+        }
+        rerenderTargets.dre = true;
+        rerenderTargets.dreCfg = true;
+      } else if(key === 'folha_cfg'){
+        if(data.classif) FOLHA_CFG.classif = data.classif;
+        rerenderTargets.folha = true;
+        rerenderTargets.dreCfg = true;
+        rerenderTargets.budget = true; // afeta Salário Folha por área no Budget
+      }
+    } catch(e){
+      console.warn('[smartReload] erro em '+key+':', e.message);
+    }
+  }
+  // Re-render APENAS a tela ativa
+  var screen = document.querySelector('.screen-active');
+  var screenId = screen ? screen.id : '';
+  if(screenId === 'screenBudget' && rerenderTargets.budget && typeof renderBudget === 'function'){
+    renderBudget();
+  } else if(screenId === 'screenDre' && rerenderTargets.dre && typeof dreRender === 'function'){
+    dreRender();
+  } else if(screenId === 'screenFolha' && rerenderTargets.folha && typeof _folhaRenderAll === 'function'){
+    _folhaRenderAll();
+  }
+  // Se o DRE Config tá aberto, reabre pra refletir as mudanças
+  var dreCfgOpen = document.getElementById('dreCfgOverlay');
+  if(dreCfgOpen && dreCfgOpen.style.display !== 'none' && rerenderTargets.dreCfg && typeof openDreCfg === 'function'){
+    await openDreCfg();
+  }
+  // Atualiza checksums pra não disparar de novo
+  await _refreshAllChksums();
+  if(typeof _markLastReloadNow === 'function') _markLastReloadNow();
+}
+
+// Recebe os changedKeys detectados e faz reload cirúrgico
+async function _updateAlertReload(changedKeys, btn){
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Atualizando...'; }
   try {
-    if(scope === 'budget' && typeof budgetForceReload === 'function'){
-      await budgetForceReload(btn);
-    } else if(scope === 'dre' && typeof dreForceReload === 'function'){
-      await dreForceReload(btn);
-    } else if(scope === 'folha' && typeof folhaForceReload === 'function'){
-      await folhaForceReload(btn);
-    } else if(typeof handleReloadAll === 'function'){
+    if(Array.isArray(changedKeys) && changedKeys.length){
+      await _smartReloadKeys(changedKeys);
+    } else {
+      // Fallback se chegou sem keys — recarrega tudo
       var fakeBtn = document.createElement('button');
       await handleReloadAll(fakeBtn);
+      await _refreshAllChksums();
+      if(typeof _markLastReloadNow === 'function') _markLastReloadNow();
     }
-    await _refreshAllChksums();
-    if(typeof _markLastReloadNow === 'function') _markLastReloadNow();
     _updateAlertShown = false;
     var b = document.getElementById('updateAlert');
     if(b) b.style.display = 'none';
@@ -9014,7 +9066,12 @@ function renderBudget(anoFilter){
       } else {
         txt = isPct ? _bPct(v) : _bFmt(v);
       }
-      h += '<td style="text-align:center;padding:9px 8px;font-weight:800;color:#fff;font-size:13px;border-bottom:1px solid '+gradStart+'">'+txt+'</td>';
+      // Tooltip opcional (ex: EBITDA mostra valor do DRE pra comparação)
+      var tipAttr = '';
+      if(typeof opts.tooltipFn === 'function'){
+        try { var tip = opts.tooltipFn(ym); if(tip) tipAttr = ' title="'+escHtml(tip)+'"'; } catch(e){}
+      }
+      h += '<td style="text-align:center;padding:9px 8px;font-weight:800;color:#fff;font-size:13px;border-bottom:1px solid '+gradStart+'"'+tipAttr+'>'+txt+'</td>';
     });
     // Coluna ANO: soma para R$ ou média para %
     var yearVal;
@@ -9403,11 +9460,33 @@ function renderBudget(anoFilter){
   // EBITDA = Receita Líquida − CMV R$ − Total Despesas
   // Visível apenas para administradores (métrica financeira sensível)
   if(typeof isAdmin === 'function' && isAdmin()){
+    // Pré-computa EBITDA do DRE por mês pra tooltip (comparação Budget vs DRE realizado)
+    var _dreEbtByYm = {};
+    if(typeof DRE_RAW !== 'undefined' && DRE_RAW && DRE_RAW.length && typeof dreAgg === 'function' && typeof dreCalc === 'function'){
+      months.forEach(function(ym){
+        var ano = ym.slice(0,4), mes = ym.slice(5,7);
+        var rowsM = DRE_RAW.filter(function(r){
+          return String(r.ano||r.ANO||'') === ano && String(r.mes||r.MES||'').padStart(2,'0') === mes;
+        });
+        if(!rowsM.length) return;
+        try {
+          var calc = dreCalc(dreAgg(rowsM), 1, 1);
+          if(calc && calc.ebt != null) _dreEbtByYm[ym] = {ebt: calc.ebt, rl: calc.rl};
+        } catch(e){}
+      });
+    }
     summaryRow('EBITDA', '📊', '#1a2547', '#2352c8', function(ym){
       var rl = budgetReceitaLiquida(ym);
       var cmv = budgetCmvVal(ym);
       var td = totalDespesasGeral[ym]||0;
       return rl - cmv - td;
+    }, {
+      tooltipFn: function(ym){
+        var d = _dreEbtByYm[ym];
+        if(!d) return 'EBITDA DRE não disponível para este mês';
+        var pct = d.rl > 0 ? (d.ebt/d.rl*100).toFixed(1).replace('.', ',') + '%' : '-';
+        return 'EBITDA DRE realizado neste mês: R$ '+Math.round(d.ebt).toLocaleString('pt-BR')+'  •  '+pct+' da Receita Líquida';
+      }
     });
   }
 
