@@ -2345,6 +2345,7 @@ async function handleReloadAll(btn){
     toast('✅ Todas as tabelas recarregadas!');
     if(typeof _markLastReloadNow === 'function') _markLastReloadNow();
     if(typeof _hideStaleBanner === 'function') _hideStaleBanner();
+    if(typeof _invalidateMonthsRealizedCache === 'function') _invalidateMonthsRealizedCache();
   }
   btn.disabled = false; btn.textContent = orig;
 }
@@ -6379,6 +6380,32 @@ async function dreForceReload(btn){
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// CACHE: meses que TÊM folha realizada (qualquer linha em DRE_FOLHA_RAW/FOLHA_RAW)
+// ═══════════════════════════════════════════════════════════════════════════
+// Quando um mês tem QUALQUER folha real, ele é "passado" — as projeções
+// para esse mês são consideradas estagnadas e devem ser ignoradas.
+// ═══════════════════════════════════════════════════════════════════════════
+var _monthsWithRealizedFolha = null;
+
+function _buildMonthsWithRealizedFolha(){
+  _monthsWithRealizedFolha = {};
+  var src = (typeof DRE_FOLHA_RAW !== 'undefined' && DRE_FOLHA_RAW && DRE_FOLHA_RAW.length) ? DRE_FOLHA_RAW
+          : (typeof FOLHA_RAW !== 'undefined' && FOLHA_RAW && FOLHA_RAW.length) ? FOLHA_RAW : [];
+  src.forEach(function(r){
+    var p = String((typeof folhaGetPeriodo === 'function' ? folhaGetPeriodo(r) : '')||'').replace(/\D/g,'').slice(0,6);
+    if(p.length === 6) _monthsWithRealizedFolha[p] = 1;
+  });
+}
+function _monthHasAnyRealizedFolha(am){
+  if(_monthsWithRealizedFolha === null) _buildMonthsWithRealizedFolha();
+  var amSearch = String(am||'').replace(/-/g,'');
+  return !!_monthsWithRealizedFolha[amSearch];
+}
+function _invalidateMonthsRealizedCache(){
+  _monthsWithRealizedFolha = null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // DETECTOR DE ATUALIZAÇÕES DE OUTROS USUÁRIOS
 // ═══════════════════════════════════════════════════════════════════════════
 // Polling a cada 60s no Supabase. Compara o tamanho dos `value` das chaves
@@ -6799,7 +6826,9 @@ function _breakdownSalAdm(am){
     if(v > 0) byNome[nome] = (byNome[nome]||0) + v;
   });
   // Projeções — IGNORA se a mesma pessoa tem realizado no mês
-  if((BUDGET_CFG||{}).folhaProjecao){
+  // OU se o mês já tem qualquer folha realizada (passado — projeções estagnadas)
+  var monthHasRealized = (typeof _monthHasAnyRealizedFolha === 'function') ? _monthHasAnyRealizedFolha(am) : false;
+  if((BUDGET_CFG||{}).folhaProjecao && !monthHasRealized){
     Object.keys(BUDGET_CFG.folhaProjecao).forEach(function(k){
       var parts = k.split('|'); if(parts.length < 3) return;
       var pNome = parts[1];
@@ -6841,14 +6870,15 @@ function _breakdownSalCanal(canal, am){
     var v = _folhaRowS13(r) * prorate;
     if(v > 0) byNome[nome] = (byNome[nome]||0) + v;
   });
-  // Projeções — IGNORA se a mesma pessoa tem realizado no mês
-  if((BUDGET_CFG||{}).folhaProjecao){
+  // Projeções — IGNORA se a mesma pessoa tem realizado no mês OU se o mês já é "passado"
+  var monthHasRealized = (typeof _monthHasAnyRealizedFolha === 'function') ? _monthHasAnyRealizedFolha(am) : false;
+  if((BUDGET_CFG||{}).folhaProjecao && !monthHasRealized){
     Object.keys(BUDGET_CFG.folhaProjecao).forEach(function(k){
       var parts = k.split('|'); if(parts.length < 3) return;
       var pNome = parts[1];
       var pYm   = parts.slice(2).join('|');
       if(pYm !== ym) return;
-      if(realizedNames[pNome]) return; // ✋ evita double-counting
+      if(realizedNames[pNome]) return;
       var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
       if(isNaN(v) || v <= 0) return;
       var c = (FOLHA_CFG.classif||{})[pNome];
@@ -6883,6 +6913,8 @@ async function folhaForceReload(btn){
     if(typeof DRE_FOLHA_RAW !== 'undefined') DRE_FOLHA_RAW = [];
     // Recarrega
     await loadFolhaFromSupabase();
+    // Invalida cache de "meses com realizado" — agora pode ter mais meses
+    if(typeof _invalidateMonthsRealizedCache === 'function') _invalidateMonthsRealizedCache();
     // Re-renderiza DRE Config se estiver aberto (pra atualizar os "Base" valores)
     var dreCfgOpen = document.getElementById('dreCfgOverlay');
     if(dreCfgOpen && dreCfgOpen.style.display !== 'none' && typeof openDreCfg === 'function'){
@@ -6954,6 +6986,8 @@ async function openDreCfg(){
   function _folhaProjForCanal(canal, am){
     if(!BUDGET_CFG || !BUDGET_CFG.folhaProjecao) return 0;
     if(typeof FOLHA_CFG === 'undefined' || !FOLHA_CFG.classif) return 0;
+    // Se o mês já tem QUALQUER folha realizada, ignora todas as projeções (são estagnadas)
+    if(typeof _monthHasAnyRealizedFolha === 'function' && _monthHasAnyRealizedFolha(am)) return 0;
     var canalUC = String(canal||'').toUpperCase();
     var ym = am.length === 6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
     // Pré-computa: pessoas com realizado nesse mês (pra evitar double-counting)
@@ -6989,6 +7023,8 @@ async function openDreCfg(){
   function _folhaProjForAdm(am){
     if(!BUDGET_CFG || !BUDGET_CFG.folhaProjecao) return 0;
     if(typeof FOLHA_CFG === 'undefined' || !FOLHA_CFG.classif) return 0;
+    // Se o mês já tem QUALQUER folha realizada, ignora todas as projeções (são estagnadas)
+    if(typeof _monthHasAnyRealizedFolha === 'function' && _monthHasAnyRealizedFolha(am)) return 0;
     var ym = am.length === 6 ? am.slice(0,4)+'-'+am.slice(4,6) : am;
     // Pré-computa: pessoas com realizado nesse mês (pra evitar double-counting)
     var realizedNames = {};
@@ -9055,14 +9091,21 @@ function renderBudget(anoFilter){
     });
   }
   // Aplica projeções por pessoa: só conta se essa pessoa NÃO tem realizado naquele ym
+  // E só se o MÊS inteiro não tem nenhuma folha realizada (caso contrário, projeções são consideradas estagnadas)
   if(BUDGET_CFG.folhaProjecao){
-    var _projDiag = {applied:0, skipped:0, byArea:{}};
+    var _projDiag = {applied:0, skipped:0, skippedPastMonth:0, byArea:{}};
     Object.keys(BUDGET_CFG.folhaProjecao).forEach(function(k){
       var parts = k.split('|'); // area|nome|ym
       if(parts.length !== 3) return;
       var area = parts[0], nome = parts[1], ym = parts[2];
       if(!months.includes(ym)) return;
-      // Se ESSA pessoa tem realizado nesse mês, não soma projeção
+      // Se mês já tem QUALQUER folha realizada, projeções são consideradas estagnadas
+      var amCheck = ym.replace('-','');
+      if(typeof _monthHasAnyRealizedFolha === 'function' && _monthHasAnyRealizedFolha(amCheck)){
+        _projDiag.skippedPastMonth++;
+        return;
+      }
+      // Se ESSA pessoa tem realizado nesse mês, não soma projeção (caso geral, mês futuro parcial)
       if(_realPersonSet[area+'|'+nome+'|'+ym]){ _projDiag.skipped++; return; }
       var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
       if(isNaN(v) || v <= 0) return;
