@@ -3796,6 +3796,7 @@ async function loadDreFromSupabase(forceRaw){
       ]).then(function(res){
         DRE_FOLHA_RAW   = res[0];
         if(typeof clearFolhaSalCache==='function') clearFolhaSalCache();
+        if(typeof _invalidateMonthsRealizedCache === 'function') _invalidateMonthsRealizedCache();
         DRE_DESP_RAW    = res[1];
         BUDGET_DESP_RAW = res[1]; // sincroniza para que "Base" no DRE Config funcione sem abrir Budget
         DRE_CANAIS_RAW  = res[2];
@@ -3827,6 +3828,7 @@ async function loadDreFromSupabase(forceRaw){
       ]);
       DRE_FOLHA_RAW   = aux[0];
       if(typeof clearFolhaSalCache==='function') clearFolhaSalCache();
+      if(typeof _invalidateMonthsRealizedCache === 'function') _invalidateMonthsRealizedCache();
       DRE_DESP_RAW    = aux[1];
       BUDGET_DESP_RAW = aux[1]; // sincroniza para que "Base" no DRE Config funcione sem abrir Budget
       DRE_CANAIS_RAW  = aux[2];
@@ -5596,6 +5598,8 @@ async function loadFolhaFromSupabase(){
     } catch(e){}
     FOLHA_RAW=await fetchAll(TBLS.folha, null, null);
     FOLHA_LOADED=FOLHA_RAW.length>0;
+    // Invalida cache de "meses com realizado" — pode ter mudado com novos dados
+    if(typeof _invalidateMonthsRealizedCache === 'function') _invalidateMonthsRealizedCache();
     // Diagnóstico: lista os períodos encontrados
     if(FOLHA_LOADED){
       var periodCount = {};
