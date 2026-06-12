@@ -6743,6 +6743,35 @@ async function _smartReloadKeys(changedKeys){
   if(typeof _markLastReloadNow === 'function') _markLastReloadNow();
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SMART RELOAD: detecta o que mudou e atualiza só as chaves divergentes
+// ═══════════════════════════════════════════════════════════════════════════
+// Usado tanto pelo banner azul "Outro usuário fez alterações" quanto pelo
+// banner amarelo "Cache local desatualizado (>24h)". Em vez de sempre
+// recarregar dados brutos (estoque, vendas, folha — ~115k linhas), primeiro
+// confere quais CRITICAL_KEYS realmente divergem do Supabase e atualiza só
+// elas. Pra dados brutos só faz reload se o usuário pedir explicitamente.
+// ═══════════════════════════════════════════════════════════════════════════
+async function _smartReloadDetectAndApply(btn){
+  if(btn){ btn.textContent = '⏳ Verificando mudanças...'; }
+  var changedKeys = [];
+  for(var i=0; i<CRITICAL_KEYS.length; i++){
+    var key = CRITICAL_KEYS[i];
+    try {
+      var rows = await supaFetch('/rest/v1/' + TBLS.save_dre + '?key=eq.' + key + '&select=value&limit=1');
+      var remoteLen = (rows && rows.length) ? (rows[0].value || '').length : 0;
+      var storedLen = _otbChksumGet(key);
+      if(storedLen !== remoteLen) changedKeys.push(key);
+    } catch(e){ /* silencioso */ }
+  }
+  if(changedKeys.length){
+    if(btn){ btn.textContent = '⏳ Atualizando '+changedKeys.length+' config(s)...'; }
+    await _smartReloadKeys(changedKeys);
+    if(typeof _markLastReloadNow === 'function') _markLastReloadNow();
+  }
+  return {updated: changedKeys.length > 0, keys: changedKeys};
+}
+
 // Recebe os changedKeys detectados e faz reload cirúrgico
 async function _updateAlertReload(changedKeys, btn){
   if(btn){ btn.disabled = true; btn.textContent = '⏳ Atualizando...'; }
@@ -6750,11 +6779,14 @@ async function _updateAlertReload(changedKeys, btn){
     if(Array.isArray(changedKeys) && changedKeys.length){
       await _smartReloadKeys(changedKeys);
     } else {
-      // Fallback se chegou sem keys — recarrega tudo
-      var fakeBtn = document.createElement('button');
-      await handleReloadAll(fakeBtn);
-      await _refreshAllChksums();
-      if(typeof _markLastReloadNow === 'function') _markLastReloadNow();
+      // Fallback se chegou sem keys — tenta smart reload primeiro (verifica TODAS as
+      // chaves críticas e atualiza só as divergentes). Se nada divergir, finaliza
+      // sem recarregar dados brutos (que seriam 115k linhas desnecessárias).
+      var result = await _smartReloadDetectAndApply(btn);
+      if(!result.updated){
+        console.log('[updateAlert] nada divergiu — só atualiza chksums');
+        await _refreshAllChksums();
+      }
     }
     _updateAlertShown = false;
     var b = document.getElementById('updateAlert');
@@ -6821,7 +6853,7 @@ function _showStaleBanner(ageHrs){
   else { ageLabel = Math.round(ageHrs) + 'h atrás'; }
   b.innerHTML = '<span>⚠️ Cache local desatualizado — última atualização '+ageLabel+'. Os dados podem não refletir o estado atual do Supabase.</span>'
     +'<span style="display:flex;gap:8px;align-items:center">'
-    +'<button onclick="_staleBannerReload(this)" style="background:#0f1a3a;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer">↺ Recarregar Tudo</button>'
+    +'<button onclick="_staleBannerReload(this)" style="background:#0f1a3a;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer">↺ Atualizar</button>'
     +'<button onclick="_dismissStaleBanner()" title="Dispensar até a próxima sessão" style="background:transparent;border:none;font-size:18px;cursor:pointer;color:#5a4500;padding:0 4px">×</button>'
     +'</span>';
   b.style.display = 'flex';
@@ -6835,16 +6867,44 @@ function _dismissStaleBanner(){
   _hideStaleBanner();
 }
 async function _staleBannerReload(btn){
-  if(btn){ btn.disabled = true; btn.textContent = '⏳ Recarregando...'; }
-  var fakeBtn = document.createElement('button');
-  fakeBtn.textContent = '↺ Recarregar Tudo';
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ Verificando...'; }
   try {
-    await handleReloadAll(fakeBtn);
-    _markLastReloadNow();
-    _hideStaleBanner();
+    // Primeiro tenta o caminho leve: detectar configs divergentes e atualizar só elas.
+    // Evita recarregar 115k linhas de dados brutos quando só uma config mudou.
+    var result = await _smartReloadDetectAndApply(btn);
+    if(result.updated){
+      toast('✓ Configs atualizadas ('+result.keys.length+' chave'+(result.keys.length>1?'s':'')+')','ok');
+      _markLastReloadNow();
+      _hideStaleBanner();
+      return;
+    }
+    // Configs já sincronizadas. Os dados brutos PODEM ter mudado no Supabase
+    // (estoque, vendas, folha), mas o sistema não sabe sem buscar tudo.
+    // Pergunta ao usuário se ele quer mesmo recarregar.
+    if(btn){ btn.disabled = false; }
+    var ok = confirm(
+      '✓ Configurações estão sincronizadas com o Supabase.\n\n' +
+      'Os dados brutos (estoque, vendas, folha — ~115 mil linhas) podem ter mudado, ' +
+      'mas isso é raro acontecer sem alguém ter rodado uma carga manual.\n\n' +
+      'Deseja recarregar TAMBÉM os dados brutos? Pode levar alguns minutos.'
+    );
+    if(ok){
+      if(btn){ btn.disabled = true; btn.textContent = '⏳ Recarregando dados brutos...'; }
+      var fakeBtn = document.createElement('button');
+      fakeBtn.textContent = '↺ Recarregar Tudo';
+      await handleReloadAll(fakeBtn);
+      _markLastReloadNow();
+      _hideStaleBanner();
+    } else {
+      // Usuário recusou — marca como atualizado mesmo assim (banner não vai mais aparecer
+      // até passar mais 24h ou alguém modificar configs).
+      _markLastReloadNow();
+      _hideStaleBanner();
+      toast('Banner dispensado — configs estavam OK','ok');
+    }
   } catch(e){
     console.error('[staleBanner] reload failed', e);
-    if(btn){ btn.disabled = false; btn.textContent = '↺ Recarregar Tudo'; }
+    if(btn){ btn.disabled = false; btn.textContent = '↺ Atualizar'; }
     toast('❌ Erro ao recarregar: '+e.message,'err');
   }
 }
