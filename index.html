@@ -4906,7 +4906,8 @@ function dreAgg(rows){
       custo_hava += _custo;
       fat_v_hava += dreNum(r.faturamento_venda || r.FATURAMENTO_VENDA || r.faturamento || r.FATURAMENTO || 0);
     }
-    // Custo Frete Dev e Etiquetagem — usam config por mês (DRE_CFG_PARAMS[am])
+    // Custo Frete Dev e Etiquetagem — usam config por mês (DRE_CFG_PARAMS[am]).
+    // Cada mês precisa ter sua própria configuração.
     var _ano = String(r.ano||r.ANO||'');
     var _mes = String(r.mes||r.MES||'').padStart(2,'0');
     if(_ano && _mes && _mes!=='00'){
@@ -7871,11 +7872,12 @@ function applyDreCfg(){
     DRE_CFG_PARAMS[am].cd_mensal  = gv('cd_mensal');
     DRE_CFG_PARAMS[am].custoGrade = gv('custoGrade');
     DRE_CFG_PARAMS[am].ajuste_cmv = gv('ajuste_cmv');
-    // Etiquetagem — custo por par. Vazio/0 → remove pra não ocupar espaço no payload.
+    // Etiquetagem — custo por par no mês selecionado. Vazio/0 = remove.
+    // Pra aplicar em outros meses: selecione o mês no dropdown e configure também.
     var _etqVal = gv('custo_etiquetagem');
     if(_etqVal > 0){ DRE_CFG_PARAMS[am].custo_etiquetagem = _etqVal; }
     else { delete DRE_CFG_PARAMS[am].custo_etiquetagem; }
-    // Frete Dev — % e canais selecionados
+    // Frete Dev — % e canais selecionados no mês selecionado.
     var _freteDevPct = pctVal('frete_dev_pct');
     if(_freteDevPct > 0){ DRE_CFG_PARAMS[am].frete_dev_pct = _freteDevPct; }
     else { delete DRE_CFG_PARAMS[am].frete_dev_pct; }
@@ -8528,6 +8530,10 @@ async function _clearBudgetClassifVol(){
     if(typeof _saveQueue !== 'undefined'){
       _saveQueue['budget_classif_vol'] = { pending: false, getPayload: function(){ return {}; } };
     }
+    // CRÍTICO: reseta o chksum local pra 0 — senão o polling de updates vai detectar
+    // divergência entre chksum local (tamanho antigo) e remoto (vazio/0) e disparar
+    // o banner "🔄 Outro usuário fez alterações" como falso positivo a cada 60s.
+    if(typeof _otbChksumSet === 'function') _otbChksumSet('budget_classif_vol', 0);
     console.log('[delta] budget_classif_vol limpo após save consolidado');
   } catch(e){ console.warn('[delta] erro ao limpar _vol:', e.message); }
 }
@@ -9198,7 +9204,12 @@ function renderBudget(anoFilter){
       var cellBg = ss ? 'transparent' : (future?'#f0f5ff':bg);
       var cellBorderBottom = ss ? ss.gradStart : '#eef1f8';
       var cellPad = ss ? ('padding:'+pTop+' 8px') : 'padding:4px 8px';
-      h += '<td style="text-align:center;'+cellPad+';background:'+cellBg+';font-weight:'+fw+';font-size:'+valueFontSize+';color:'+color+';border-bottom:1px solid '+cellBorderBottom+';white-space:nowrap">'+display+'</td>';
+      // Tooltip opcional na célula (ex: mostrar % sobre Receita Líquida em linhas de despesa)
+      var cellTipAttr = '';
+      if(typeof opts.tooltipFn === 'function'){
+        try { var _tip = opts.tooltipFn(ym, val); if(_tip) cellTipAttr = ' title="'+escHtml(_tip)+'"'; } catch(_e){}
+      }
+      h += '<td style="text-align:center;'+cellPad+';background:'+cellBg+';font-weight:'+fw+';font-size:'+valueFontSize+';color:'+color+';border-bottom:1px solid '+cellBorderBottom+';white-space:nowrap;'+(cellTipAttr?'cursor:help':'')+'"'+cellTipAttr+'>'+display+'</td>';
     });
     // Coluna ANO: soma para R$, média para % ou contagem (Colaboradores)
     var yearVal;
@@ -9569,12 +9580,25 @@ function renderBudget(anoFilter){
           (function(tipoCapture){
             // Detail btn usa a primeira fonte como "área canônica" pra abrir o modal de detalhes
             // (no modal, o usuário vê os fornecedores com sua classificação original)
+            // Tooltip de "Frete" mostra % sobre Receita Líquida — pedido específico do usuário
+            var tipoOpts = {sub:true, detailBtn:{tipo:tipoCapture, area:areaCapture}, parentArea: areaUid};
+            if(tipoCapture === 'Frete'){
+              tipoOpts.tooltipFn = function(ym, val){
+                if(val == null || val === 0) return '';
+                var rl = budgetReceitaLiquida(ym)||0;
+                if(rl <= 0) return 'Receita Líquida do mês = 0 — impossível calcular %';
+                var pct = (val/rl)*100;
+                return 'Frete: R$ '+Math.round(val).toLocaleString('pt-BR')
+                  + ' • Receita Líquida: R$ '+Math.round(rl).toLocaleString('pt-BR')
+                  + ' • Representa '+pct.toFixed(2).replace('.',',')+'% da RL';
+              };
+            }
             dataRow('↳ '+tipoCapture, function(ym){
               var base = budgetDespByTipoArea(ym, tipoCapture, sourcesCapture)||0;
               var dreAdd = _budgetDreInject(areaCapture, tipoCapture, ym);
               var v = base + dreAdd;
               return v > 0 ? v : null;
-            }, {sub:true, detailBtn:{tipo:tipoCapture, area:areaCapture}, parentArea: areaUid});
+            }, tipoOpts);
           })(tipo);
         });
       })(area, sources);
@@ -9598,10 +9622,22 @@ function renderBudget(anoFilter){
         };
         var hasFolha = months.some(function(ym){ return sumFolhaForYm(ym) > 0; });
         if(hasFolha){
+          // Tooltip de "Salário Folha" mostra % sobre Receita Líquida — pedido específico
+          // do usuário (especialmente útil em Comercial pra ver peso da folha).
+          var salFolhaOpts = {sub:true, folhaDetailArea: areaCapFolha.toUpperCase(), selectedAno: selectedAno, parentArea: areaUid};
+          salFolhaOpts.tooltipFn = function(ym, val){
+            if(val == null || val === 0) return '';
+            var rl = budgetReceitaLiquida(ym)||0;
+            if(rl <= 0) return 'Receita Líquida do mês = 0 — impossível calcular %';
+            var pct = (val/rl)*100;
+            return 'Salário Folha ('+areaCapFolha+'): R$ '+Math.round(val).toLocaleString('pt-BR')
+              + ' • Receita Líquida: R$ '+Math.round(rl).toLocaleString('pt-BR')
+              + ' • Representa '+pct.toFixed(2).replace('.',',')+'% da RL';
+          };
           dataRow('↳ Salário Folha', function(ym){
             var v = sumFolhaForYm(ym);
             return v>0?v:null;
-          }, {sub:true, folhaDetailArea: areaCapFolha.toUpperCase(), selectedAno: selectedAno, parentArea: areaUid});
+          }, salFolhaOpts);
           // 13°+Férias: % de pct13ferias_adm do DRE aplicado sobre o Salário Folha do mês
           dataRow('↳ 13°+Férias', function(ym){
             var sal = sumFolhaForYm(ym);
