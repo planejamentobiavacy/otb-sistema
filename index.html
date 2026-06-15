@@ -1934,9 +1934,11 @@ async function gcRecarregar(key, btn){
         gcShowLoadingBanner('Carregando outras tabelas pra reconstruir o OTB...');
         for(var mi=0; mi<missing.length; mi++){
           var mk = missing[mi];
-          gcUpdateLoadingBanner(TBLS[mk]+' ('+(mi+1)+'/'+missing.length+')', 0, 0);
+          var prefix = TBLS[mk]+' ('+(mi+1)+'/'+missing.length+')';
           try {
-            var data = await fetchAll(TBLS[mk], null, mk);
+            var data = await fetchAll(TBLS[mk], null, mk, (function(label){
+              return function(loaded, total){ gcUpdateLoadingBanner(label, loaded, total); };
+            })(prefix));
             state[stateKeyByOtb[mk]] = data;
             console.log('[gcRecarregar] auto-loaded', TBLS[mk], '—', data.length, 'linhas');
           } catch(e){ console.warn('[gcRecarregar] falha auto-load', TBLS[mk], e.message); }
