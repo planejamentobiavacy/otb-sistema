@@ -1451,14 +1451,16 @@ function openConfig(){
   ];
   document.getElementById('cfgOtbRows').innerHTML = otbDefs.map(function(d){
     var tbl = TBLS[d.key];
+    var diagBtn = '<button class="btn" onclick="gcDiagnoseTbl(\''+d.key+'\',this)" style="font-size:11px;padding:5px 10px;background:#f0f3fa;border-color:#d0d8ee;color:#0f1a3a">🔍 Diagnóstico</button>';
     return '<div class="cfg-row">'
       + '<div><span>'+d.label+'</span>'
       + '<input class="tbl-input" id="tbl_'+d.key+'" value="'+tbl+'" oninput="TBLS[\''+d.key+'\']=this.value;localStorage.setItem(\'otb_tbl_'+d.key+'\',this.value)">'
       + '</div>'
+      + diagBtn
       + (d.dateCol
         ? '<button class="btn blue" onclick="gcAtualizar(\''+d.key+'\',\''+d.dateCol+'\',this)" style="font-size:11px;padding:5px 10px">↑ Atualizar</button>'
           + '<button class="btn gray" onclick="gcRecarregar(\''+d.key+'\',this)" style="font-size:11px;padding:5px 10px">↺ Recarregar</button>'
-        : '<button class="btn gray" onclick="gcRecarregar(\''+d.key+'\',this)" style="font-size:11px;padding:5px 10px;grid-column:span 2">↺ Recarregar</button>'
+        : '<button class="btn gray" onclick="gcRecarregar(\''+d.key+'\',this)" style="font-size:11px;padding:5px 10px">↺ Recarregar</button>'
       )
       + '<span class="cfg-status" id="cfg_status_'+d.key+'"></span>'
       + '</div>';
@@ -2047,6 +2049,75 @@ var currentYM = function(){ var d=new Date(); return d.getFullYear()+'-'+String(
 var ymLabel = function(ym){ var parts=ym.split('-'); return {year:parts[0],month:MONTH_NAMES[parseInt(parts[1],10)-1]}; };
 var ymNext = function(ym){ var parts=ym.split('-').map(Number),y=parts[0],m=parts[1]; var nm=m===12?1:m+1,ny=m===12?y+1:y; return ny+'-'+String(nm).padStart(2,'0'); };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// DETECÇÃO DE SNAPSHOT DESATUALIZADO
+// ═══════════════════════════════════════════════════════════════════════════
+// Após o ETL rodar no Supabase, as tabelas brutas (dw_otb_stk/venda/carteira)
+// ficam com dados novos, mas o snapshot agregado `otb_current` permanece o mesmo
+// até alguém clicar em "Recarregar Tudo" no painel de Configurações. Resultado:
+// o usuário continua vendo dados antigos sem aviso. Esta função detecta esse
+// descompasso comparando MAX(ano_mes) das tabelas brutas com o último mês com
+// dados no snapshot, e mostra um banner quando há divergência.
+// ═══════════════════════════════════════════════════════════════════════════
+async function _checkOtbSnapshotFreshness(saved){
+  try{
+    if(!state.matrices || !state.matrices.AVACY || !state.months || !state.months.length) return;
+    // Pega max(ano_mes) da tabela de vendas (a que tem realizados mais recentes)
+    // Tenta minúsculo primeiro, depois maiúsculo (PostgREST é case-sensitive)
+    var rows;
+    try { rows = await supaFetch('/rest/v1/' + TBLS.venda + '?select=ano_mes&order=ano_mes.desc&limit=1'); }
+    catch(e){ try { rows = await supaFetch('/rest/v1/' + TBLS.venda + '?select=ANO_MES&order=ANO_MES.desc&limit=1'); } catch(e2){ return; } }
+    if(!rows || !rows.length) return;
+    var maxAm = String(rows[0].ano_mes || rows[0].ANO_MES || '').trim();
+    if(!maxAm) return;
+    // Normaliza pra YYYY-MM (pode vir como YYYYMM, YYYY-MM, ou YYYY-MM-DD)
+    if(/^\d{6}$/.test(maxAm))         maxAm = maxAm.slice(0,4) + '-' + maxAm.slice(4,6);
+    else if(/^\d{8}$/.test(maxAm))    maxAm = maxAm.slice(0,4) + '-' + maxAm.slice(4,6);
+    else if(/^\d{4}-\d{2}-\d{2}/.test(maxAm)) maxAm = maxAm.slice(0,7);
+
+    // Último mês com vendaVal > 0 no snapshot AVACY
+    var lastInSnap = '';
+    var avacy = state.matrices.AVACY;
+    state.months.forEach(function(ym){
+      var c = avacy[ym];
+      if(c && (c.vendaVal > 0 || c.fatVal > 0)) lastInSnap = ym;
+    });
+
+    if(maxAm && lastInSnap && maxAm > lastInSnap){
+      // Tabelas brutas têm dados mais novos que o snapshot. Mostra banner.
+      var fmt = function(am){ var p=am.split('-'); var nomes=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return nomes[parseInt(p[1],10)]+'/'+p[0].slice(2); };
+      var msg = '📊 As tabelas no Supabase têm dados até <b>'+fmt(maxAm)+'</b> mas o OTB ainda mostra até <b>'+fmt(lastInSnap)+'</b>.';
+      _showOtbStaleSnapshotBanner(msg);
+    }
+  } catch(e){ console.warn('[otbFreshness] check falhou:', e.message); }
+}
+
+function _showOtbStaleSnapshotBanner(html){
+  if(document.getElementById('otbStaleSnapBanner')) return;  // já existe
+  var bar = document.createElement('div');
+  bar.id = 'otbStaleSnapBanner';
+  bar.style.cssText = 'position:fixed;top:62px;left:50%;transform:translateX(-50%);z-index:60;background:linear-gradient(90deg,#fff3cd 0%,#ffe69c 100%);border:2px solid #c79a16;color:#664d03;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.18);display:flex;align-items:center;gap:14px;font-family:inherit;max-width:90vw';
+  bar.innerHTML = '<span>'+html+'</span>'
+    + '<button onclick="_otbStaleBannerReload(this)" style="background:#664d03;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer;white-space:nowrap">↺ Atualizar Agora</button>'
+    + '<button onclick="document.getElementById(\'otbStaleSnapBanner\').remove()" style="background:transparent;border:none;color:#664d03;font-size:18px;cursor:pointer;padding:0 4px">×</button>';
+  document.body.appendChild(bar);
+}
+
+async function _otbStaleBannerReload(btn){
+  btn.disabled = true;
+  btn.textContent = '⏳ Atualizando...';
+  try {
+    var bar = document.getElementById('otbStaleSnapBanner');
+    if(bar) bar.remove();
+    if(typeof reloadAllOtbTables === 'function'){
+      await reloadAllOtbTables();
+      toast('✓ OTB atualizado com dados mais recentes do Supabase','ok');
+    }
+  } catch(e){
+    toast('❌ Erro ao atualizar: '+e.message,'err');
+  }
+}
+
 // ═══════════════════════════════════════════════════════
 //  OTB DATA LOAD
 // ═══════════════════════════════════════════════════════
@@ -2108,6 +2179,12 @@ async function loadOtbFromSupabase(){
       // Antes carregava as 3 tabelas brutas (estoque/venda/carteira ~80MB) em background AQUI.
       // Agora isso só dispara quando o usuário clica numa categoria específica (não-TODAS, não-AVACY).
       // Economia: usuários que só veem AVACY ou TODAS nunca baixam essas tabelas.
+
+      // ── Detecção de snapshot desatualizado ──
+      // Após carregar o snapshot, checa em background se as tabelas brutas no Supabase têm dados
+      // MAIS RECENTES que o snapshot. Se sim, mostra banner pedindo pra atualizar — senão o usuário
+      // pode ficar dias/semanas vendo dados antigos sem perceber (ETL rodou mas snapshot é congelado).
+      setTimeout(function(){ _checkOtbSnapshotFreshness(saved); }, 800);
     } else {
       // Nenhum dado salvo: carrega tabelas brutas
       await reloadAllOtbTables();
