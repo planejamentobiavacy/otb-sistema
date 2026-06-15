@@ -1920,7 +1920,47 @@ async function gcRecarregar(key, btn){
       if(DRE_RAW.length){ dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW); dreRender(); }
       toast('↺ Cluster atualizado — salve o DRE para fixar o snapshot');
     }
-    else { processAll(); renderTabs(); renderTable(); }
+    else {
+      // OTB (stk/venda/carteira/produto): processAll precisa das 4 tabelas carregadas pra
+      // reconstruir matrizes. Se alguma das outras 3 está vazia, carrega automaticamente
+      // (senão processAll faz `if(!state.prod.length) return` e a UI continua com dados velhos).
+      var otbKeys = ['stk','venda','carteira','produto'];
+      var stateKeyByOtb = {stk:'stk', venda:'venda', carteira:'cart', produto:'prod'};
+      var missing = otbKeys.filter(function(k){
+        var sk = stateKeyByOtb[k];
+        return !state[sk] || !state[sk].length;
+      });
+      if(missing.length){
+        gcShowLoadingBanner('Carregando outras tabelas pra reconstruir o OTB...');
+        for(var mi=0; mi<missing.length; mi++){
+          var mk = missing[mi];
+          gcUpdateLoadingBanner(TBLS[mk]+' ('+(mi+1)+'/'+missing.length+')', 0, 0);
+          try {
+            var data = await fetchAll(TBLS[mk], null, mk);
+            state[stateKeyByOtb[mk]] = data;
+            console.log('[gcRecarregar] auto-loaded', TBLS[mk], '—', data.length, 'linhas');
+          } catch(e){ console.warn('[gcRecarregar] falha auto-load', TBLS[mk], e.message); }
+        }
+        gcHideLoadingBanner();
+      }
+      processAll();
+      patchLastMonthEstQty();
+      renderTabs();
+      renderTable();
+      updateOtbStatus();
+      // Salva snapshot atualizado pra outros usuários (e pra próxima sessão) verem os dados novos
+      try {
+        if(typeof buildOtbPayload === 'function'){
+          var payload = buildOtbPayload();
+          await supaSave(TBLS.save_otb, 'otb_current', payload);
+          if(document.getElementById('otbLastSaved')) document.getElementById('otbLastSaved').textContent = new Date().toLocaleString('pt-BR');
+          // Fecha banner de snapshot stale (acabamos de regerar)
+          var staleBar = document.getElementById('otbStaleSnapBanner');
+          if(staleBar) staleBar.remove();
+          toast('✓ OTB recalculado e snapshot atualizado','ok');
+        }
+      } catch(saveErr){ console.warn('[gcRecarregar] save snapshot falhou:', saveErr.message); }
+    }
   } catch(e){ toast('Erro ao recarregar ' + TBLS[key] + ': ' + e.message, 'err'); if(st) st.textContent = 'Erro: '+TBLS[key]; }
   gcHideLoadingBanner();
   btn.disabled = false; btn.textContent = orig;
