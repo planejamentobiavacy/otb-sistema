@@ -1210,27 +1210,41 @@ async function afterLogin(){
   showScreen('screenHome');
   // Captura e-mail do usuário logado
   CURRENT_USER_EMAIL = (_session && _session.user && _session.user.email) ? _session.user.email.toLowerCase().trim() : '';
+
+  // Dispara load do OTB IMEDIATAMENTE em background — não bloqueia em nenhum check abaixo.
+  // Se algum await abaixo demorar, o OTB já está carregando paralelamente.
+  try { if(typeof loadOtbFromSupabase === 'function') loadOtbFromSupabase(); } catch(e){}
+
   // CRÍTICO: invalida IDB cache de chaves que mudaram desde a última sessão.
   // Sem isso, usuários veem dados desatualizados por até 1h (TTL do IDB) mesmo
   // após o admin salvar e eles darem Ctrl+Shift+R (que não limpa IDB).
-  // Faz UM round-trip pegando todas as CRITICAL_KEYS de uma vez.
+  // Faz checks paralelos com timeout — se um demorar, não trava o login.
   try {
     if(typeof CRITICAL_KEYS !== 'undefined' && CRITICAL_KEYS.length && typeof clearIdbCache === 'function'){
-      var inList = CRITICAL_KEYS.map(function(k){ return '"'+k+'"'; }).join(',');
-      var rows = await supaFetch('/rest/v1/' + TBLS.save_dre + '?key=in.(' + inList + ')&select=key,value');
-      var remoteLens = {};
-      (rows||[]).forEach(function(r){ remoteLens[r.key] = (r.value||'').length; });
-      var invalidated = 0;
-      for(var ck=0; ck<CRITICAL_KEYS.length; ck++){
-        var k = CRITICAL_KEYS[ck];
-        var remote = remoteLens[k] || 0;
-        var local  = (typeof _otbChksumGet === 'function') ? _otbChksumGet(k) : 0;
-        if(remote !== local){
-          try { await clearIdbCache(TBLS.save_dre + '/' + k); invalidated++; } catch(e){}
-          if(typeof _otbChksumSet === 'function') _otbChksumSet(k, remote);
+      var _checkPromise = Promise.all(CRITICAL_KEYS.map(function(k){
+        return supaFetch('/rest/v1/' + TBLS.save_dre + '?key=eq.' + encodeURIComponent(k) + '&select=value&limit=1')
+          .then(function(rows){ return {key: k, len: (rows && rows.length) ? (rows[0].value || '').length : 0}; })
+          .catch(function(){ return {key: k, len: null}; });  // null = falhou, ignora essa chave
+      }));
+      // Timeout de 5s: se o check demorar demais, ignora e continua
+      var _timeoutPromise = new Promise(function(resolve){ setTimeout(function(){ resolve(null); }, 5000); });
+      var results = await Promise.race([_checkPromise, _timeoutPromise]);
+      if(results){
+        var invalidated = 0;
+        for(var ri=0; ri<results.length; ri++){
+          var r = results[ri];
+          if(r.len === null) continue;  // falhou — pula
+          var localRaw = (typeof _otbChksumGet === 'function') ? _otbChksumGet(r.key) : null;
+          var local = localRaw === null ? 0 : localRaw;
+          if(r.len !== local){
+            try { await clearIdbCache(TBLS.save_dre + '/' + r.key); invalidated++; } catch(e){}
+            if(typeof _otbChksumSet === 'function') _otbChksumSet(r.key, r.len);
+          }
         }
+        if(invalidated > 0) console.log('[afterLogin] IDB invalidado pra '+invalidated+' chave(s) stale');
+      } else {
+        console.warn('[afterLogin] check stale IDB timeout — ignorando');
       }
-      if(invalidated > 0) console.log('[afterLogin] IDB invalidado pra '+invalidated+' chave(s) stale');
     }
   } catch(e){ console.warn('[afterLogin] check stale IDB falhou:', e.message); }
   // Carrega permissões salvas
@@ -1336,8 +1350,7 @@ async function afterLogin(){
     }
   } catch(e){ console.warn('[afterLogin] budget_classif error:', e.message); }
 
-  // Carrega OTB em background
-  loadOtbFromSupabase();
+  // (loadOtbFromSupabase já disparado no início do afterLogin em paralelo)
 }
 
 // Verifica sessão existente ao abrir a página
@@ -6564,13 +6577,19 @@ function _invalidateMonthsRealizedCache(){
 // críticas (budget_classif, dre_cfg_params, etc) com o que está em localStorage.
 // Se mudou e não foi feito por este client, alerta o usuário.
 // ═══════════════════════════════════════════════════════════════════════════
-var _UPDATE_POLL_INTERVAL_MS = 60000; // 60 segundos
+var _UPDATE_POLL_INTERVAL_MS = 20000; // 20s (era 60s) — detecta mudanças de outros usuários mais rápido
 var _updatePollTimer = null;
 var _updateAlertShown = false;
 var CRITICAL_KEYS = ['budget_classif', 'budget_cfg', 'dre_cfg_params', 'folha_cfg', 'budget_classif_vol'];
 
 function _otbChksumGet(key){
-  return parseInt(localStorage.getItem('_otb_chksum_' + key) || '0', 10);
+  // Retorna null se NUNCA foi calibrado (primeira vez). Retorna número senão,
+  // mesmo que seja 0 (= "calibrado, remoto vazio", ex: depois de _clearBudgetClassifVol).
+  // Antes retornávamos 0 nos dois casos — confundia o detector de mudanças e mascarava
+  // edições de outros usuários após a gente ter zerado o chksum local intencionalmente.
+  var v = localStorage.getItem('_otb_chksum_' + key);
+  if(v === null) return null;
+  return parseInt(v, 10) || 0;
 }
 function _otbChksumSet(key, len){
   try { localStorage.setItem('_otb_chksum_' + key, String(len)); } catch(e){}
@@ -6611,12 +6630,16 @@ async function _checkForUpdates(){
       var rows = await supaFetch('/rest/v1/' + TBLS.save_dre + '?key=eq.' + key + '&select=value&limit=1');
       var remoteLen = (rows && rows.length) ? (rows[0].value || '').length : 0;
       var storedLen = _otbChksumGet(key);
-      if(storedLen === 0 && remoteLen > 0){
-        // Primeira vez — inicializa sem alertar
+      if(storedLen === null && remoteLen > 0){
+        // PRIMEIRA VEZ — chave nunca foi calibrada nesse navegador. Inicializa sem alertar.
+        // Importante: storedLen=0 (já calibrado, remoto vazio antes) NÃO cai aqui — só
+        // o null literal (que vem de localStorage.getItem retornando null).
         _otbChksumSet(key, remoteLen);
         continue;
       }
-      if(storedLen !== remoteLen){
+      // Normaliza null pra 0 pra comparação (ambos significam "remoto vazio")
+      var local = storedLen === null ? 0 : storedLen;
+      if(local !== remoteLen){
         changedKeys.push(key);
       }
     } catch(e){ /* silencioso — fail-safe */ }
@@ -6761,7 +6784,8 @@ async function _smartReloadDetectAndApply(btn){
       var rows = await supaFetch('/rest/v1/' + TBLS.save_dre + '?key=eq.' + key + '&select=value&limit=1');
       var remoteLen = (rows && rows.length) ? (rows[0].value || '').length : 0;
       var storedLen = _otbChksumGet(key);
-      if(storedLen !== remoteLen) changedKeys.push(key);
+      var local = storedLen === null ? 0 : storedLen;
+      if(local !== remoteLen) changedKeys.push(key);
     } catch(e){ /* silencioso */ }
   }
   if(changedKeys.length){
@@ -9340,17 +9364,40 @@ function renderBudget(anoFilter){
     h += '</tr>';
   }
   // ── Helpers para os cálculos resumo (reutilizados em várias linhas) ──
+  // ────────────────────────────────────────────────────────────────────────
+  // CACHE DE MÉTRICAS DE DRE POR MÊS (memoização)
+  // ────────────────────────────────────────────────────────────────────────
+  // budgetDreMetric() / budgetReceitaLiquida() / budgetAvacyFatVal() rodam
+  // dreAgg+dreCalc sobre milhares de linhas filtradas de DRE_RAW. Eles são
+  // chamados centenas de vezes durante o render (uma por célula em várias
+  // linhas), causando travamento. O cache é local ao renderBudget — recriado
+  // a cada render, então sempre reflete o estado atual.
+  var _budgetCache = {
+    rl: {},          // ym → Receita Líquida
+    avacyFat: {},    // ym → faturamento bruto AVACY
+    dreMetric: {}    // 'ym|key' → resultado de budgetDreMetric
+  };
+  function budgetAvacyFatValCached(ym){
+    if(_budgetCache.avacyFat[ym] !== undefined) return _budgetCache.avacyFat[ym];
+    return (_budgetCache.avacyFat[ym] = budgetAvacyFatVal(ym));
+  }
+  function budgetDreMetricCached(ym, key){
+    var ck = ym + '|' + key;
+    if(_budgetCache.dreMetric[ck] !== undefined) return _budgetCache.dreMetric[ck];
+    return (_budgetCache.dreMetric[ck] = budgetDreMetric(ym, key));
+  }
   function budgetReceitaLiquida(ym){
-    var rb = budgetAvacyFatVal(ym)||0;
-    if(!rb) return 0;
-    var icms = budgetDreMetric(ym,'icms_pct')||0;
-    var pc   = budgetDreMetric(ym,'piscofins_pct')||0;
-    return rb * (1 - icms - pc);
+    if(_budgetCache.rl[ym] !== undefined) return _budgetCache.rl[ym];
+    var rb = budgetAvacyFatValCached(ym)||0;
+    if(!rb) return (_budgetCache.rl[ym] = 0);
+    var icms = budgetDreMetricCached(ym,'icms_pct')||0;
+    var pc   = budgetDreMetricCached(ym,'piscofins_pct')||0;
+    return (_budgetCache.rl[ym] = rb * (1 - icms - pc));
   }
   function budgetCmvVal(ym){
     var rl = budgetReceitaLiquida(ym);
     if(!rl) return 0;
-    var mgp = budgetDreMetric(ym,'mg_prod')||0;
+    var mgp = budgetDreMetricCached(ym,'mg_prod')||0;
     return (1 - mgp) * rl;
   }
   // totalDespesasGeral é populado adiante (quando há áreas), mas pode estar vazio até lá
@@ -9361,21 +9408,21 @@ function renderBudget(anoFilter){
   }
   function budgetDiffPlano(ym){
     var plano = budgetReceitaPlano(ym);
-    var bruta = budgetAvacyFatVal(ym)||0;
+    var bruta = budgetAvacyFatValCached(ym)||0;
     if(!plano && !bruta) return null;
     // Diff = Receita Realizada (Bruta) − Plano  (positivo = superou plano, negativo = abaixo)
     return bruta - plano;
   }
   function budgetVarPlano(ym){
     var plano = budgetReceitaPlano(ym);
-    var bruta = budgetAvacyFatVal(ym)||0;
+    var bruta = budgetAvacyFatValCached(ym)||0;
     if(!plano) return null;
     return (bruta/plano) - 1;
   }
 
   // ── RECEITA ──
   secRow('Receita', '📈');
-  dataRow('Receita Bruta AVACY', function(ym){ return budgetAvacyFatVal(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_BRUTA_AVACY', lockRealized:true}, summaryStyle:{gradStart:'#0a7c4e', gradEnd:'#0a7c4e', icon:'📊'}});
+  dataRow('Receita Bruta AVACY', function(ym){ return budgetAvacyFatValCached(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_BRUTA_AVACY', lockRealized:true}, summaryStyle:{gradStart:'#0a7c4e', gradEnd:'#0a7c4e', icon:'📊'}});
   // Receita PLANO Avacy — totalmente manual, valores salvos em BUDGET_CFG.budgetOverrides
   // A função retorna o valor salvo para que não-admin (modo leitura) também enxergue o plano.
   dataRow('Receita PLANO Avacy', function(ym){ return budgetReceitaPlano(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_PLANO_AVACY'}});
@@ -9386,8 +9433,8 @@ function renderBudget(anoFilter){
 
   // ── IMPOSTOS ──
   secRow('Impostos', '🧾');
-  dataRow('ICMS %', function(ym){ return budgetDreMetric(ym,'icms_pct'); }, {sub:true, pct:true, simKey:'icms_pct'});
-  dataRow('PIS/COFINS %', function(ym){ return budgetDreMetric(ym,'piscofins_pct'); }, {sub:true, pct:true, simKey:'piscofins_pct'});
+  dataRow('ICMS %', function(ym){ return budgetDreMetricCached(ym,'icms_pct'); }, {sub:true, pct:true, simKey:'icms_pct'});
+  dataRow('PIS/COFINS %', function(ym){ return budgetDreMetricCached(ym,'piscofins_pct'); }, {sub:true, pct:true, simKey:'piscofins_pct'});
 
   // RECEITA LÍQUIDA (linha resumo verde)
   summaryRow('Receita Líquida', '💵', '#0a7c4e', '#0a7c4e', function(ym){ return budgetReceitaLiquida(ym); });
@@ -9395,7 +9442,7 @@ function renderBudget(anoFilter){
 
   // ── CMV ──
   secRow('CMV', '🏭');
-  dataRow('Margem Produto %', function(ym){ return budgetDreMetric(ym,'mg_prod'); }, {bold:true, pct:true, simKey:'mg_prod'});
+  dataRow('Margem Produto %', function(ym){ return budgetDreMetricCached(ym,'mg_prod'); }, {bold:true, pct:true, simKey:'mg_prod'});
 
   // CMV R$ (linha resumo vermelha — mais escura que Total Despesas)
   summaryRow('CMV R$', '🏭', '#8b1a26', '#b32533', function(ym){ return budgetCmvVal(ym); });
