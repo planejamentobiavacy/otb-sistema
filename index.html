@@ -678,8 +678,9 @@ var COLS = {
   // dw_otb_venda: ano_mes, cod_grade, qtd, faturamento, custo, imposto
   venda: ['ano_mes','cod_grade','qtd','faturamento','custo','imposto'],
 
-  // otb_carteira: ano_mes, cod_produto, qtd, valor
-  carteira: ['ano_mes','cod_produto','qtd','valor'],
+  // otb_carteira: ano_mes, qtd, valor (cod_produto removido — não é usado no consumo,
+  // só causava erro 42703 ao pedir uma coluna que não existe mais na tabela)
+  carteira: ['ano_mes','qtd','valor'],
 
   // otb_produto: cod_produto, fornecedor, categoria
   produto: ['grade','fornecedor','categoria'],
@@ -768,7 +769,19 @@ async function fetchAll(table, extraFilter, tableKey, onProgress){
         console.warn('[fetchAll] 500 em', table, 'offset', from, '— tentativa', attempt+1, '/3');
         continue;
       }
-      if(!r.ok){ var t=await r.text(); throw new Error(t); }
+      if(!r.ok){
+        var t = await r.text();
+        // 42703 = coluna inexistente. Acontece quando COLS[tableKey] pede uma coluna que
+        // foi removida/renomeada no Supabase. Faz fallback automático pra select=*
+        // (mais lento mas funciona) — evita derrubar o reload todo por causa de uma coluna.
+        if(t && t.indexOf('42703') >= 0 && base.indexOf('select=*') < 0){
+          console.warn('[fetchAll] coluna inexistente em', table, '— refazendo com select=*');
+          base = '/rest/v1/' + table + '?select=*' + (extraFilter||'');
+          attempt--; // re-tenta com a nova base sem consumir tentativa
+          continue;
+        }
+        throw new Error(t);
+      }
       var cr = r.headers.get('content-range')||'';
       var total = 0;
       var m = cr.match(/\/(\d+)$/);
