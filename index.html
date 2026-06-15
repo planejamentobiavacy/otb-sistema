@@ -2062,8 +2062,26 @@ var ymNext = function(ym){ var parts=ym.split('-').map(Number),y=parts[0],m=part
 async function _checkOtbSnapshotFreshness(saved){
   try{
     if(!state.matrices || !state.matrices.AVACY || !state.months || !state.months.length) return;
+
+    // CHECK 1: meses já passados ainda marcados como isFuture no snapshot.
+    // Acontece quando o snapshot foi gerado em mês anterior e depois alguns meses passaram —
+    // os valores desses meses passados estão como PROJEÇÃO (não real) e precisam rebuild.
+    var curYm = currentYM();
+    var staleFutureMonths = [];
+    var avacy = state.matrices.AVACY;
+    state.months.forEach(function(ym){
+      var c = avacy[ym];
+      if(c && c.isFuture && ym < curYm) staleFutureMonths.push(ym);
+    });
+    if(staleFutureMonths.length){
+      var fmtM = function(am){ var p=am.split('-'); var nomes=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; return nomes[parseInt(p[1],10)]+'/'+p[0].slice(2); };
+      var meses = staleFutureMonths.map(fmtM).join(', ');
+      _showOtbStaleSnapshotBanner('⏰ O snapshot está com <b>'+meses+'</b> ainda marcado como projeção (já passou). Atualize para ver os valores reais.');
+      return; // não precisa do CHECK 2 — já está stale
+    }
+
+    // CHECK 2: tabelas brutas têm dados mais recentes que o snapshot
     // Pega max(ano_mes) da tabela de vendas (a que tem realizados mais recentes)
-    // Tenta minúsculo primeiro, depois maiúsculo (PostgREST é case-sensitive)
     var rows;
     try { rows = await supaFetch('/rest/v1/' + TBLS.venda + '?select=ano_mes&order=ano_mes.desc&limit=1'); }
     catch(e){ try { rows = await supaFetch('/rest/v1/' + TBLS.venda + '?select=ANO_MES&order=ANO_MES.desc&limit=1'); } catch(e2){ return; } }
@@ -2077,10 +2095,9 @@ async function _checkOtbSnapshotFreshness(saved){
 
     // Último mês com vendaVal > 0 no snapshot AVACY
     var lastInSnap = '';
-    var avacy = state.matrices.AVACY;
     state.months.forEach(function(ym){
       var c = avacy[ym];
-      if(c && (c.vendaVal > 0 || c.fatVal > 0)) lastInSnap = ym;
+      if(c && (c.vendaVal > 0 || c.fatVal > 0) && !c.isFuture) lastInSnap = ym;
     });
 
     if(maxAm && lastInSnap && maxAm > lastInSnap){
@@ -2341,7 +2358,11 @@ function importOtbPayload(p){
   if(p.matrices) state.matrices = p.matrices;
   if(p.edits)    state.edits = p.edits;
   if(p.months)   state.months = p.months;
-  if(p.currentMonth) state.currentMonth = p.currentMonth;
+  // IMPORTANTE: state.currentMonth deve refletir a data REAL de hoje, não a data em que
+  // o snapshot foi gerado. Antes copiávamos p.currentMonth, mas isso fazia meses que
+  // passaram desde a geração do snapshot continuarem marcados como "futuro" e mostrarem
+  // valores projetados em vez dos reais.
+  state.currentMonth = currentYM();
   if(p.margByYm) state._margByYm = p.margByYm;
   if(p.margBySupYm) state._margBySupYm = p.margBySupYm;
   // Validate suppliers
