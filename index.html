@@ -4515,6 +4515,44 @@ async function handleSaveDre(btn){
   if(!canEdit()){ toast('🔒 Você não tem permissão para salvar.','err'); return; }
   var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
   try{
+    // Se DRE_RAW vem de snapshot expandido (sem campos brutos NOME_CLIENTE/COD_CLIENTE/filial_nf_serie),
+    // a agregação não consegue identificar Top 50 clientes nem fazer rateio de frete corretamente.
+    // Oferece recarregar os brutos antes de prosseguir.
+    var sampleRaw = DRE_RAW && DRE_RAW[0];
+    var hasRawFields = sampleRaw && (
+      sampleRaw.NOME_CLIENTE || sampleRaw.nome_cliente ||
+      sampleRaw.COD_CLIENTE || sampleRaw.cod_cliente ||
+      sampleRaw.filial_nf_serie || sampleRaw.FILIAL_NF_SERIE
+    );
+    if(DRE_SNAPSHOT && !hasRawFields && DRE_RAW.length > 0){
+      var ok = confirm(
+        '⚠️ Você está com o snapshot expandido (não os dados brutos).\n\n' +
+        'Re-salvar agora vai gerar um novo snapshot SEM identificar os Top 50 clientes — ' +
+        'todos vão cair em "DEMAIS CLIENTES".\n\n' +
+        'Quer recarregar os dados brutos da Venda DRE primeiro? (~1-2 min na primeira vez, ' +
+        'instantâneo nas próximas com cache local)'
+      );
+      if(ok){
+        btn.textContent = '⏳ Recarregando Venda DRE...';
+        try {
+          DRE_RAW = await fetchVendaDreWithCache(function(loaded, total){
+            btn.textContent = '⏳ Venda DRE: '+Math.round((loaded/total)*100)+'%';
+          });
+          DRE_SNAPSHOT = false;
+          DRE_LOADED = true;
+          console.log('[DRE save] brutos recarregados —', DRE_RAW.length, 'linhas');
+          // Rebuild lookups que dependem dos brutos
+          if(typeof dreEnrichWithCanais === 'function') dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
+          if(typeof dreBuildFreteLookup === 'function') dreBuildFreteLookup();
+        } catch(e){
+          toast('❌ Falha ao recarregar Venda DRE: '+e.message,'err');
+          btn.disabled=false; btn.textContent=orig; return;
+        }
+      } else {
+        toast('Salvamento cancelado — Top 50 clientes não seria capturado','warn');
+        btn.disabled=false; btn.textContent=orig; return;
+      }
+    }
     // Garante que custo de frete estará no snapshot
     var freteReady = await _dreEnsureFreteReady(function(msg){ btn.textContent = '⏳ ' + msg; });
     if(!freteReady){ btn.disabled=false; btn.textContent=orig; return; }
@@ -4958,14 +4996,23 @@ function dreRender(){
     }
     else if(DRE_TAB==='cliente'){
       // Snapshot antigo (gerado antes da feature de Top 50 clientes) não tem campo cli.
-      // Detecta e pede re-save — igual padrão do Vendedor.
+      // OU: snapshot novo onde tudo caiu em DEMAIS CLIENTES (porque o save foi feito em
+      // cima do snapshot expandido, sem acesso aos campos brutos NOME_CLIENTE).
       if(DRE_SNAPSHOT){
         var hasCli = DRE_RAW.some(function(r){ return !!(r.cliente || r.cli); });
-        if(!hasCli){
+        // Se tem campo `cliente` mas TODOS são "DEMAIS CLIENTES", o snapshot foi mal-formado
+        var onlyDemais = hasCli && DRE_RAW.every(function(r){
+          var cl = String(r.cliente||r.cli||'').trim().toUpperCase();
+          return cl === '' || cl === 'DEMAIS CLIENTES';
+        });
+        if(!hasCli || onlyDemais){
+          var titulo = !hasCli
+            ? '⚠️ O snapshot atual foi salvo antes da aba Cliente ser criada.'
+            : '⚠️ O snapshot atual só tem "DEMAIS CLIENTES" — o save anterior foi feito sem dados brutos.';
           document.getElementById('dreTable-cli').innerHTML='<div style="text-align:center;padding:40px;color:#7a8ab0;font-size:13px">'+
-            '⚠️ O snapshot atual foi salvo antes da aba Cliente ser criada.<br><br>'+
+            titulo+'<br><br>'+
             '<button onclick="document.getElementById(\'btnSaveDre\').click()" style="background:#1a2a6c;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px">🔄 Re-salvar DRE agora</button>'+
-            '<br><small style="color:#aaa;margin-top:8px;display:block">Vai re-agregar com os <b>Top 50 clientes nominais</b> + "Demais Clientes". Pra ver TODOS os clientes nominalmente, recarregue Venda DRE em ↺ Configurações.</small></div>';
+            '<br><small style="color:#aaa;margin-top:8px;display:block">Vai te perguntar se quer recarregar Venda DRE primeiro (necessário pra capturar os <b>Top 50 clientes nominais</b>). Próximas vezes serão instantâneas com cache local.</small></div>';
           document.getElementById('dreKpi-cli').innerHTML='';
           return;
         }
