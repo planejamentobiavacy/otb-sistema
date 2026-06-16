@@ -4525,7 +4525,7 @@ async function initDre(){
   var snapBadge=DRE_SNAPSHOT?'<span style="background:#e8f0fe;color:#1a56c4;font-size:10px;padding:2px 7px;border-radius:10px;margin-left:8px;font-weight:600">⚡ snapshot</span>':'<span style="background:#fff3cd;color:#856404;font-size:10px;padding:2px 7px;border-radius:10px;margin-left:8px;font-weight:600">🔴 dados brutos</span>';
   document.getElementById('dreHeaderMeta').innerHTML='<strong>'+DRE_RAW.length.toLocaleString('pt-BR')+' registros</strong> · DRE carregado'+snapBadge;
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
-  var tabsDefs=[{id:'mensal',label:'📅 Todos os Meses'},{id:'canal',label:'📡 Canal'},{id:'cluster',label:'🗂 Cluster'},{id:'regiao',label:'📍 Região'},{id:'fornecedor',label:'🏭 Fornecedor'},{id:'transportadora',label:'🚚 Transportadora'},{id:'vendedor',label:'🧑‍💼 Vendedor'}];
+  var tabsDefs=[{id:'mensal',label:'📅 Todos os Meses'},{id:'canal',label:'📡 Canal'},{id:'cluster',label:'🗂 Cluster'},{id:'regiao',label:'📍 Região'},{id:'fornecedor',label:'🏭 Fornecedor'},{id:'transportadora',label:'🚚 Transportadora'},{id:'vendedor',label:'🧑‍💼 Vendedor'},{id:'cliente',label:'🧾 Cliente'}];
   var bar=document.getElementById('dreTabsBar'); bar.innerHTML='';
   // Default: filtros retraídos (define ANTES de montar o botão global e os painéis para evitar inconsistência)
   if(typeof window.DRE_FILTROS_EXPANDED === 'undefined') window.DRE_FILTROS_EXPANDED = false;
@@ -4591,7 +4591,8 @@ async function initDre(){
     '<div id="drePanel-regiao" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-regiao'),selQ('dre-q-regiao'),selMes('dre-mes-regiao'),selCanal('dre-canal-regiao'),selCluster('dre-cluster-regiao'),selForn('dre-forn-regiao'),selTransp('dre-transp-regiao'),selVend('dre-vend-regiao')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-regiao" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(144px,1fr));gap:8px"></div></div>'+'<div id="dreTable-regiao"></div></div>'+
     '<div id="drePanel-fornecedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-forn'),selQ('dre-q-forn'),selMes('dre-mes-forn'),selCanal('dre-canal-forn'),selCluster('dre-cluster-forn'),selRegiao('dre-reg-forn'),selTransp('dre-transp-forn'),selVend('dre-vend-forn')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-forn" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(144px,1fr));gap:8px"></div></div>'+'<div id="dreTable-forn"></div></div>'+
     '<div id="drePanel-transportadora" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-transp'),selQ('dre-q-transp'),selMes('dre-mes-transp'),selCanal('dre-canal-transp'),selCluster('dre-cluster-transp'),selRegiao('dre-reg-transp'),selForn('dre-forn-transp'),selVend('dre-vend-transp')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-transp" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(144px,1fr));gap:8px"></div></div>'+'<div id="dreTable-transp"></div></div>'+
-    '<div id="drePanel-vendedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-vend'),selQ('dre-q-vend'),selMes('dre-mes-vend'),selCanal('dre-canal-vend'),selCluster('dre-cluster-vend'),selRegiao('dre-reg-vend'),selForn('dre-forn-vend'),selTransp('dre-transp-vend')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-vend" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(144px,1fr));gap:8px"></div></div>'+'<div id="dreTable-vend"></div></div>';
+    '<div id="drePanel-vendedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-vend'),selQ('dre-q-vend'),selMes('dre-mes-vend'),selCanal('dre-canal-vend'),selCluster('dre-cluster-vend'),selRegiao('dre-reg-vend'),selForn('dre-forn-vend'),selTransp('dre-transp-vend')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-vend" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(144px,1fr));gap:8px"></div></div>'+'<div id="dreTable-vend"></div></div>'+
+    '<div id="drePanel-cliente" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-cli'),selQ('dre-q-cli'),selMes('dre-mes-cli'),selCanal('dre-canal-cli'),selCluster('dre-cluster-cli'),selRegiao('dre-reg-cli'),selForn('dre-forn-cli'),selTransp('dre-transp-cli'),selVend('dre-vend-cli')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-cli" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(144px,1fr));gap:8px"></div></div>'+'<div id="dreTable-cli"></div></div>';
   dreSwitchTab('mensal');
 }
 
@@ -4852,6 +4853,23 @@ function dreRender(){
       }
       dreRenderDim('VENDEDOR','dre-ano-vend','dre-mes-vend','dre-canal-vend','vend');
     }
+    else if(DRE_TAB==='cliente'){
+      // Cliente NÃO entra na chave de agregação do snapshot (10k+ clientes explodiriam o tamanho).
+      // Por isso, essa aba só funciona com DADOS BRUTOS (DRE_RAW com filial_nf_serie / cod_cliente).
+      // Se está com snapshot, mostra aviso pedindo Recarregar Venda DRE.
+      if(DRE_SNAPSHOT){
+        var hasCli = DRE_RAW.some(function(r){ return !!(r.cod_cliente||r.COD_CLIENTE||r.cliente||r.CLIENTE); });
+        if(!hasCli){
+          document.getElementById('dreTable-cli').innerHTML='<div style="text-align:center;padding:40px;color:#7a8ab0;font-size:13px">'+
+            '⚠️ A aba Cliente precisa dos <b>dados brutos</b> da Venda DRE (cliente não é agregado no snapshot pra não explodir o tamanho).<br><br>'+
+            '<button onclick="openCfg && openCfg(); setTimeout(function(){ var b=document.querySelector(\'#cfgDreRows button.btn.gray\'); if(b) b.click(); }, 300)" style="background:#1a2a6c;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px;margin-right:6px">↺ Recarregar Venda DRE</button>'+
+            '<br><small style="color:#aaa;margin-top:8px;display:block">Vai puxar a tabela completa do Supabase e habilitar a aba Cliente.</small></div>';
+          document.getElementById('dreKpi-cli').innerHTML='';
+          return;
+        }
+      }
+      dreRenderDim('CLIENTE','dre-ano-cli','dre-mes-cli','dre-canal-cli','cli');
+    }
   } catch(e){
     console.error('[dreRender] ERRO:', e.message, e.stack);
     var panel = document.getElementById('drePanel-'+DRE_TAB);
@@ -4947,6 +4965,14 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
       }
       return nome.toUpperCase();
     };
+  } else if(dimKey === 'cliente'){
+    // Cliente: usa NOME/RAZAO_SOCIAL se houver, senão COD_CLIENTE como fallback
+    dimVal = function(r){
+      var nome = String(r.NOME_CLIENTE||r.nome_cliente||r.RAZAO_SOCIAL||r.razao_social||r.NOME||r.nome||r.FANTASIA||r.fantasia||'').trim();
+      if(nome) return nome.toUpperCase();
+      var cod = String(r.COD_CLIENTE||r.cod_cliente||r.CLIENTE||r.cliente||'').trim();
+      return cod.toUpperCase();
+    };
   } else if(dimKey === 'canal'){
     // Usa helper para aplicar regra RCA + lookup
     dimVal = function(r){ return String(dreResolveCanal(r)||'').toUpperCase(); };
@@ -4954,7 +4980,7 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
     dimVal = function(r){ return String(r[_dimField]||r[_dimField.toUpperCase()]||'').toUpperCase(); };
   }
   var dimsFromData = Array.from(new Set(rows.map(dimVal))).filter(function(d){ return d && d !== 'NULL' && d !== 'UNDEFINED'; });
-  // Para vendedor: monta mapa uppercase->nome original para exibição correta
+  // Para vendedor/cliente: monta mapa uppercase->nome original para exibição correta
   var vendedorDisplayMap = {};
   if(dimKey === 'vendedor'){
     rows.forEach(function(r){
@@ -4962,6 +4988,14 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
       if(!up || vendedorDisplayMap[up]) return;
       var nome = r.vd || String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||'').trim();
       if(!nome){ var cod=String(r.COD_VENDEDOR||r.cod_vendedor||'').trim(); nome=DRE_VENDEDOR_LOOKUP[cod]||cod; }
+      vendedorDisplayMap[up] = nome;
+    });
+  } else if(dimKey === 'cliente'){
+    rows.forEach(function(r){
+      var up = dimVal(r);
+      if(!up || vendedorDisplayMap[up]) return;
+      var nome = String(r.NOME_CLIENTE||r.nome_cliente||r.RAZAO_SOCIAL||r.razao_social||r.NOME||r.nome||r.FANTASIA||r.fantasia||'').trim();
+      if(!nome){ var cod=String(r.COD_CLIENTE||r.cod_cliente||r.CLIENTE||r.cliente||'').trim(); nome = cod; }
       vendedorDisplayMap[up] = nome;
     });
   }
@@ -4980,7 +5014,7 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   }
 
   var cols=dims.map(function(d){
-    var label = dimKey==='vendedor' ? (vendedorDisplayMap[d] || d) : (dimLabelMap[d] || d);
+    var label = (dimKey==='vendedor' || dimKey==='cliente') ? (vendedorDisplayMap[d] || d) : (dimLabelMap[d] || d);
     var canalCtx = dimKey==='canal' ? d : null;
     var sliceRows = rows.filter(function(r){return dimVal(r)===d;});
     return{label:label,d:dreCalcShare(sliceRows,rows,canalCtx)};
