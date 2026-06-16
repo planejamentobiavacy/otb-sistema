@@ -4515,14 +4515,20 @@ async function handleSaveDre(btn){
   if(!canEdit()){ toast('🔒 Você não tem permissão para salvar.','err'); return; }
   var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
   try{
-    // Se DRE_RAW vem de snapshot expandido (sem campos brutos NOME_CLIENTE/COD_CLIENTE/filial_nf_serie),
-    // a agregação não consegue identificar Top 50 clientes nem fazer rateio de frete corretamente.
-    // Oferece recarregar os brutos antes de prosseguir.
+    // Se DRE_RAW vem de snapshot expandido (sem campos brutos), a agregação não consegue
+    // identificar Top 50 clientes nem fazer rateio de frete corretamente.
+    // CRÍTICO: testar campos que SÓ EXISTEM em raw — o expand do snapshot adiciona
+    // `cliente`/`nome_cliente` (minúsculo) por causa da feature Top 50. Por isso testamos
+    // por MAIÚSCULOS (vêm do PostgREST raw) e `COD_VENDEDOR` (nunca vai pro snapshot).
     var sampleRaw = DRE_RAW && DRE_RAW[0];
     var hasRawFields = sampleRaw && (
-      sampleRaw.NOME_CLIENTE || sampleRaw.nome_cliente ||
-      sampleRaw.COD_CLIENTE || sampleRaw.cod_cliente ||
-      sampleRaw.filial_nf_serie || sampleRaw.FILIAL_NF_SERIE
+      sampleRaw.NOME_CLIENTE ||
+      sampleRaw.COD_CLIENTE ||
+      sampleRaw.RAZAO_SOCIAL ||
+      sampleRaw.FILIAL_NF_SERIE ||
+      sampleRaw.filial_nf_serie ||
+      sampleRaw.COD_VENDEDOR ||
+      sampleRaw.cod_vendedor
     );
     if(DRE_SNAPSHOT && !hasRawFields && DRE_RAW.length > 0){
       var ok = confirm(
