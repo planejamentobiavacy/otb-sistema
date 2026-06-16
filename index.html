@@ -4530,7 +4530,9 @@ async function handleSaveDre(btn){
       sampleRaw.COD_VENDEDOR ||
       sampleRaw.cod_vendedor
     );
+    console.log('[handleSaveDre] DRE_SNAPSHOT:', DRE_SNAPSHOT, '| hasRawFields:', !!hasRawFields, '| DRE_RAW.length:', DRE_RAW.length);
     if(DRE_SNAPSHOT && !hasRawFields && DRE_RAW.length > 0){
+      console.log('[handleSaveDre] vai mostrar confirm de recarregar brutos');
       var ok = confirm(
         '⚠️ Você está com o snapshot expandido (não os dados brutos).\n\n' +
         'Re-salvar agora vai gerar um novo snapshot SEM identificar os Top 50 clientes — ' +
