@@ -1019,63 +1019,6 @@ async function _idbSet(key, value){
   } catch(e){ /* ignore */ }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CACHE PERSISTENTE DO dw_otb_venda_dre NO IndexedDB
-// ═══════════════════════════════════════════════════════════════════════════
-// venda_dre é a maior tabela (~285k linhas, ~50MB). Baixar toda vez que alguém
-// abre o DRE consome 50MB de egress. Solução: armazena os dados no IndexedDB
-// e invalida automaticamente quando _inserted_at remoto muda (sinal de ETL novo).
-// Resultado: depois do 1º download, próximas sessões abrem em ~2s.
-// ═══════════════════════════════════════════════════════════════════════════
-async function _idbGetRaw(key){
-  // Igual _idbGet mas sem checar TTL — pra cache validado por outro mecanismo (_inserted_at).
-  try{
-    var db = await _idbOpen();
-    if(!db) return null;
-    return await new Promise(function(resolve){
-      try{
-        var tx = db.transaction(IDB_STORE, 'readonly');
-        var req = tx.objectStore(IDB_STORE).get(key);
-        req.onsuccess = function(){ resolve(req.result ? req.result.value : null); };
-        req.onerror   = function(){ resolve(null); };
-      } catch(e){ resolve(null); }
-    });
-  } catch(e){ return null; }
-}
-
-async function fetchVendaDreWithCache(progressCb){
-  var CACHE_KEY = 'venda_dre_cache_v1';
-  // 1. Pega MAX(_inserted_at) remoto — query leve (~50 bytes, ~100ms)
-  var remoteLatest = null;
-  try {
-    var rows = await supaFetch('/rest/v1/' + TBLS.venda_dre + '?select=_inserted_at&order=_inserted_at.desc&limit=1');
-    if(rows && rows.length) remoteLatest = rows[0]._inserted_at || rows[0]._INSERTED_AT || null;
-  } catch(e){ console.warn('[venda_dre cache] falhou check _inserted_at:', e.message); }
-  // Se a tabela não tem _inserted_at, vai sem cache (segurança)
-  if(!remoteLatest){
-    console.log('[venda_dre cache] sem _inserted_at remoto — fetch direto sem cache');
-    return await fetchAll(TBLS.venda_dre, null, 'venda_dre', progressCb);
-  }
-  // 2. Tenta cache local
-  var cached = null;
-  try { cached = await _idbGetRaw(CACHE_KEY); } catch(e){}
-  if(cached && cached.latestInsert === remoteLatest && Array.isArray(cached.rows) && cached.rows.length){
-    console.log('[venda_dre cache] HIT —', cached.rows.length, 'linhas (latestInsert='+remoteLatest+')');
-    if(progressCb) progressCb(cached.rows.length, cached.rows.length);
-    return cached.rows;
-  }
-  // 3. Cache stale/ausente — baixa fresh e salva
-  console.log('[venda_dre cache] MISS — baixando do Supabase (motivo: '+(cached ? 'latestInsert diferente' : 'sem cache')+')');
-  var fresh = await fetchAll(TBLS.venda_dre, null, 'venda_dre', progressCb);
-  // Salva em background (não bloqueia retorno)
-  setTimeout(function(){
-    _idbSet(CACHE_KEY, {rows: fresh, latestInsert: remoteLatest, savedAt: Date.now()})
-      .then(function(){ console.log('[venda_dre cache] salvo —', fresh.length, 'linhas'); })
-      .catch(function(e){ console.warn('[venda_dre cache] falha ao salvar:', e.message); });
-  }, 50);
-  return fresh;
-}
-
 window.clearIdbCache = async function(prefix){
   try{
     var db = await _idbOpen();
@@ -2573,7 +2516,7 @@ async function handleReloadAll(btn){
     {label:'Recarregando Estoque...', fn: async function(){ state.stk = await fetchAll(TBLS.stk, null, 'stk', _onProg(TBLS.stk)); var s=document.getElementById('cfg_status_stk'); if(s) s.textContent=state.stk.length+' linhas'; }},
     {label:'Recarregando Vendas...', fn: async function(){ state.venda = await fetchAll(TBLS.venda, null, 'venda', _onProg(TBLS.venda)); var s=document.getElementById('cfg_status_venda'); if(s) s.textContent=state.venda.length+' linhas'; }},
     {label:'Recarregando Carteira...', fn: async function(){ state.cart = await fetchAll(TBLS.carteira, null, 'carteira', _onProg(TBLS.carteira)); var s=document.getElementById('cfg_status_carteira'); if(s) s.textContent=state.cart.length+' linhas'; }},
-    {label:'Recarregando DRE...', fn: async function(){ DRE_RAW = await fetchVendaDreWithCache(_onProg(TBLS.venda_dre)); DRE_LOADED = DRE_RAW.length > 0; }},
+    {label:'Recarregando DRE...', fn: async function(){ DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre', _onProg(TBLS.venda_dre)); DRE_LOADED = DRE_RAW.length > 0; }},
     {label:'Recarregando Folha...', fn: async function(){ FOLHA_RAW = await fetchAll(TBLS.folha, null, null, _onProg(TBLS.folha)); FOLHA_LOADED = FOLHA_RAW.length > 0; }},
   ];
   var erros = [];
@@ -4095,7 +4038,7 @@ async function loadDreFromSupabase(forceRaw){
       if(progLbl) progLbl.textContent = 'Carregando dados (' + reason + ')...';
       console.log('[DRE] bruto, motivo:', reason);
       // venda_dre é grande — carrega primeiro; demais em paralelo
-      DRE_RAW = await fetchVendaDreWithCache(dreShowProgress);
+      DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre', dreShowProgress);
       console.log('[DRE] bruto:', DRE_RAW.length, 'linhas');
       var aux = await Promise.all([
         fetchAll(TBLS.folha,   null, null).catch(function(){ return []; }),
@@ -4273,33 +4216,12 @@ function dreAggregateFull(raw){
     var nome = String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||'').trim();
     if(cod && nome && !_vLookup[cod]) _vLookup[cod] = nome;
   });
-
-  // ── PASSADA 1: Top 50 clientes por faturamento ──────────────────────────
-  // Cliente é uma dimensão de alta cardinalidade (~10k clientes). Incluir TODOS
-  // no snapshot exploda o tamanho. Solução: mantém os Top 50 nominais e agrupa
-  // o resto como "DEMAIS CLIENTES" — cobre 90%+ da receita com só 50 entradas.
-  var _resolveCliente = function(r){
-    var c = String(r.NOME_CLIENTE||r.nome_cliente||r.RAZAO_SOCIAL||r.razao_social||r.NOME||r.nome||r.FANTASIA||r.fantasia||'').trim();
-    if(!c) c = String(r.COD_CLIENTE||r.cod_cliente||r.CLIENTE||r.cliente||'').trim();
-    return c;
-  };
-  var TOP_N_CLIENTES = 50;
-  var _cliFat = {}; var _cliOrigName = {};
-  raw.forEach(function(r){
-    var cliOrig = _resolveCliente(r);
-    if(!cliOrig) return;
-    var cliUp = cliOrig.toUpperCase();
-    _cliFat[cliUp] = (_cliFat[cliUp]||0) + nk(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO);
-    if(!_cliOrigName[cliUp]) _cliOrigName[cliUp] = cliOrig;
-  });
-  var _topCli = Object.keys(_cliFat).sort(function(a,b){ return _cliFat[b]-_cliFat[a]; }).slice(0, TOP_N_CLIENTES);
-  var _topCliSet = {}; _topCli.forEach(function(c){ _topCliSet[c] = true; });
-
-  // ── PASSADA 2: agregação principal (agora com cliente Top50/Demais na chave) ──
   raw.forEach(function(r){
     var a  = String(r.ANO||r.ano||'');
     var m  = String(r.MES||r.mes||'').padStart(2,'0');
+    // Canal: helper aplica regra "vendedor RCA* -> canal RCA" + lookup por cod_vendedor
     var c  = dreResolveCanal(r, _vLookup);
+    // Cluster: usa campo direto ou lookup por cod_cliente; sem match -> "Demais"
     var cl = String(r.CLUSTER||r.cluster||'');
     if(!cl){
       if(DRE_HAS_CLUSTER_LOOKUP){
@@ -4313,13 +4235,11 @@ function dreAggregateFull(raw){
     var f  = String(r.FORNECEDOR||r.fornecedor||'');
     var tr = String(r.TRANSPORTADORA||r.transportadora||'');
     var vd = String(r.COD_VENDEDOR||r.cod_vendedor||r.VENDEDOR||r.vendedor||'').trim();
+    // Resolve nome_vendedor: campo direto na linha > lookup por código > fallback código
     var vdNome = String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||'').trim();
     if(!vdNome && vd) vdNome = _vLookup[vd] || vd;
-    // Cliente: se está no Top50, usa nome original; senão agrupa em "DEMAIS CLIENTES"
-    var cliOrig = _resolveCliente(r);
-    var cli = cliOrig ? (_topCliSet[cliOrig.toUpperCase()] ? _cliOrigName[cliOrig.toUpperCase()] : 'DEMAIS CLIENTES') : 'DEMAIS CLIENTES';
-    var key= a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f+'|'+vdNome+'|'+tr+'|'+cli;
-    if(!map[key]) map[key]={a:a,m:m,c:c,cl:cl,rg:rg,f:f,tr:tr,vd:vdNome,cli:cli,fv:0,dv:0,q:0,cu:0,ic:0,co:0,pi:0,fe:0,rf:0,cf:0,qg:0};
+    var key= a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f+'|'+vdNome+'|'+tr; // tr agora na chave — necessário para custo_frete correto por transportadora
+    if(!map[key]) map[key]={a:a,m:m,c:c,cl:cl,rg:rg,f:f,tr:tr,vd:vdNome,fv:0,dv:0,q:0,cu:0,ic:0,co:0,pi:0,fe:0,rf:0,cf:0,qg:0};
     var x=map[key];
     x.fv += nk(r.faturamento_venda||r.FATURAMENTO_VENDA||r.faturamento||r.FATURAMENTO);
     x.dv += nk(r.devolucao_venda  ||r.DEVOLUCAO_VENDA);
@@ -4330,6 +4250,7 @@ function dreAggregateFull(raw){
     x.pi += nk(r.pis              ||r.PIS);
     x.fe += nk(r.fecpst           ||r.FECPST);
     x.rf += nk(r.rec_frete        ||r.REC_FRETE);
+    // custo_frete: helper aplica zero-transp + rateio via filial_nf_serie + fallback
     x.cf += dreCalcCustoFrete(r);
     x.qg += nk(r.qtd_grade_hava   ||r.QTD_GRADE_HAVA);
   });
@@ -4354,28 +4275,7 @@ async function dreAggregateFullAsync(raw, onProgress){
     if(i>0 && i%50000===0) await new Promise(function(res){ setTimeout(res, 0); });
   }
 
-  // ── PASSADA 1 (chunked): Top 50 clientes por faturamento ────────────────
-  var _resolveCli = function(r){
-    var c = String(r.NOME_CLIENTE||r.nome_cliente||r.RAZAO_SOCIAL||r.razao_social||r.NOME||r.nome||r.FANTASIA||r.fantasia||'').trim();
-    if(!c) c = String(r.COD_CLIENTE||r.cod_cliente||r.CLIENTE||r.cliente||'').trim();
-    return c;
-  };
-  var TOP_N_CLIENTES = 50;
-  var _cliFat = {}; var _cliOrigName = {};
-  for(var ai=0; ai<raw.length; ai++){
-    var ra = raw[ai];
-    var cliOrigA = _resolveCli(ra);
-    if(cliOrigA){
-      var cliUpA = cliOrigA.toUpperCase();
-      _cliFat[cliUpA] = (_cliFat[cliUpA]||0) + nk(ra.faturamento_venda||ra.FATURAMENTO_VENDA||ra.faturamento||ra.FATURAMENTO);
-      if(!_cliOrigName[cliUpA]) _cliOrigName[cliUpA] = cliOrigA;
-    }
-    if(ai>0 && ai%50000===0) await new Promise(function(res){ setTimeout(res, 0); });
-  }
-  var _topCliArr = Object.keys(_cliFat).sort(function(a,b){ return _cliFat[b]-_cliFat[a]; }).slice(0, TOP_N_CLIENTES);
-  var _topCliSet = {}; _topCliArr.forEach(function(c){ _topCliSet[c] = true; });
-
-  // ── PASSADA 2 (chunked): agregação principal ───────────────────────────
+  // Agregação principal em chunks
   for(var ci=0; ci<raw.length; ci+=CHUNK_SIZE){
     var end = Math.min(ci+CHUNK_SIZE, raw.length);
     for(var j=ci; j<end; j++){
@@ -4396,10 +4296,8 @@ async function dreAggregateFullAsync(raw, onProgress){
       var vd = String(r2.COD_VENDEDOR||r2.cod_vendedor||r2.VENDEDOR||r2.vendedor||'').trim();
       var vdNome = String(r2.NOME_VENDEDOR||r2.nome_vendedor||r2.NOM_VENDEDOR||r2.nom_vendedor||'').trim();
       if(!vdNome && vd) vdNome = _vLookup[vd] || vd;
-      var cliOrig2 = _resolveCli(r2);
-      var cli = cliOrig2 ? (_topCliSet[cliOrig2.toUpperCase()] ? _cliOrigName[cliOrig2.toUpperCase()] : 'DEMAIS CLIENTES') : 'DEMAIS CLIENTES';
-      var key = a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f+'|'+vdNome+'|'+tr+'|'+cli;
-      if(!map[key]) map[key]={a:a,m:m,c:c,cl:cl,rg:rg,f:f,tr:tr,vd:vdNome,cli:cli,fv:0,dv:0,q:0,cu:0,ic:0,co:0,pi:0,fe:0,rf:0,cf:0,qg:0};
+      var key = a+'|'+m+'|'+c+'|'+cl+'|'+rg+'|'+f+'|'+vdNome+'|'+tr;
+      if(!map[key]) map[key]={a:a,m:m,c:c,cl:cl,rg:rg,f:f,tr:tr,vd:vdNome,fv:0,dv:0,q:0,cu:0,ic:0,co:0,pi:0,fe:0,rf:0,cf:0,qg:0};
       var x = map[key];
       x.fv += nk(r2.faturamento_venda||r2.FATURAMENTO_VENDA||r2.faturamento||r2.FATURAMENTO);
       x.dv += nk(r2.devolucao_venda  ||r2.DEVOLUCAO_VENDA);
@@ -4414,6 +4312,7 @@ async function dreAggregateFullAsync(raw, onProgress){
       x.qg += nk(r2.qtd_grade_hava   ||r2.QTD_GRADE_HAVA);
     }
     if(onProgress) onProgress(end, raw.length);
+    // Libera o thread para o browser respirar
     await new Promise(function(res){ setTimeout(res, 0); });
   }
   return Object.values(map);
@@ -4425,11 +4324,9 @@ function dreExpandSnapshot(snap){
     if(x.ano !== undefined) return x;
     // vd pode estar ausente em snapshots salvos antes da feature de Vendedor
     var vdVal = x.vd || '';
-    // cli pode estar ausente em snapshots salvos antes da feature de Cliente (Top 50)
-    var cliVal = x.cli || '';
+    if(!vdVal && x.c){ /* sem cod no snapshot compacto — não há como resolver */ }
     return {
       ano:x.a, mes:x.m, canal:x.c, cluster:x.cl, regiao:x.rg, fornecedor:x.f, transportadora:x.tr, vd:vdVal, vendedor:vdVal,
-      cliente:cliVal, nome_cliente:cliVal,
       faturamento_venda:x.fv, devolucao_venda:x.dv, qtd:x.q, custo:x.cu,
       icms:x.ic, cofins:x.co, pis:x.pi, fecpst:x.fe,
       rec_frete:x.rf, custo_frete:x.cf, qtd_grade_hava:x.qg
@@ -4515,52 +4412,6 @@ async function handleSaveDre(btn){
   if(!canEdit()){ toast('🔒 Você não tem permissão para salvar.','err'); return; }
   var orig=btn.textContent; btn.disabled=true; btn.textContent='⏳ Salvando...';
   try{
-    // Se DRE_RAW vem de snapshot expandido (sem campos brutos), a agregação não consegue
-    // identificar Top 50 clientes nem fazer rateio de frete corretamente.
-    // CRÍTICO: testar campos que SÓ EXISTEM em raw — o expand do snapshot adiciona
-    // `cliente`/`nome_cliente` (minúsculo) por causa da feature Top 50. Por isso testamos
-    // por MAIÚSCULOS (vêm do PostgREST raw) e `COD_VENDEDOR` (nunca vai pro snapshot).
-    var sampleRaw = DRE_RAW && DRE_RAW[0];
-    var hasRawFields = sampleRaw && (
-      sampleRaw.NOME_CLIENTE ||
-      sampleRaw.COD_CLIENTE ||
-      sampleRaw.RAZAO_SOCIAL ||
-      sampleRaw.FILIAL_NF_SERIE ||
-      sampleRaw.filial_nf_serie ||
-      sampleRaw.COD_VENDEDOR ||
-      sampleRaw.cod_vendedor
-    );
-    console.log('[handleSaveDre] DRE_SNAPSHOT:', DRE_SNAPSHOT, '| hasRawFields:', !!hasRawFields, '| DRE_RAW.length:', DRE_RAW.length);
-    if(DRE_SNAPSHOT && !hasRawFields && DRE_RAW.length > 0){
-      console.log('[handleSaveDre] vai mostrar confirm de recarregar brutos');
-      var ok = confirm(
-        '⚠️ Você está com o snapshot expandido (não os dados brutos).\n\n' +
-        'Re-salvar agora vai gerar um novo snapshot SEM identificar os Top 50 clientes — ' +
-        'todos vão cair em "DEMAIS CLIENTES".\n\n' +
-        'Quer recarregar os dados brutos da Venda DRE primeiro? (~1-2 min na primeira vez, ' +
-        'instantâneo nas próximas com cache local)'
-      );
-      if(ok){
-        btn.textContent = '⏳ Recarregando Venda DRE...';
-        try {
-          DRE_RAW = await fetchVendaDreWithCache(function(loaded, total){
-            btn.textContent = '⏳ Venda DRE: '+Math.round((loaded/total)*100)+'%';
-          });
-          DRE_SNAPSHOT = false;
-          DRE_LOADED = true;
-          console.log('[DRE save] brutos recarregados —', DRE_RAW.length, 'linhas');
-          // Rebuild lookups que dependem dos brutos
-          if(typeof dreEnrichWithCanais === 'function') dreEnrichWithCanais(DRE_RAW, DRE_CANAIS_RAW, DRE_CLUSTER_RAW);
-          if(typeof dreBuildFreteLookup === 'function') dreBuildFreteLookup();
-        } catch(e){
-          toast('❌ Falha ao recarregar Venda DRE: '+e.message,'err');
-          btn.disabled=false; btn.textContent=orig; return;
-        }
-      } else {
-        toast('Salvamento cancelado — Top 50 clientes não seria capturado','warn');
-        btn.disabled=false; btn.textContent=orig; return;
-      }
-    }
     // Garante que custo de frete estará no snapshot
     var freteReady = await _dreEnsureFreteReady(function(msg){ btn.textContent = '⏳ ' + msg; });
     if(!freteReady){ btn.disabled=false; btn.textContent=orig; return; }
@@ -4674,7 +4525,7 @@ async function initDre(){
   var snapBadge=DRE_SNAPSHOT?'<span style="background:#e8f0fe;color:#1a56c4;font-size:10px;padding:2px 7px;border-radius:10px;margin-left:8px;font-weight:600">⚡ snapshot</span>':'<span style="background:#fff3cd;color:#856404;font-size:10px;padding:2px 7px;border-radius:10px;margin-left:8px;font-weight:600">🔴 dados brutos</span>';
   document.getElementById('dreHeaderMeta').innerHTML='<strong>'+DRE_RAW.length.toLocaleString('pt-BR')+' registros</strong> · DRE carregado'+snapBadge;
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
-  var tabsDefs=[{id:'mensal',label:'📅 Todos os Meses'},{id:'canal',label:'📡 Canal'},{id:'cluster',label:'🗂 Cluster'},{id:'regiao',label:'📍 Região'},{id:'fornecedor',label:'🏭 Fornecedor'},{id:'transportadora',label:'🚚 Transportadora'},{id:'vendedor',label:'🧑‍💼 Vendedor'},{id:'cliente',label:'🧾 Cliente'}];
+  var tabsDefs=[{id:'mensal',label:'📅 Todos os Meses'},{id:'canal',label:'📡 Canal'},{id:'cluster',label:'🗂 Cluster'},{id:'regiao',label:'📍 Região'},{id:'fornecedor',label:'🏭 Fornecedor'},{id:'transportadora',label:'🚚 Transportadora'},{id:'vendedor',label:'🧑‍💼 Vendedor'}];
   var bar=document.getElementById('dreTabsBar'); bar.innerHTML='';
   // Default: filtros retraídos (define ANTES de montar o botão global e os painéis para evitar inconsistência)
   if(typeof window.DRE_FILTROS_EXPANDED === 'undefined') window.DRE_FILTROS_EXPANDED = false;
@@ -4740,8 +4591,7 @@ async function initDre(){
     '<div id="drePanel-regiao" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-regiao'),selQ('dre-q-regiao'),selMes('dre-mes-regiao'),selCanal('dre-canal-regiao'),selCluster('dre-cluster-regiao'),selForn('dre-forn-regiao'),selTransp('dre-transp-regiao'),selVend('dre-vend-regiao')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-regiao" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(144px,1fr));gap:8px"></div></div>'+'<div id="dreTable-regiao"></div></div>'+
     '<div id="drePanel-fornecedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-forn'),selQ('dre-q-forn'),selMes('dre-mes-forn'),selCanal('dre-canal-forn'),selCluster('dre-cluster-forn'),selRegiao('dre-reg-forn'),selTransp('dre-transp-forn'),selVend('dre-vend-forn')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-forn" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(144px,1fr));gap:8px"></div></div>'+'<div id="dreTable-forn"></div></div>'+
     '<div id="drePanel-transportadora" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-transp'),selQ('dre-q-transp'),selMes('dre-mes-transp'),selCanal('dre-canal-transp'),selCluster('dre-cluster-transp'),selRegiao('dre-reg-transp'),selForn('dre-forn-transp'),selVend('dre-vend-transp')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-transp" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(144px,1fr));gap:8px"></div></div>'+'<div id="dreTable-transp"></div></div>'+
-    '<div id="drePanel-vendedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-vend'),selQ('dre-q-vend'),selMes('dre-mes-vend'),selCanal('dre-canal-vend'),selCluster('dre-cluster-vend'),selRegiao('dre-reg-vend'),selForn('dre-forn-vend'),selTransp('dre-transp-vend')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-vend" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(144px,1fr));gap:8px"></div></div>'+'<div id="dreTable-vend"></div></div>'+
-    '<div id="drePanel-cliente" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-cli'),selQ('dre-q-cli'),selMes('dre-mes-cli'),selCanal('dre-canal-cli'),selCluster('dre-cluster-cli'),selRegiao('dre-reg-cli'),selForn('dre-forn-cli'),selTransp('dre-transp-cli'),selVend('dre-vend-cli')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-cli" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(144px,1fr));gap:8px"></div></div>'+'<div id="dreTable-cli"></div></div>';
+    '<div id="drePanel-vendedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-vend'),selQ('dre-q-vend'),selMes('dre-mes-vend'),selCanal('dre-canal-vend'),selCluster('dre-cluster-vend'),selRegiao('dre-reg-vend'),selForn('dre-forn-vend'),selTransp('dre-transp-vend')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-vend" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(144px,1fr));gap:8px"></div></div>'+'<div id="dreTable-vend"></div></div>';
   dreSwitchTab('mensal');
 }
 
@@ -5002,31 +4852,6 @@ function dreRender(){
       }
       dreRenderDim('VENDEDOR','dre-ano-vend','dre-mes-vend','dre-canal-vend','vend');
     }
-    else if(DRE_TAB==='cliente'){
-      // Snapshot antigo (gerado antes da feature de Top 50 clientes) não tem campo cli.
-      // OU: snapshot novo onde tudo caiu em DEMAIS CLIENTES (porque o save foi feito em
-      // cima do snapshot expandido, sem acesso aos campos brutos NOME_CLIENTE).
-      if(DRE_SNAPSHOT){
-        var hasCli = DRE_RAW.some(function(r){ return !!(r.cliente || r.cli); });
-        // Se tem campo `cliente` mas TODOS são "DEMAIS CLIENTES", o snapshot foi mal-formado
-        var onlyDemais = hasCli && DRE_RAW.every(function(r){
-          var cl = String(r.cliente||r.cli||'').trim().toUpperCase();
-          return cl === '' || cl === 'DEMAIS CLIENTES';
-        });
-        if(!hasCli || onlyDemais){
-          var titulo = !hasCli
-            ? '⚠️ O snapshot atual foi salvo antes da aba Cliente ser criada.'
-            : '⚠️ O snapshot atual só tem "DEMAIS CLIENTES" — o save anterior foi feito sem dados brutos.';
-          document.getElementById('dreTable-cli').innerHTML='<div style="text-align:center;padding:40px;color:#7a8ab0;font-size:13px">'+
-            titulo+'<br><br>'+
-            '<button onclick="document.getElementById(\'btnSaveDre\').click()" style="background:#1a2a6c;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px">🔄 Re-salvar DRE agora</button>'+
-            '<br><small style="color:#aaa;margin-top:8px;display:block">Vai te perguntar se quer recarregar Venda DRE primeiro (necessário pra capturar os <b>Top 50 clientes nominais</b>). Próximas vezes serão instantâneas com cache local.</small></div>';
-          document.getElementById('dreKpi-cli').innerHTML='';
-          return;
-        }
-      }
-      dreRenderDim('CLIENTE','dre-ano-cli','dre-mes-cli','dre-canal-cli','cli');
-    }
   } catch(e){
     console.error('[dreRender] ERRO:', e.message, e.stack);
     var panel = document.getElementById('drePanel-'+DRE_TAB);
@@ -5122,16 +4947,6 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
       }
       return nome.toUpperCase();
     };
-  } else if(dimKey === 'cliente'){
-    // Snapshot/agregado: usa r.cliente (Top 50 nominais + "DEMAIS CLIENTES").
-    // Dados brutos: tenta nome/razão social, fallback pro código.
-    dimVal = function(r){
-      if(r.cliente) return r.cliente.toUpperCase();
-      var nome = String(r.NOME_CLIENTE||r.nome_cliente||r.RAZAO_SOCIAL||r.razao_social||r.NOME||r.nome||r.FANTASIA||r.fantasia||'').trim();
-      if(nome) return nome.toUpperCase();
-      var cod = String(r.COD_CLIENTE||r.cod_cliente||r.CLIENTE||r.cliente||'').trim();
-      return cod.toUpperCase();
-    };
   } else if(dimKey === 'canal'){
     // Usa helper para aplicar regra RCA + lookup
     dimVal = function(r){ return String(dreResolveCanal(r)||'').toUpperCase(); };
@@ -5139,7 +4954,7 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
     dimVal = function(r){ return String(r[_dimField]||r[_dimField.toUpperCase()]||'').toUpperCase(); };
   }
   var dimsFromData = Array.from(new Set(rows.map(dimVal))).filter(function(d){ return d && d !== 'NULL' && d !== 'UNDEFINED'; });
-  // Para vendedor/cliente: monta mapa uppercase->nome original para exibição correta
+  // Para vendedor: monta mapa uppercase->nome original para exibição correta
   var vendedorDisplayMap = {};
   if(dimKey === 'vendedor'){
     rows.forEach(function(r){
@@ -5147,14 +4962,6 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
       if(!up || vendedorDisplayMap[up]) return;
       var nome = r.vd || String(r.NOME_VENDEDOR||r.nome_vendedor||r.NOM_VENDEDOR||r.nom_vendedor||'').trim();
       if(!nome){ var cod=String(r.COD_VENDEDOR||r.cod_vendedor||'').trim(); nome=DRE_VENDEDOR_LOOKUP[cod]||cod; }
-      vendedorDisplayMap[up] = nome;
-    });
-  } else if(dimKey === 'cliente'){
-    rows.forEach(function(r){
-      var up = dimVal(r);
-      if(!up || vendedorDisplayMap[up]) return;
-      var nome = r.cliente || String(r.NOME_CLIENTE||r.nome_cliente||r.RAZAO_SOCIAL||r.razao_social||r.NOME||r.nome||r.FANTASIA||r.fantasia||'').trim();
-      if(!nome){ var cod=String(r.COD_CLIENTE||r.cod_cliente||r.CLIENTE||r.cliente||'').trim(); nome = cod; }
       vendedorDisplayMap[up] = nome;
     });
   }
@@ -5173,7 +4980,7 @@ function dreRenderDim(dim,anoId,mesId,canalId,suffix){
   }
 
   var cols=dims.map(function(d){
-    var label = (dimKey==='vendedor' || dimKey==='cliente') ? (vendedorDisplayMap[d] || d) : (dimLabelMap[d] || d);
+    var label = dimKey==='vendedor' ? (vendedorDisplayMap[d] || d) : (dimLabelMap[d] || d);
     var canalCtx = dimKey==='canal' ? d : null;
     var sliceRows = rows.filter(function(r){return dimVal(r)===d;});
     return{label:label,d:dreCalcShare(sliceRows,rows,canalCtx)};
