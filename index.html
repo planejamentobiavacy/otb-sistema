@@ -9492,7 +9492,13 @@ function renderBudget(anoFilter){
       if(typeof opts.tooltipFn === 'function'){
         try { var _tip = opts.tooltipFn(ym, val); if(_tip) cellTipAttr = ' title="'+escHtml(_tip)+'"'; } catch(_e){}
       }
-      h += '<td style="text-align:center;'+cellPad+';background:'+cellBg+';font-weight:'+fw+';font-size:'+valueFontSize+';color:'+color+';border-bottom:1px solid '+cellBorderBottom+';white-space:nowrap;'+(cellTipAttr?'cursor:help':'')+'"'+cellTipAttr+'>'+display+'</td>';
+      // Bolinha vermelha opcional (ex: Salário Folha com ajuste manual de realizado nesse mês)
+      var cellDot = '';
+      if(typeof opts.dotFn === 'function'){
+        try { if(opts.dotFn(ym)) cellDot = '<span style="position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:#d11;box-shadow:0 0 0 1.5px #fff"></span>'; } catch(_e){}
+      }
+      var cellPos = cellDot ? 'position:relative;' : '';
+      h += '<td style="text-align:center;'+cellPad+';background:'+cellBg+';font-weight:'+fw+';font-size:'+valueFontSize+';color:'+color+';border-bottom:1px solid '+cellBorderBottom+';white-space:nowrap;'+cellPos+(cellTipAttr?'cursor:help':'')+'"'+cellTipAttr+'>'+cellDot+display+'</td>';
     });
     // Coluna ANO: soma para R$, média para % ou contagem (Colaboradores)
     var yearVal;
@@ -9934,12 +9940,20 @@ function renderBudget(anoFilter){
           salFolhaOpts.tooltipFn = function(ym, val){
             if(val == null || val === 0) return '';
             var rl = budgetReceitaLiquida(ym)||0;
-            if(rl <= 0) return 'Receita Líquida do mês = 0 — impossível calcular %';
-            var pct = (val/rl)*100;
-            return 'Salário Folha ('+areaCapFolha+'): R$ '+Math.round(val).toLocaleString('pt-BR')
-              + ' • Receita Líquida: R$ '+Math.round(rl).toLocaleString('pt-BR')
-              + ' • Representa '+pct.toFixed(2).replace('.',',')+'% da RL';
+            var ajuste = _folhaAreaHasRealOvr(areaCapFolha.toUpperCase(), ym);
+            var base = '';
+            if(rl <= 0) base = 'Receita Líquida do mês = 0 — impossível calcular %';
+            else {
+              var pct = (val/rl)*100;
+              base = 'Salário Folha ('+areaCapFolha+'): R$ '+Math.round(val).toLocaleString('pt-BR')
+                + ' • Receita Líquida: R$ '+Math.round(rl).toLocaleString('pt-BR')
+                + ' • Representa '+pct.toFixed(2).replace('.',',')+'% da RL';
+            }
+            if(ajuste) base += ' • 🔴 Contém ajuste manual de realizado';
+            return base;
           };
+          // Bolinha vermelha nos meses que têm ajuste manual de realizado nessa área
+          salFolhaOpts.dotFn = function(ym){ return _folhaAreaHasRealOvr(areaCapFolha.toUpperCase(), ym); };
           dataRow('↳ Salário Folha', function(ym){
             var v = sumFolhaForYm(ym);
             return v>0?v:null;
@@ -10047,6 +10061,15 @@ function folhaRealOvrSet(area, nome, ym, val){
   } else {
     BUDGET_CFG.folhaRealOverride[k] = parseFloat(val);
   }
+}
+// Retorna true se a área tem QUALQUER ajuste manual de realizado no mês dado.
+// Usado pra mostrar a bolinha vermelha na linha "Salário Folha" do Budget.
+function _folhaAreaHasRealOvr(area, ym){
+  var ovr = BUDGET_CFG.folhaRealOverride;
+  if(!ovr) return false;
+  var pfx = String(area||'').toUpperCase() + '|';
+  var sfx = '|' + ym;
+  return Object.keys(ovr).some(function(k){ return k.indexOf(pfx)===0 && k.endsWith(sfx); });
 }
 // Cache de pessoas/área e realizados — usado pra computar Salário Folha EFETIVO no main Budget
 var _folhaProjAreaCache = null;
