@@ -1353,6 +1353,7 @@ async function afterLogin(){
       if(budgetClassifEarly.budgetOverrides)BUDGET_CFG.budgetOverrides = budgetClassifEarly.budgetOverrides;
       if(budgetClassifEarly.sim)            BUDGET_CFG.sim = budgetClassifEarly.sim;
       if(budgetClassifEarly.folhaProjecao)  BUDGET_CFG.folhaProjecao = budgetClassifEarly.folhaProjecao;
+      if(budgetClassifEarly.folhaRealOverride) BUDGET_CFG.folhaRealOverride = budgetClassifEarly.folhaRealOverride;
       console.log('[afterLogin] budget_classif loaded — tiposDespGerais:', Object.keys(BUDGET_CFG.tiposDespGerais||{}).length, '| tiposCD:', Object.keys(BUDGET_CFG.tiposCD||{}).length, '| overrides:', Object.keys(BUDGET_CFG.budgetOverrides||{}).length);
     } else {
       console.log('[afterLogin] budget_classif not found yet');
@@ -2684,6 +2685,7 @@ async function handleSaveAll(btn){
       tiposCD:        (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.tiposCD)||{},
       budgetOverrides:(typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.budgetOverrides)||{},
       folhaProjecao:  (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.folhaProjecao)||{},
+      folhaRealOverride: (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.folhaRealOverride)||{},
       sim:            (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.sim)||{},
       savedAt: new Date().toISOString()
     });
@@ -6909,6 +6911,8 @@ async function _smartReloadKeys(changedKeys){
         if(data.tiposIgnorados) BUDGET_CFG.tiposIgnorados = data.tiposIgnorados;
         if(data.tiposDespGerais) BUDGET_CFG.tiposDespGerais = data.tiposDespGerais;
         if(data.tiposCd) BUDGET_CFG.tiposCd = data.tiposCd;
+        if(data.folhaProjecao != null) BUDGET_CFG.folhaProjecao = data.folhaProjecao;
+        if(data.folhaRealOverride != null) BUDGET_CFG.folhaRealOverride = data.folhaRealOverride;
         rerenderTargets.budget = true;
         rerenderTargets.dreCfg = true; // base de Desp Gerais/CD muda
       } else if(key === 'budget_cfg'){
@@ -6919,6 +6923,7 @@ async function _smartReloadKeys(changedKeys){
       } else if(key === 'budget_classif_vol'){
         if(data.budgetOverrides != null) BUDGET_CFG.budgetOverrides = data.budgetOverrides;
         if(data.folhaProjecao != null) BUDGET_CFG.folhaProjecao = data.folhaProjecao;
+        if(data.folhaRealOverride != null) BUDGET_CFG.folhaRealOverride = data.folhaRealOverride;
         rerenderTargets.budget = true;
         rerenderTargets.dreCfg = true;
       } else if(key === 'dre_cfg_params'){
@@ -8742,6 +8747,7 @@ function scheduleClassifSave(){
         tiposCD:        BUDGET_CFG.tiposCD        || {},
         budgetOverrides:BUDGET_CFG.budgetOverrides|| {},
         folhaProjecao:  BUDGET_CFG.folhaProjecao  || {},
+        folhaRealOverride: BUDGET_CFG.folhaRealOverride || {},
         sim:            BUDGET_CFG.sim            || {},
         savedAt:        new Date().toISOString()
       };
@@ -8831,6 +8837,7 @@ async function _mergeBudgetClassifVol(baseSavedAt){
     if(_hasContent(vol.tiposCD))         BUDGET_CFG.tiposCD         = vol.tiposCD;
     if(_hasContent(vol.budgetOverrides)) BUDGET_CFG.budgetOverrides = vol.budgetOverrides;
     if(_hasContent(vol.folhaProjecao))   BUDGET_CFG.folhaProjecao   = vol.folhaProjecao;
+    if(_hasContent(vol.folhaRealOverride)) BUDGET_CFG.folhaRealOverride = vol.folhaRealOverride;
     if(_hasContent(vol.sim))             BUDGET_CFG.sim             = vol.sim;
     // Invalida índice de classif pra que getBudgetClassif reconstrua com os deltas aplicados
     if(_hasContent(vol.classif) && typeof invalidateBudgetClassifIndex === 'function'){
@@ -10022,6 +10029,25 @@ function folhaProjSet(area, nome, ym, val){
     BUDGET_CFG.folhaProjecao[k] = parseFloat(val);
   }
 }
+// ── Override de meses REALIZADOS da folha ──────────────────────────────────
+// Diferente da projeção (que preenche meses futuros vazios), o override permite
+// AJUSTAR um mês que já tem valor real. Guardado em chave separada pra não
+// confundir as duas lógicas. Quando há override, o Budget usa o valor ajustado
+// no lugar do realizado original (e mostra bolinha vermelha + tooltip com o real).
+function folhaRealOvrGet(area, nome, ym){
+  if(!BUDGET_CFG.folhaRealOverride) return null;
+  var v = BUDGET_CFG.folhaRealOverride[folhaProjKey(area,nome,ym)];
+  return (v != null && !isNaN(parseFloat(v))) ? parseFloat(v) : null;
+}
+function folhaRealOvrSet(area, nome, ym, val){
+  if(!BUDGET_CFG.folhaRealOverride) BUDGET_CFG.folhaRealOverride = {};
+  var k = folhaProjKey(area,nome,ym);
+  if(val == null || val === '' || isNaN(parseFloat(val))){
+    delete BUDGET_CFG.folhaRealOverride[k];
+  } else {
+    BUDGET_CFG.folhaRealOverride[k] = parseFloat(val);
+  }
+}
 // Cache de pessoas/área e realizados — usado pra computar Salário Folha EFETIVO no main Budget
 var _folhaProjAreaCache = null;
 function _folhaProjAreaCacheBuild(){
@@ -10045,6 +10071,11 @@ function _folhaProjAreaCacheBuild(){
     if(totalVerbas===0) totalVerbas=parseFloat(r.valor||r.VALOR)||0;
     if(!_folhaProjAreaCache.realByArea[area]) _folhaProjAreaCache.realByArea[area]={};
     _folhaProjAreaCache.realByArea[area][ym]=(_folhaProjAreaCache.realByArea[area][ym]||0)+totalVerbas;
+    // Rastreia realizado por pessoa (necessário pra aplicar override de realizado corretamente)
+    if(!_folhaProjAreaCache.realByPersonArea) _folhaProjAreaCache.realByPersonArea={};
+    if(!_folhaProjAreaCache.realByPersonArea[area]) _folhaProjAreaCache.realByPersonArea[area]={};
+    if(!_folhaProjAreaCache.realByPersonArea[area][ym]) _folhaProjAreaCache.realByPersonArea[area][ym]={};
+    _folhaProjAreaCache.realByPersonArea[area][ym][nome]=(_folhaProjAreaCache.realByPersonArea[area][ym][nome]||0)+totalVerbas;
     if(!_folhaProjAreaCache.pessoasByArea[area]) _folhaProjAreaCache.pessoasByArea[area]={};
     _folhaProjAreaCache.pessoasByArea[area][nome]=1;
   });
@@ -10054,7 +10085,26 @@ function folhaAreaEfetivo(area, ym){
   var areaUp = String(area||'').toUpperCase();
   var realByArea = (_folhaProjAreaCache.realByArea[areaUp]||{});
   var realVal = realByArea[ym] || 0;
-  if(realVal > 0) return realVal;
+  if(realVal > 0){
+    // Aplica overrides de realizado: para cada pessoa com ajuste neste mês/área,
+    // substitui o valor real pelo ajustado (delta somado ao total da área).
+    var ovrMap = BUDGET_CFG.folhaRealOverride;
+    if(ovrMap){
+      var perPersonReal = (_folhaProjAreaCache.realByPersonArea
+        && _folhaProjAreaCache.realByPersonArea[areaUp]
+        && _folhaProjAreaCache.realByPersonArea[areaUp][ym]) || {};
+      var delta = 0;
+      var pfx = areaUp + '|';
+      Object.keys(ovrMap).forEach(function(k){
+        if(k.indexOf(pfx) !== 0 || !k.endsWith('|'+ym)) return;
+        var nome = k.slice(pfx.length, k.length - ('|'+ym).length);
+        var realPessoa = perPersonReal[nome] || 0;
+        if(realPessoa > 0){ delta += (parseFloat(ovrMap[k]) - realPessoa); }
+      });
+      return realVal + delta;
+    }
+    return realVal;
+  }
   if(!BUDGET_CFG.folhaProjecao) return 0;
   var pessoas = Object.keys(_folhaProjAreaCache.pessoasByArea[areaUp]||{});
   var projTotal = 0;
@@ -10186,11 +10236,27 @@ function openFolhaDetail(area, ano){
     h += '</td>';
     var totalRealizado = 0, totalProj = 0;
     months.forEach(function(ym){
-      var v = row.byMonth[ym] || 0;
+      var vReal = row.byMonth[ym] || 0;
       var isFuture = !_lastReal || ym > _lastReal;
-      if(v > 0){
-        totalRealizado += v;
-        h += '<td style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center">'+fmtV(v)+'</td>';
+      if(vReal > 0){
+        // Mês REALIZADO — agora editável. Se houver override salvo, usa ele e mostra
+        // bolinha vermelha + tooltip com o valor real original.
+        var rowAreaR = row.area || areaUp;
+        var ovr = folhaRealOvrGet(rowAreaR, nome, ym);
+        var vEff = (ovr != null) ? ovr : vReal;
+        totalRealizado += vEff;
+        var dispR = 'R$ '+Math.round(vEff).toLocaleString('pt-BR');
+        var realTip = 'Valor real: R$ '+Math.round(vReal).toLocaleString('pt-BR')+(ovr!=null?' • Ajustado para: R$ '+Math.round(ovr).toLocaleString('pt-BR'):'');
+        var dot = (ovr!=null) ? '<span style="position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:#d11;box-shadow:0 0 0 1.5px #fff" title="Valor ajustado manualmente"></span>' : '';
+        h += '<td style="padding:3px 5px;border-bottom:1px solid #eef1f8;text-align:center;position:relative" title="'+escHtml(realTip)+'">'
+          + dot
+          + '<input type="text" '
+          + 'data-area="'+escHtml(rowAreaR)+'" data-nome="'+escHtml(nome)+'" data-ym="'+ym+'" data-real="'+vReal+'" '
+          + 'value="'+escHtml(dispR)+'" '
+          + 'onblur="folhaRealOvrOnInputBlur(this)" '
+          + 'onfocus="this.select()" '
+          + 'style="width:88px;padding:3px 6px;border:1px solid '+(ovr!=null?'#d11':'transparent')+';border-radius:4px;text-align:center;font-size:11px;background:'+(ovr!=null?'#fff0f0':'transparent')+';color:'+(ovr!=null?'#a00':'#0f1a3a')+';font-weight:'+(ovr!=null?'700':'400')+';cursor:text">'
+          + '</td>';
       } else if(isFuture){
         // Usa a área-fonte real do colaborador (não o nome mesclado FIN/FAT/FISC),
         // pra que a projeção persista na mesma chave que o Budget lê depois.
@@ -10210,7 +10276,7 @@ function openFolhaDetail(area, ano){
           + 'style="width:88px;padding:3px 6px;border:1px dashed '+(proj!=null?'#7b2d8b':'#d0d8ee')+';border-radius:4px;text-align:center;font-size:11px;background:'+cellBg+';color:'+cellClr+';font-weight:'+(proj!=null?'700':'400')+'">'
           + '</td>';
       } else {
-        h += '<td style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center">'+fmtV(v)+'</td>';
+        h += '<td style="padding:6px 8px;border-bottom:1px solid #eef1f8;text-align:center">'+fmtV(vReal)+'</td>';
       }
     });
     var totalCombo = totalRealizado + totalProj;
@@ -10364,6 +10430,47 @@ function folhaProjReplicarTodos(area, ano){
 }
 
 // Handler de blur do input de projeção (parse + persist)
+function folhaRealOvrOnInputBlur(inp){
+  var area = inp.dataset.area, nome = inp.dataset.nome, ym = inp.dataset.ym;
+  var vReal = parseFloat(inp.dataset.real)||0;
+  var raw = inp.value.trim();
+  var n = raw ? parseBrlInput(raw) : null;
+  // Se vazio OU igual ao valor real (tolerância de 1 real), remove o override
+  if(n == null || isNaN(n) || Math.abs(n - vReal) < 1){
+    folhaRealOvrSet(area, nome, ym, null);
+    inp.value = 'R$ '+Math.round(vReal).toLocaleString('pt-BR');
+    inp.style.background = 'transparent';
+    inp.style.color = '#0f1a3a';
+    inp.style.borderColor = 'transparent';
+    inp.style.fontWeight = '400';
+    // Remove a bolinha vermelha se existir
+    var dotEl = inp.parentElement.querySelector('span[title="Valor ajustado manualmente"]');
+    if(dotEl) dotEl.remove();
+    var tdEl = inp.parentElement;
+    if(tdEl) tdEl.title = 'Valor real: R$ '+Math.round(vReal).toLocaleString('pt-BR');
+  } else {
+    folhaRealOvrSet(area, nome, ym, n);
+    inp.value = 'R$ '+Math.round(n).toLocaleString('pt-BR');
+    inp.style.background = '#fff0f0';
+    inp.style.color = '#a00';
+    inp.style.borderColor = '#d11';
+    inp.style.fontWeight = '700';
+    // Garante bolinha vermelha
+    var td = inp.parentElement;
+    if(td && !td.querySelector('span[title="Valor ajustado manualmente"]')){
+      var dot = document.createElement('span');
+      dot.title = 'Valor ajustado manualmente';
+      dot.style.cssText = 'position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:#d11;box-shadow:0 0 0 1.5px #fff';
+      td.appendChild(dot);
+    }
+    if(td) td.title = 'Valor real: R$ '+Math.round(vReal).toLocaleString('pt-BR')+' • Ajustado para: R$ '+Math.round(n).toLocaleString('pt-BR');
+    console.log('[folhaRealOvr] ajustado', area+'|'+nome+'|'+ym, 'real='+vReal, '→', n);
+  }
+  folhaProjClearCache();
+  folhaProjAtualizarTotal();
+  _folhaProjScheduleSyncBudget();
+}
+
 function folhaProjOnInputBlur(inp){
   var area = inp.dataset.area, nome = inp.dataset.nome, ym = inp.dataset.ym;
   var raw = inp.value.trim();
