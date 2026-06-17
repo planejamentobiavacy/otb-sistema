@@ -9699,6 +9699,44 @@ function renderBudget(anoFilter){
       if(totalVerbas > 0) _realPersonSet[area+'|'+nome+'|'+am_ym] = 1;
     });
   }
+  // Aplica overrides de REALIZADO: para cada ajuste manual (area|nome|ym), substitui o
+  // valor real da pessoa pelo ajustado. O delta (ajustado − real) é somado ao total da área.
+  // É isso que faz a linha "Salário Folha" do Budget refletir os ajustes feitos no detalhe.
+  if(BUDGET_CFG.folhaRealOverride){
+    // Reconstrói realizado por pessoa pra saber o valor original de cada um
+    var _realByPerson = {};
+    if(FOLHA_RAW && FOLHA_RAW.length){
+      FOLHA_RAW.forEach(function(r){
+        var nome = folhaGetNome(r);
+        var cfg  = FOLHA_CFG.classif[nome];
+        var area = (cfg && cfg.area ? cfg.area : folhaGetArea(r)).toUpperCase();
+        if(!area || area==='(SEM ÁREA)') return;
+        var am  = String(folhaGetPeriodo(r)||'').replace(/[^0-9]/g,'').slice(0,6);
+        if(am.length!==6) return;
+        var am_ym = am.slice(0,4)+'-'+am.slice(4,6);
+        if(!months.includes(am_ym)) return;
+        var keys = Object.keys(r);
+        var verbas = FOLHA_VERBAS.filter(function(k){ return k!=='S13_PARC'; });
+        var tv = 0;
+        verbas.forEach(function(k){ var f=keys.find(function(rk){return rk.toUpperCase()===k;}); if(f) tv+=folhaNum(r[f]); });
+        if(tv===0) tv=parseFloat(r.valor||r.VALOR)||0;
+        _realByPerson[area+'|'+nome+'|'+am_ym]=(_realByPerson[area+'|'+nome+'|'+am_ym]||0)+tv;
+      });
+    }
+    Object.keys(BUDGET_CFG.folhaRealOverride).forEach(function(k){
+      var parts = k.split('|'); // area|nome|ym
+      if(parts.length !== 3) return;
+      var area = parts[0].toUpperCase(), ym = parts[2];
+      if(!months.includes(ym)) return;
+      var ovrVal = parseFloat(BUDGET_CFG.folhaRealOverride[k]);
+      if(isNaN(ovrVal)) return;
+      var realVal = _realByPerson[k] || 0;
+      // Só aplica se a pessoa realmente tinha realizado (override de realizado)
+      if(realVal <= 0) return;
+      if(!folhaByArea[area]) folhaByArea[area]={};
+      folhaByArea[area][ym] = (folhaByArea[area][ym]||0) + (ovrVal - realVal);
+    });
+  }
   // Aplica projeções por pessoa: só conta se essa pessoa NÃO tem realizado naquele ym
   // E só se o MÊS inteiro não tem nenhuma folha realizada (caso contrário, projeções são consideradas estagnadas)
   if(BUDGET_CFG.folhaProjecao){
