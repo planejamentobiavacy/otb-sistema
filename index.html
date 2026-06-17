@@ -9492,13 +9492,16 @@ function renderBudget(anoFilter){
       if(typeof opts.tooltipFn === 'function'){
         try { var _tip = opts.tooltipFn(ym, val); if(_tip) cellTipAttr = ' title="'+escHtml(_tip)+'"'; } catch(_e){}
       }
-      // Bolinha vermelha opcional (ex: Salário Folha com ajuste manual de realizado nesse mês)
-      var cellDot = '';
-      if(typeof opts.dotFn === 'function'){
-        try { if(opts.dotFn(ym)) cellDot = '<span style="position:absolute;top:3px;right:3px;width:7px;height:7px;border-radius:50%;background:#d11;box-shadow:0 0 0 1.5px #fff"></span>'; } catch(_e){}
+      // Bolinha vermelha opcional, INLINE após o número (mesmo padrão das linhas de despesa
+      // com ajuste manual). Ex: Salário Folha com ajuste de realizado nesse mês.
+      if(typeof opts.dotFn === 'function' && display && display !== '—'){
+        try {
+          if(opts.dotFn(ym)){
+            display += ' <span title="Contém ajuste manual de realizado nos detalhes" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#e0233a;margin-left:3px;vertical-align:middle;box-shadow:0 0 0 1.5px rgba(224,35,58,.25)"></span>';
+          }
+        } catch(_e){}
       }
-      var cellPos = cellDot ? 'position:relative;' : '';
-      h += '<td style="text-align:center;'+cellPad+';background:'+cellBg+';font-weight:'+fw+';font-size:'+valueFontSize+';color:'+color+';border-bottom:1px solid '+cellBorderBottom+';white-space:nowrap;'+cellPos+(cellTipAttr?'cursor:help':'')+'"'+cellTipAttr+'>'+cellDot+display+'</td>';
+      h += '<td style="text-align:center;'+cellPad+';background:'+cellBg+';font-weight:'+fw+';font-size:'+valueFontSize+';color:'+color+';border-bottom:1px solid '+cellBorderBottom+';white-space:nowrap;'+(cellTipAttr?'cursor:help':'')+'"'+cellTipAttr+'>'+display+'</td>';
     });
     // Coluna ANO: soma para R$, média para % ou contagem (Colaboradores)
     var yearVal;
