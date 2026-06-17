@@ -10217,6 +10217,8 @@ function openFolhaDetail(area, ano){
   } else {
     months = Object.keys(monthSet).sort();
   }
+  // Guarda contexto pro recálculo de total (folhaProjAtualizarTotal) ler do modelo, não do DOM
+  window._folhaDetailCtx = {map:map, nomes:nomes, months:months, areaUp:areaUp};
   var verbasLabels = window._folhaVerbasLabels||{};
   // Para cada pessoa, identifica último mês com dados realizados (pra saber quais são "futuros")
   function _lastRealMonth(nome){
@@ -10337,10 +10339,14 @@ function openFolhaDetail(area, ano){
   months.forEach(function(ym){
     var t = 0;
     nomes.forEach(function(n){
+      var nArea = map[n].area || areaUp;
       var v = map[n].byMonth[ym] || 0;
-      if(v > 0){ t += v; }
-      else {
-        var p = folhaProjGet(map[n].area || areaUp, n, ym);
+      if(v > 0){
+        // Mês realizado: usa override se houver
+        var ovr = folhaRealOvrGet(nArea, n, ym);
+        t += (ovr != null) ? ovr : v;
+      } else {
+        var p = folhaProjGet(nArea, n, ym);
         if(p != null) t += p;
       }
     });
@@ -10559,37 +10565,33 @@ function folhaProjAtualizarTotal(){
   if(!tbl) return;
   var totalRow = tbl.querySelector('#folhaDetTotalRow');
   if(!totalRow) return;
+  var ctx = window._folhaDetailCtx;
+  if(!ctx){ return; }
   var fmt = function(v){ return v<=0 ? '<span style="color:#ccc">—</span>' : 'R$ '+Math.round(v).toLocaleString('pt-BR'); };
   var grandTotal = 0;
-  var cells = totalRow.querySelectorAll('td[data-am]');
-  cells.forEach(function(td){
-    var ym = td.getAttribute('data-am');
+  // Recalcula cada mês a partir do MODELO DE DADOS (real + override de realizado + projeção),
+  // não do DOM — mais robusto e reflete os ajustes imediatamente.
+  var totalsByYm = {};
+  ctx.months.forEach(function(ym){
     var t = 0;
-    tbl.querySelectorAll('tbody tr[data-nome]').forEach(function(r){
-      // Encontra o td correspondente a esse ym
-      var cellsR = r.querySelectorAll('td');
-      var colIdx = -1;
-      Array.from(totalRow.querySelectorAll('td[data-am]')).forEach(function(c, ix){
-        if(c.getAttribute('data-am') === ym) colIdx = ix;
-      });
-      if(colIdx < 0) return;
-      var tdCell = cellsR[colIdx + 1]; // +1 pelo NOME
-      if(!tdCell) return;
-      var inp = tdCell.querySelector('input[data-ym]');
-      if(inp){
-        var v = parseBrlInput(inp.value);
-        if(v != null) t += v;
+    ctx.nomes.forEach(function(n){
+      var nArea = ctx.map[n].area || ctx.areaUp;
+      var v = ctx.map[n].byMonth[ym] || 0;
+      if(v > 0){
+        var ovr = folhaRealOvrGet(nArea, n, ym);
+        t += (ovr != null) ? ovr : v;
       } else {
-        var txt = tdCell.textContent.trim();
-        var m2 = txt.match(/-?R\$\s*([\d.]+(?:,\d+)?)/);
-        if(m2){
-          var vv = parseFloat(m2[1].replace(/\./g,'').replace(',','.'));
-          if(!isNaN(vv)) t += vv;
-        }
+        var p = folhaProjGet(nArea, n, ym);
+        if(p != null) t += p;
       }
     });
+    totalsByYm[ym] = t;
     grandTotal += t;
-    td.innerHTML = fmt(t);
+  });
+  // Atualiza os <td data-am> do totalRow
+  totalRow.querySelectorAll('td[data-am]').forEach(function(td){
+    var ym = td.getAttribute('data-am');
+    td.innerHTML = fmt(totalsByYm[ym] || 0);
   });
   var lastTd = totalRow.lastElementChild;
   if(lastTd) lastTd.innerHTML = fmt(grandTotal);
