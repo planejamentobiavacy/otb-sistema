@@ -3281,7 +3281,12 @@ function recomputeFuture(sup){
     var prev=i>0?m[months[i-1]]:null,pEQ=prev?(prev.estQty||0):0,pEV=prev?(prev.estVal||0):0;
     cell.otbQty=Math.round(cell.estQty-pEQ+cell.fatQty-(cell.cartQty||0));
     cell.otbCartRealQty=(cell.cartQty||0)+cell.otbQty;
-    cell.fatVal=Math.round(cell.fatQty*avgPreco); cell.estVal=Math.round(cell.estQty*avgPreco);
+    // Preço médio: usa override manual se houver (linha "Preço Médio Venda" simulável),
+    // senão usa a média dos últimos 3 meses (avgPreco).
+    var precoOvr=(state.edits[sup]&&state.edits[sup][ym]&&state.edits[sup][ym].precoMedio!=null)?state.edits[sup][ym].precoMedio:null;
+    var precoUsado=(precoOvr!=null&&!isNaN(precoOvr))?precoOvr:avgPreco;
+    cell.precoMedio=precoUsado;
+    cell.fatVal=Math.round(cell.fatQty*precoUsado); cell.estVal=Math.round(cell.estQty*avgPreco);
     cell.otbVal=Math.round(cell.estVal-pEV+cell.fatVal-(cell.cartVal||0));
     cell.otbCartRealVal=(cell.cartVal||0)+cell.otbVal;
     var forward=months.slice(i+1,i+13),remV=cell.estVal,covV=0;
@@ -3586,6 +3591,20 @@ function renderTable(){
     {id:'OTB',            qKey:'otbQty',         vKey:'otbVal',         editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
     {id:'OTB+CARTEIRA',   qKey:'otbCartRealQty', vKey:'otbCartRealVal', editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
   ];
+  // Bloco VALOR tem a mesma estrutura, MAS com a linha "Preço Médio de Venda" logo após
+  // o VAR. LY do FATURAMENTO. É simulável (editável em meses futuros) e dirige o cálculo
+  // de fatVal = fatQty × precoMedio nesses meses.
+  var kpiDefValor=[
+    {id:'FATURAMENTO',    qKey:'fatQty',         vKey:'fatVal',         editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
+    {id:'VAR. LY',        qKey:'varLyQty',       vKey:'varLyVal',       editableQ:true, editableV:false,isCob:false,isVar:true, aggType:'avg'},
+    {id:'PMV', qKey:'precoMedio',  vKey:'precoMedio',     editableQ:false,editableV:true, isCob:false,isVar:false,aggType:'avg',isPreco:true},
+    {id:'ESTOQUE',        qKey:'estQty',         vKey:'estVal',         editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'avg'},
+    {id:'VAR. LY',        qKey:'estVarLyQty',    vKey:'estVarLyVal',    editableQ:false,editableV:false,isCob:false,isVar:true, aggType:'avg'},
+    {id:'COB FUTURA',     qKey:'coberturaQ',     vKey:'coberturaV',     editableQ:true, editableV:false,isCob:true, isVar:false,aggType:'avg'},
+    {id:'CARTEIRA',       qKey:'cartQty',        vKey:'cartVal',        editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
+    {id:'OTB',            qKey:'otbQty',         vKey:'otbVal',         editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
+    {id:'OTB+CARTEIRA',   qKey:'otbCartRealQty', vKey:'otbCartRealVal', editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
+  ];
   var kpiMarg=[
     {id:'Marg Prod R$',   qKey:'margProdVal',    vKey:'margProdVal',    editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum',isPct:false},
     {id:'Marg Prod %',    qKey:'margProd',       vKey:'margProd',       editableQ:true, editableV:true, isCob:false,isVar:false,aggType:'avg',isPct:true},
@@ -3622,6 +3641,7 @@ function renderTable(){
       var catIsAll=!cat||cat==='TODAS';
       var lc=['label'];
       if(row.isVar) lc.push('sub');
+      if(row.isPreco) lc.push('sub');
       if(editableInBlock&&sup!=='AVACY'&&catIsAll) lc.push('sim');
       html.push('<td class="'+lc.join(' ')+'">'+row.id+'</td>');
       months.forEach(function(ym){
@@ -3637,6 +3657,18 @@ function renderTable(){
           if(row.aggType==='sum') v=vals.reduce(function(a,b){return a+b;},0);
           else v=vals.length?vals.reduce(function(a,b){return a+b;},0)/vals.length:null;
         } else { v=cell[key]; }
+        // Preço Médio de Venda: se não há valor salvo, default = fatVal/fatQty do mês
+        if(key==='precoMedio'){
+          if(isYearTotal){
+            // No total do ano, recalcula preço médio = soma(fatVal)/soma(fatQty)
+            var yearMsP=months.filter(function(m){return m.startsWith(yearNum);});
+            var sumFV=yearMsP.reduce(function(s,m){return s+(matrix[m].fatVal||0);},0);
+            var sumFQ=yearMsP.reduce(function(s,m){return s+(matrix[m].fatQty||0);},0);
+            v = sumFQ>0 ? sumFV/sumFQ : null;
+          } else if(v==null){
+            v = (cell.fatQty>0) ? (cell.fatVal/cell.fatQty) : null;
+          }
+        }
         // Compute estVarLy on the fly if null
         if(v===null&&key==='estVarLyQty'){
           var lyYm2=(parseInt(yearNum)-1)+'-'+monthNum;
@@ -3659,12 +3691,13 @@ function renderTable(){
         if(isYearTotal) cls.push('year-total');
         var display;
         if(v===null||v===undefined||isNaN(v)) display='';
+        else if(row.isPreco){ display='R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
         else if(row.isPct){ display=(v*100).toFixed(1)+'%'; if(v<0) cls.push('negative'); }
         else if(row.isVar){ var sign=v>0?'+':''; display=(v===0)?'0':sign+v.toFixed(1)+'%'; if(v<0) cls.push('negative'); if(v===null) display=''; }
         else if(row.isCob) display=(v===0||v===null||v===undefined||isNaN(v))?'0':v.toFixed(1);
         else display=fmtNum(v);
-        var editDisplay = (editable&&row.isPct&&v!=null&&!isNaN(v)) ? (v*100).toFixed(1) : display;
-        var attrs=editable?'contenteditable="true" data-sup="'+sup+'" data-ym="'+ym+'" data-key="'+key+'" data-type="'+(row.isPct?'pct':row.isVar?'var':row.isCob?'cob':'num')+'"':'';
+        var editDisplay = (editable&&row.isPct&&v!=null&&!isNaN(v)) ? (v*100).toFixed(1) : ((editable&&row.isPreco&&v!=null&&!isNaN(v)) ? v.toFixed(2) : display);
+        var attrs=editable?'contenteditable="true" data-sup="'+sup+'" data-ym="'+ym+'" data-key="'+key+'" data-type="'+(row.isPct?'pct':row.isVar?'var':row.isCob?'cob':row.isPreco?'preco':'num')+'"':'';
         if(v===0) cls.push('zero');
         html.push('<td class="'+cls.join(' ')+'" '+attrs+(hidden?' style="display:none"':'')+'>'+display+'</td>');
       });
@@ -3673,7 +3706,7 @@ function renderTable(){
   }
   renderBlock('PARES','q');
   html.push('<tr class="blank-sep"><td colspan="'+(months.length+2)+'"></td></tr>');
-  renderBlock('VALOR','v');
+  renderBlock('VALOR','v',kpiDefValor);
   html.push('</tbody></table>');
   wrap.innerHTML=html.join('');
 
@@ -3717,6 +3750,12 @@ function renderTable(){
         var lyYm=(parseInt(ym.split('-')[0])-1)+'-'+ym.split('-')[1],ly=mBlur[lyYm];
         if(type==='pct'){cell.margProd=num/100;state.edits[sup][ym].margProd=num/100;}
       else if(key==='varLyQty'&&ly&&ly.fatQty>0){cell.fatQty=Math.max(0,Math.round(ly.fatQty*(1+num/100)));state.edits[sup][ym].varLyQty=num;state.edits[sup][ym].fatQty=cell.fatQty;}
+      } else if(type==='preco'){
+        // Preço Médio de Venda: salva override e recalcula fatVal = fatQty × preço.
+        // recomputeFuture vai respeitar esse override (ver lógica lá).
+        cell.precoMedio=num;
+        state.edits[sup][ym].precoMedio=num;
+        if(cell.fatQty>0){ cell.fatVal=Math.round(cell.fatQty*num); state.edits[sup][ym].fatVal=cell.fatVal; }
       } else {cell[key]=num;state.edits[sup][ym][key]=num;}
       recomputeFuture(sup);
       state.suppliers.filter(function(s){return s!=='AVACY';}).forEach(function(s){if(s!==sup) recomputeFuture(s);});
