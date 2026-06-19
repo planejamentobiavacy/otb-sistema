@@ -1301,7 +1301,7 @@ async function afterLogin(){
           // Normaliza pct13ferias se corrompido (>1 = estava em %, converte para decimal)
           if(DRE_CFG_PARAMS[am].pct13ferias > 1) DRE_CFG_PARAMS[am].pct13ferias /= 100;
           // Sanitiza NaN e outliers de percentuais
-          ['desp_mkt','sal_adm','desp_gerais','cd_mensal','custoGrade','custo_etiquetagem'].forEach(function(k){
+          ['desp_mkt','sal_adm','desp_gerais','cd_mensal','custoGrade','custo_etiquetagem','bonus'].forEach(function(k){
             if(DRE_CFG_PARAMS[am][k] != null){
               var _v = parseFloat(DRE_CFG_PARAMS[am][k]);
               if(isNaN(_v)||_v<0) delete DRE_CFG_PARAMS[am][k];
@@ -5427,8 +5427,19 @@ function dreCalc(a,shareRB,shareQTD,canalCtx,vendedorOverride){
   })();
   var pct13fAdmEff = pct13Adm != null ? pct13Adm : (pct13f>0?pct13f:0.11);
   var sa13ferias = sa * pct13fAdmEff;
-  var ebt=mcon-sa-sa13ferias-dg-cd;
-  return{rb_dev,dev,rb_gross,rb,imp,icms:a.icms,pc:a.cofins+a.pis+a.fecpst,rl,qtd:a.qtd,cmv_b,cmv,cmv_base,ajuste_cmv:ajusteCmv,mkp,mg_prod,fob,mb,sv,sv_closer,sv_developer,sv_farmer,sv_hava,sv_ka,sv13ferias,com,com_martins,com_rca,mc,rf:rf_rec,cf,cf_dev:cf_dev,etq:etq,mkt,mkt_branding,mkt_leads,mcon,grade,sa,sa13ferias,dg,cd,ebt};
+  // Bônus: valor total mensal somado dos meses do recorte, rateado por shareRB (mesma lógica de sa).
+  var bonus_unit = (function(){
+    if(!a.anomesList || !a.anomesList.length) return 0;
+    var total = 0;
+    a.anomesList.forEach(function(am){
+      var p = DRE_CFG_PARAMS[String(am)];
+      if(p && p.bonus != null){ var v=parseFloat(p.bonus); if(!isNaN(v)) total += v; }
+    });
+    return total;
+  })();
+  var bonus = bonus_unit * shareRB;
+  var ebt=mcon-sa-sa13ferias-bonus-dg-cd;
+  return{rb_dev,dev,rb_gross,rb,imp,icms:a.icms,pc:a.cofins+a.pis+a.fecpst,rl,qtd:a.qtd,cmv_b,cmv,cmv_base,ajuste_cmv:ajusteCmv,mkp,mg_prod,fob,mb,sv,sv_closer,sv_developer,sv_farmer,sv_hava,sv_ka,sv13ferias,com,com_martins,com_rca,mc,rf:rf_rec,cf,cf_dev:cf_dev,etq:etq,mkt,mkt_branding,mkt_leads,mcon,grade,sa,sa13ferias,bonus:bonus,dg,cd,ebt};
 }
 var dreBrl=function(v){var n=Math.round(v);return n<0?'<span style="color:#c0181a;font-weight:700">-R$ '+Math.abs(n).toLocaleString('pt-BR')+'</span>':'R$ '+n.toLocaleString('pt-BR');};
 var dreBrlp=function(v){return'R$ '+Math.round(v).toLocaleString('pt-BR');};
@@ -5517,7 +5528,7 @@ function dreTabela(cols){
   // Para não-admins (líderes), corta o DRE em "Margem de Contribuição" — sem Despesas Fixas nem EBITDA
   var _adminView = (typeof isAdmin === 'function') ? isAdmin() : true;
   var afterMcon = _adminView
-    ? sp()+sec('🏢 DESPESAS FIXAS')+row('Salários Adm (-)',function(d){return dreBrl(d.sa);},'row-sub')+rowP('% Sal Adm',function(d){return drePct(d.sa,d.rl);})+row('13º + Férias Adm (-)',function(d){return dreBrl(d.sa13ferias||0);},'row-sub')+rowP('% 13º+Férias Adm',function(d){return drePct(d.sa13ferias||0,d.rl);})+row('Despesas Gerais (-)',function(d){return dreBrl(d.dg);},'row-sub')+rowP('% Desp Gerais',function(d){return drePct(d.dg,d.rl);})+row('CD (-)',function(d){return dreBrl(d.cd);},'row-sub')+rowP('% CD',function(d){return drePct(d.cd,d.rl);})
+    ? sp()+sec('🏢 DESPESAS FIXAS')+row('Salários Adm (-)',function(d){return dreBrl(d.sa);},'row-sub')+rowP('% Sal Adm',function(d){return drePct(d.sa,d.rl);})+row('13º + Férias Adm (-)',function(d){return dreBrl(d.sa13ferias||0);},'row-sub')+rowP('% 13º+Férias Adm',function(d){return drePct(d.sa13ferias||0,d.rl);})+row('Bônus (-)',function(d){return dreBrl(d.bonus||0);},'row-sub')+rowP('% Bônus',function(d){return drePct(d.bonus||0,d.rl);})+row('Despesas Gerais (-)',function(d){return dreBrl(d.dg);},'row-sub')+rowP('% Desp Gerais',function(d){return drePct(d.dg,d.rl);})+row('CD (-)',function(d){return dreBrl(d.cd);},'row-sub')+rowP('% CD',function(d){return drePct(d.cd,d.rl);})
     +sp()+sec('📊 EBITDA')+ebitdaRow+ebitdaPct
     : '';
   return'<div class="dre-tbl-wrap">'+
@@ -8025,6 +8036,11 @@ async function openDreCfg(){
         return 0.11;
       })(),
       '📐 Aplicado sobre Salários Adm — resultado em 13º + Férias Adm (-)')
+    +fieldBrl('Bônus (R$)', 'bonus', (function(){
+        var p = DRE_CFG_PARAMS[am];
+        return (p && p.bonus != null) ? p.bonus : 0;
+      })(),
+      '🎁 Valor total mensal de bônus — rateado entre as áreas proporcionalmente à folha')
     +'</div></div>';
   document.getElementById('dreCfgOverlay').style.display='flex';
 }
@@ -8121,6 +8137,13 @@ function applyDreCfg(){
       var pct13admVal = parseFloat(pct13admEl.value)||0;
       var pct13admStored = pct13admVal > 100 ? 0.11 : (pct13admVal > 0 ? pct13admVal / 100 : 0.11);
       DRE_CFG_PARAMS[am]['pct13ferias_adm'] = pct13admStored;
+    }
+    // Salva Bônus (R$) — valor total mensal, rateado por área proporcionalmente à folha
+    var bonusEl = document.getElementById('dcf_bonus');
+    if(bonusEl){
+      var bonusVal = parseFloat(bonusEl.value)||0;
+      if(bonusVal > 0){ DRE_CFG_PARAMS[am]['bonus'] = bonusVal; }
+      else { delete DRE_CFG_PARAMS[am]['bonus']; }
     }
     console.log('[pct13ferias] input=',pct13val,'stored=',pct13stored);
     // Backfill NÃO roda aqui — só no carregamento inicial (evita sobrescrever valores salvos)
@@ -9088,6 +9111,33 @@ function _pct13fAdmForYm(ym){
   return 0.11; // default — alinhado com dreCalc
 }
 
+// Bônus total do mês (configurado no DRE Config). Valor único mensal.
+function _bonusTotalForYm(ym){
+  var am = String(ym||'').replace('-','');
+  var p  = (typeof DRE_CFG_PARAMS !== 'undefined') ? (DRE_CFG_PARAMS[am] || DRE_CFG_PARAMS[ym]) : null;
+  if(p && p.bonus != null){
+    var v = parseFloat(p.bonus);
+    if(!isNaN(v) && v > 0) return v;
+  }
+  return 0;
+}
+
+// Bônus rateado para uma área específica, proporcional à folha da área no mês.
+// _folhaByAreaRef é a estrutura folhaByArea passada do renderBudget (já com overrides aplicados).
+// folhaTotalMesFn(ym) retorna a folha total de TODAS as áreas no mês (denominador do rateio).
+function _bonusAreaForYm(areaSources, ym, folhaByAreaRef, folhaTotalMesFn){
+  var bonusTotal = _bonusTotalForYm(ym);
+  if(bonusTotal <= 0) return 0;
+  // Folha da área (soma das áreas-fonte)
+  var folhaArea = 0;
+  (areaSources||[]).forEach(function(s){ folhaArea += (folhaByAreaRef[s.toUpperCase()]||{})[ym]||0; });
+  if(folhaArea <= 0) return 0;
+  // Folha total de todas as áreas no mês
+  var folhaTotal = folhaTotalMesFn(ym);
+  if(folhaTotal <= 0) return 0;
+  return bonusTotal * (folhaArea / folhaTotal);
+}
+
 function budgetDespByTipoArea(ym, tipo, area){
   var am = ym.replace('-','');
   // area pode ser string OU array — quando merged (Fin/Fat/Fisc) recebe array das fontes
@@ -9770,6 +9820,16 @@ function renderBudget(anoFilter){
     }
   }
 
+  // Folha total de TODAS as áreas por mês — denominador do rateio do Bônus.
+  // Memoizado por mês pra não somar repetidamente em cada área.
+  var _folhaTotalMesCache = {};
+  function _folhaTotalMes(ym){
+    if(_folhaTotalMesCache[ym] !== undefined) return _folhaTotalMesCache[ym];
+    var t = 0;
+    Object.keys(folhaByArea).forEach(function(a){ t += (folhaByArea[a]||{})[ym]||0; });
+    return (_folhaTotalMesCache[ym] = t);
+  }
+
   // ── DESPESAS CLASSIFICADAS — agrupado por Área > Tipo ──
   var usedAreas = {};
   BUDGET_DESP_RAW.forEach(function(r){
@@ -10006,6 +10066,20 @@ function renderBudget(anoFilter){
             var v = sal * _pct13fAdmForYm(ym);
             return v>0?v:null;
           }, {sub:true, parentArea: areaUid});
+          // Bônus: valor total mensal do DRE, rateado pra esta área proporcionalmente à folha
+          dataRow('↳ Bônus', function(ym){
+            var v = _bonusAreaForYm(sourcesCapture, ym, folhaByArea, _folhaTotalMes);
+            return v>0?v:null;
+          }, {sub:true, parentArea: areaUid, tooltipFn: function(ym, val){
+            if(val==null||val===0) return '';
+            var tot = _bonusTotalForYm(ym);
+            var folhaArea = 0; sourcesCapture.forEach(function(s){ folhaArea += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
+            var folhaTot = _folhaTotalMes(ym);
+            var share = folhaTot>0 ? (folhaArea/folhaTot)*100 : 0;
+            return 'Bônus rateado: R$ '+Math.round(val).toLocaleString('pt-BR')
+              + ' • Bônus total do mês: R$ '+Math.round(tot).toLocaleString('pt-BR')
+              + ' • Esta área representa '+share.toFixed(1).replace('.',',')+'% da folha';
+          }});
           // Colaboradores: contagem de pessoas únicas com pagamento no mês (vem da Folha)
           // Nota: NÃO é valor monetário — passa flag {count:true} pra dataRow formatar como número inteiro
           dataRow('↳ Colaboradores', function(ym){
