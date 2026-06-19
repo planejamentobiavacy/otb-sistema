@@ -9934,7 +9934,8 @@ function renderBudget(anoFilter){
       var dreAdd = (typeof _budgetDreInjectAreaTotal === 'function') ? _budgetDreInjectAreaTotal(a, ym) : 0;
       var fol  = 0;
       srcs.forEach(function(s){ fol += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
-      total += desp + dreAdd + fol + fol * _pct13fAdmForYm(ym);
+      var bonus = (typeof _bonusAreaOvrGet === 'function') ? (_bonusAreaOvrGet(srcs, ym)||0) : 0;
+      total += desp + dreAdd + fol + fol * _pct13fAdmForYm(ym) + bonus;
     });
     _areaTotals[a] = total;
   });
@@ -9946,7 +9947,7 @@ function renderBudget(anoFilter){
 
   if(areasUsadas.length){
     secRow('Despesas', '💸');
-    // Pré-computa o Total Despesas (soma de todas as áreas: despesas + folha + 13°+Férias)
+    // Pré-computa o Total Despesas (soma de todas as áreas: despesas + folha + 13°+Férias + bônus)
     months.forEach(function(ym){
       var sum = 0;
       var pct13 = _pct13fAdmForYm(ym);
@@ -9963,7 +9964,9 @@ function renderBudget(anoFilter){
         var fol  = 0;
         srcs.forEach(function(s){ fol += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
         var f13 = fol * pct13;
-        sum += (desp + dreAdd + fol + f13);
+        // Bônus manual da área (input no detalhe do Budget)
+        var bonus = _bonusAreaOvrGet(srcs, ym) || 0;
+        sum += (desp + dreAdd + fol + f13 + bonus);
       });
       totalDespesasGeral[ym] = sum;
     });
@@ -10035,7 +10038,9 @@ function renderBudget(anoFilter){
           var fol  = 0;
           sourcesCapture.forEach(function(s){ fol += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
           var f13 = fol * _pct13fAdmForYm(ym);
-          var t = desp + dreAdd + fol + f13;
+          // Bônus manual da área (input no detalhe do Budget)
+          var bonus = _bonusAreaOvrGet(sourcesCapture, ym) || 0;
+          var t = desp + dreAdd + fol + f13 + bonus;
           return t>0 ? t : null;
         }, {bold:true, areaUid: areaUid});
         tipos.forEach(function(tipo){
