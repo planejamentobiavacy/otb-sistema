@@ -1354,6 +1354,7 @@ async function afterLogin(){
       if(budgetClassifEarly.sim)            BUDGET_CFG.sim = budgetClassifEarly.sim;
       if(budgetClassifEarly.folhaProjecao)  BUDGET_CFG.folhaProjecao = budgetClassifEarly.folhaProjecao;
       if(budgetClassifEarly.folhaRealOverride) BUDGET_CFG.folhaRealOverride = budgetClassifEarly.folhaRealOverride;
+      if(budgetClassifEarly.bonusAreaOverride) BUDGET_CFG.bonusAreaOverride = budgetClassifEarly.bonusAreaOverride;
       console.log('[afterLogin] budget_classif loaded — tiposDespGerais:', Object.keys(BUDGET_CFG.tiposDespGerais||{}).length, '| tiposCD:', Object.keys(BUDGET_CFG.tiposCD||{}).length, '| overrides:', Object.keys(BUDGET_CFG.budgetOverrides||{}).length);
     } else {
       console.log('[afterLogin] budget_classif not found yet');
@@ -2686,6 +2687,7 @@ async function handleSaveAll(btn){
       budgetOverrides:(typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.budgetOverrides)||{},
       folhaProjecao:  (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.folhaProjecao)||{},
       folhaRealOverride: (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.folhaRealOverride)||{},
+      bonusAreaOverride: (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.bonusAreaOverride)||{},
       sim:            (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.sim)||{},
       savedAt: new Date().toISOString()
     });
@@ -6924,6 +6926,7 @@ async function _smartReloadKeys(changedKeys){
         if(data.tiposCd) BUDGET_CFG.tiposCd = data.tiposCd;
         if(data.folhaProjecao != null) BUDGET_CFG.folhaProjecao = data.folhaProjecao;
         if(data.folhaRealOverride != null) BUDGET_CFG.folhaRealOverride = data.folhaRealOverride;
+        if(data.bonusAreaOverride != null) BUDGET_CFG.bonusAreaOverride = data.bonusAreaOverride;
         rerenderTargets.budget = true;
         rerenderTargets.dreCfg = true; // base de Desp Gerais/CD muda
       } else if(key === 'budget_cfg'){
@@ -6935,6 +6938,7 @@ async function _smartReloadKeys(changedKeys){
         if(data.budgetOverrides != null) BUDGET_CFG.budgetOverrides = data.budgetOverrides;
         if(data.folhaProjecao != null) BUDGET_CFG.folhaProjecao = data.folhaProjecao;
         if(data.folhaRealOverride != null) BUDGET_CFG.folhaRealOverride = data.folhaRealOverride;
+        if(data.bonusAreaOverride != null) BUDGET_CFG.bonusAreaOverride = data.bonusAreaOverride;
         rerenderTargets.budget = true;
         rerenderTargets.dreCfg = true;
       } else if(key === 'dre_cfg_params'){
@@ -8771,6 +8775,7 @@ function scheduleClassifSave(){
         budgetOverrides:BUDGET_CFG.budgetOverrides|| {},
         folhaProjecao:  BUDGET_CFG.folhaProjecao  || {},
         folhaRealOverride: BUDGET_CFG.folhaRealOverride || {},
+        bonusAreaOverride: BUDGET_CFG.bonusAreaOverride || {},
         sim:            BUDGET_CFG.sim            || {},
         savedAt:        new Date().toISOString()
       };
@@ -8861,6 +8866,7 @@ async function _mergeBudgetClassifVol(baseSavedAt){
     if(_hasContent(vol.budgetOverrides)) BUDGET_CFG.budgetOverrides = vol.budgetOverrides;
     if(_hasContent(vol.folhaProjecao))   BUDGET_CFG.folhaProjecao   = vol.folhaProjecao;
     if(_hasContent(vol.folhaRealOverride)) BUDGET_CFG.folhaRealOverride = vol.folhaRealOverride;
+    if(_hasContent(vol.bonusAreaOverride)) BUDGET_CFG.bonusAreaOverride = vol.bonusAreaOverride;
     if(_hasContent(vol.sim))             BUDGET_CFG.sim             = vol.sim;
     // Invalida índice de classif pra que getBudgetClassif reconstrua com os deltas aplicados
     if(_hasContent(vol.classif) && typeof invalidateBudgetClassifIndex === 'function'){
@@ -9126,16 +9132,42 @@ function _bonusTotalForYm(ym){
 // _folhaByAreaRef é a estrutura folhaByArea passada do renderBudget (já com overrides aplicados).
 // folhaTotalMesFn(ym) retorna a folha total de TODAS as áreas no mês (denominador do rateio).
 function _bonusAreaForYm(areaSources, ym, folhaByAreaRef, folhaTotalMesFn){
+  // 1) Override manual por área tem prioridade (digitado no "detalhes" do Bônus no Budget)
+  var ovr = _bonusAreaOvrGet(areaSources, ym);
+  if(ovr != null) return ovr;
+  // 2) Senão, rateia o bônus total do DRE proporcionalmente à folha da área
   var bonusTotal = _bonusTotalForYm(ym);
   if(bonusTotal <= 0) return 0;
-  // Folha da área (soma das áreas-fonte)
   var folhaArea = 0;
   (areaSources||[]).forEach(function(s){ folhaArea += (folhaByAreaRef[s.toUpperCase()]||{})[ym]||0; });
   if(folhaArea <= 0) return 0;
-  // Folha total de todas as áreas no mês
   var folhaTotal = folhaTotalMesFn(ym);
   if(folhaTotal <= 0) return 0;
   return bonusTotal * (folhaArea / folhaTotal);
+}
+
+// Override manual de bônus por área. Chave: ÁREA-CANÔNICA|ym (usa a 1ª área-fonte como canônica).
+// Guardado em BUDGET_CFG.bonusAreaOverride.
+function _bonusAreaKey(areaSources, ym){
+  var canon = (areaSources && areaSources.length) ? String(areaSources[0]).toUpperCase() : '';
+  return canon + '|' + ym;
+}
+function _bonusAreaOvrGet(areaSources, ym){
+  if(!BUDGET_CFG.bonusAreaOverride) return null;
+  var v = BUDGET_CFG.bonusAreaOverride[_bonusAreaKey(areaSources, ym)];
+  return (v != null && !isNaN(parseFloat(v))) ? parseFloat(v) : null;
+}
+function _bonusAreaOvrSet(areaSources, ym, val){
+  if(!BUDGET_CFG.bonusAreaOverride) BUDGET_CFG.bonusAreaOverride = {};
+  var k = _bonusAreaKey(areaSources, ym);
+  if(val == null || val === '' || isNaN(parseFloat(val))){
+    delete BUDGET_CFG.bonusAreaOverride[k];
+  } else {
+    BUDGET_CFG.bonusAreaOverride[k] = parseFloat(val);
+  }
+}
+function _bonusAreaHasOvr(areaSources, ym){
+  return _bonusAreaOvrGet(areaSources, ym) != null;
 }
 
 function budgetDespByTipoArea(ym, tipo, area){
@@ -9425,6 +9457,11 @@ function renderBudget(anoFilter){
     if(opts && opts.folhaDetailArea){
       var fdArea = opts.folhaDetailArea, fdAno = opts.selectedAno||'';
       btnHtml = '<button data-area="'+escHtml(fdArea)+'" data-ano="'+escHtml(String(fdAno))+'" onclick="openFolhaDetail(this.dataset.area,this.dataset.ano)" style="margin-left:8px;padding:1px 7px;font-size:10px;font-weight:600;border:1.5px solid #7b2d8b;border-radius:4px;background:#fff;color:#7b2d8b;cursor:pointer;vertical-align:middle">detalhes</button>';
+    }
+    // Bônus detail button — abre modal pra digitar bônus por área/mês
+    if(opts && opts.bonusDetailArea){
+      var bdArea = escHtml(opts.bonusDetailArea), bdAno = escHtml(String(selectedAno||''));
+      btnHtml = '<button data-area="'+bdArea+'" data-ano="'+bdAno+'" onclick="openBonusDetail(this.dataset.area,this.dataset.ano)" style="margin-left:8px;padding:1px 7px;font-size:10px;font-weight:600;border:1.5px solid #c79a16;border-radius:4px;background:#fff;color:#9a7400;cursor:pointer;vertical-align:middle">detalhes</button>';
     }
     var labelHtml = (ss && ss.icon ? ss.icon+' ' : '') + label;
     // Se a linha tem botão de detalhes, torna a label clicável também (mesma ação que o botão)
@@ -9829,6 +9866,8 @@ function renderBudget(anoFilter){
     Object.keys(folhaByArea).forEach(function(a){ t += (folhaByArea[a]||{})[ym]||0; });
     return (_folhaTotalMesCache[ym] = t);
   }
+  // Expõe pro modal de detalhes do Bônus (openBonusDetail), que roda fora deste escopo
+  window.BUDGET_FOLHA_BY_AREA = folhaByArea;
 
   // ── DESPESAS CLASSIFICADAS — agrupado por Área > Tipo ──
   var usedAreas = {};
@@ -10066,20 +10105,27 @@ function renderBudget(anoFilter){
             var v = sal * _pct13fAdmForYm(ym);
             return v>0?v:null;
           }, {sub:true, parentArea: areaUid});
-          // Bônus: valor total mensal do DRE, rateado pra esta área proporcionalmente à folha
+          // Bônus: valor total mensal do DRE rateado por folha, OU override manual por área.
+          // Botão "detalhes" abre modal pra digitar o bônus de cada área por mês.
           dataRow('↳ Bônus', function(ym){
             var v = _bonusAreaForYm(sourcesCapture, ym, folhaByArea, _folhaTotalMes);
             return v>0?v:null;
-          }, {sub:true, parentArea: areaUid, tooltipFn: function(ym, val){
-            if(val==null||val===0) return '';
-            var tot = _bonusTotalForYm(ym);
-            var folhaArea = 0; sourcesCapture.forEach(function(s){ folhaArea += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
-            var folhaTot = _folhaTotalMes(ym);
-            var share = folhaTot>0 ? (folhaArea/folhaTot)*100 : 0;
-            return 'Bônus rateado: R$ '+Math.round(val).toLocaleString('pt-BR')
-              + ' • Bônus total do mês: R$ '+Math.round(tot).toLocaleString('pt-BR')
-              + ' • Esta área representa '+share.toFixed(1).replace('.',',')+'% da folha';
-          }});
+          }, {sub:true, parentArea: areaUid,
+            bonusDetailSources: sourcesCapture, bonusDetailArea: areaCapFolha,
+            dotFn: function(ym){ return _bonusAreaHasOvr(sourcesCapture, ym); },
+            tooltipFn: function(ym, val){
+              if(val==null||val===0) return '';
+              if(_bonusAreaHasOvr(sourcesCapture, ym)){
+                return 'Bônus (ajuste manual): R$ '+Math.round(val).toLocaleString('pt-BR');
+              }
+              var tot = _bonusTotalForYm(ym);
+              var folhaArea = 0; sourcesCapture.forEach(function(s){ folhaArea += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
+              var folhaTot = _folhaTotalMes(ym);
+              var share = folhaTot>0 ? (folhaArea/folhaTot)*100 : 0;
+              return 'Bônus rateado: R$ '+Math.round(val).toLocaleString('pt-BR')
+                + ' • Bônus total do mês: R$ '+Math.round(tot).toLocaleString('pt-BR')
+                + ' • Esta área representa '+share.toFixed(1).replace('.',',')+'% da folha';
+            }});
           // Colaboradores: contagem de pessoas únicas com pagamento no mês (vem da Folha)
           // Nota: NÃO é valor monetário — passa flag {count:true} pra dataRow formatar como número inteiro
           dataRow('↳ Colaboradores', function(ym){
@@ -10253,6 +10299,85 @@ function folhaAreaEfetivo(area, ym){
   return projTotal;
 }
 function folhaProjClearCache(){ _folhaProjAreaCache = null; }
+
+// ── Modal de detalhes do Bônus por área ─────────────────────────────────────
+// Permite digitar manualmente o valor do bônus de cada mês para a área. O valor
+// manual SUBSTITUI o rateio automático (Bônus total do DRE × share de folha).
+function openBonusDetail(areaDisplay, ano){
+  var sources = _budgetSourceAreas(areaDisplay);
+  // Meses do ano selecionado (ou todos os meses do Budget se não filtrado)
+  var anoNum = ano || (typeof BUDGET_SELECTED_ANO !== 'undefined' ? BUDGET_SELECTED_ANO : null);
+  var months = [];
+  if(anoNum){ for(var m=1;m<=12;m++) months.push(anoNum+'-'+String(m).padStart(2,'0')); }
+  else if(typeof BUDGET_MONTHS !== 'undefined' && BUDGET_MONTHS.length){ months = BUDGET_MONTHS.slice(); }
+  else { var y=new Date().getFullYear(); for(var m2=1;m2<=12;m2++) months.push(y+'-'+String(m2).padStart(2,'0')); }
+
+  var nomes=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  var fmtMes=function(ym){ var p=ym.split('-'); return nomes[parseInt(p[1],10)]+'/'+p[0].slice(2); };
+
+  var h = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">';
+  h += '<div style="font-size:11px;color:#7a8ab0">'+months.length+' meses — Bônus da área <b>'+escHtml(areaDisplay)+'</b></div>';
+  h += '<div style="font-size:11px;color:#9a7400">🎁 Valor manual substitui o rateio automático do DRE</div>';
+  h += '</div>';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#1a2547;color:#fff">';
+  h += '<th style="padding:7px 10px;text-align:left">MÊS</th>';
+  h += '<th style="padding:7px 10px;text-align:center">Bônus Rateado (auto)</th>';
+  h += '<th style="padding:7px 10px;text-align:center">Bônus Manual</th></tr></thead><tbody>';
+
+  months.forEach(function(ym){
+    var ovr = _bonusAreaOvrGet(sources, ym);
+    // Rateio automático (pra exibir como referência) — recalcula direto
+    var bonusTotal = _bonusTotalForYm(ym);
+    var autoVal = 0;
+    var fba = window.BUDGET_FOLHA_BY_AREA;
+    if(bonusTotal > 0 && fba){
+      var folhaArea=0, folhaTot=0;
+      Object.keys(fba).forEach(function(a){ folhaTot += (fba[a]||{})[ym]||0; });
+      sources.forEach(function(s){ folhaArea += (fba[s.toUpperCase()]||{})[ym]||0; });
+      if(folhaTot>0) autoVal = bonusTotal*(folhaArea/folhaTot);
+    }
+    var autoDisp = autoVal>0 ? 'R$ '+Math.round(autoVal).toLocaleString('pt-BR') : '<span style="color:#ccc">—</span>';
+    var inputVal = ovr!=null ? 'R$ '+Math.round(ovr).toLocaleString('pt-BR') : '';
+    h += '<tr>';
+    h += '<td style="padding:5px 10px;border-bottom:1px solid #eef1f8;font-weight:600">'+fmtMes(ym)+'</td>';
+    h += '<td style="padding:5px 10px;border-bottom:1px solid #eef1f8;text-align:center;color:#7a8ab0">'+autoDisp+'</td>';
+    h += '<td style="padding:5px 10px;border-bottom:1px solid #eef1f8;text-align:center">'
+      + '<input type="text" data-area="'+escHtml(areaDisplay)+'" data-ym="'+ym+'" value="'+escHtml(inputVal)+'" '
+      + 'placeholder="(usa rateio)" onblur="bonusDetailOnInputBlur(this)" onfocus="this.select()" '
+      + 'style="width:120px;padding:4px 6px;border:1px solid '+(ovr!=null?'#c79a16':'#d0d8ee')+';border-radius:4px;text-align:center;font-size:11px;background:'+(ovr!=null?'#fffbe9':'#fff')+';color:'+(ovr!=null?'#9a7400':'#0f1a3a')+';font-weight:'+(ovr!=null?'700':'400')+'">'
+      + '</td></tr>';
+  });
+  h += '</tbody></table>';
+
+  var overlay = document.getElementById('budgetDetailOverlay');
+  if(!overlay){ overlay=document.createElement('div'); overlay.id='budgetDetailOverlay'; overlay.style.cssText='position:fixed;inset:0;background:rgba(10,20,60,.55);z-index:1200;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(2px)'; document.body.appendChild(overlay); }
+  overlay.onclick=function(e){ if(e.target===this){ this.style.display='none'; if(typeof renderBudget==='function') renderBudget(); } };
+  overlay.innerHTML = '<div style="background:#fff;border-radius:12px;box-shadow:0 24px 64px rgba(0,0,0,.4);width:min(680px,94vw);max-height:90vh;overflow:hidden;display:flex;flex-direction:column">'
+    +'<div style="padding:16px 20px;background:#1a2547;color:#fff;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">'
+    +'<div><strong style="font-size:15px">🎁 Bônus — '+escHtml(areaDisplay)+(anoNum?' ('+anoNum+')':'')+'</strong> <span style="font-size:11px;opacity:.7;margin-left:8px">Digite o valor manual ou deixe vazio pra usar o rateio</span></div>'
+    +'<button onclick="document.getElementById(\'budgetDetailOverlay\').style.display=\'none\';if(typeof renderBudget===\'function\')renderBudget()" style="background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:16px">×</button>'
+    +'</div>'
+    +'<div style="padding:16px 20px;overflow:auto;flex:1">'+h+'</div>'
+    +'</div>';
+  overlay.style.display='flex';
+}
+
+function bonusDetailOnInputBlur(inp){
+  var areaDisplay = inp.dataset.area, ym = inp.dataset.ym;
+  var sources = _budgetSourceAreas(areaDisplay);
+  var raw = inp.value.trim();
+  var n = raw ? parseBrlInput(raw) : null;
+  if(n == null || isNaN(n) || n <= 0){
+    _bonusAreaOvrSet(sources, ym, null);
+    inp.value = '';
+    inp.style.background = '#fff'; inp.style.color = '#0f1a3a'; inp.style.borderColor = '#d0d8ee'; inp.style.fontWeight = '400';
+  } else {
+    _bonusAreaOvrSet(sources, ym, n);
+    inp.value = 'R$ '+Math.round(n).toLocaleString('pt-BR');
+    inp.style.background = '#fffbe9'; inp.style.color = '#9a7400'; inp.style.borderColor = '#c79a16'; inp.style.fontWeight = '700';
+  }
+  if(typeof scheduleClassifSave === 'function') scheduleClassifSave();
+}
 
 function openFolhaDetail(area, ano){
   var areaUp = (area||'').toUpperCase();
