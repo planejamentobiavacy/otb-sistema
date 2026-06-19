@@ -8044,7 +8044,14 @@ async function openDreCfg(){
         var p = DRE_CFG_PARAMS[am];
         return (p && p.bonus != null) ? p.bonus : 0;
       })(),
-      '🎁 Valor total mensal de bônus — rateado entre as áreas proporcionalmente à folha')
+      (function(){
+        // Referência azul: soma de todos os bônus preenchidos no Budget para este mês
+        var ymH = String(am).length===6 ? (String(am).slice(0,4)+'-'+String(am).slice(4,6)) : String(am);
+        var budgetSum = (typeof _bonusBudgetTotalForYm==='function') ? _bonusBudgetTotalForYm(ymH) : 0;
+        var ref = '🎁 Valor total mensal de bônus — usado na linha Bônus (-) do DRE';
+        ref += '<br><span style="color:#2352c8;font-weight:700">📊 Preenchido no Budget: R$ '+Math.round(budgetSum).toLocaleString('pt-BR')+'</span>';
+        return ref;
+      })())
     +'</div></div>';
   document.getElementById('dreCfgOverlay').style.display='flex';
 }
@@ -9128,22 +9135,11 @@ function _bonusTotalForYm(ym){
   return 0;
 }
 
-// Bônus rateado para uma área específica, proporcional à folha da área no mês.
-// _folhaByAreaRef é a estrutura folhaByArea passada do renderBudget (já com overrides aplicados).
-// folhaTotalMesFn(ym) retorna a folha total de TODAS as áreas no mês (denominador do rateio).
+// Bônus de uma área — APENAS valor manual digitado no "detalhes" do Bônus (Budget).
+// Não há mais rateio automático: o Budget é a fonte de verdade do bônus por área/mês.
 function _bonusAreaForYm(areaSources, ym, folhaByAreaRef, folhaTotalMesFn){
-  // 1) Override manual por área tem prioridade (digitado no "detalhes" do Bônus no Budget)
   var ovr = _bonusAreaOvrGet(areaSources, ym);
-  if(ovr != null) return ovr;
-  // 2) Senão, rateia o bônus total do DRE proporcionalmente à folha da área
-  var bonusTotal = _bonusTotalForYm(ym);
-  if(bonusTotal <= 0) return 0;
-  var folhaArea = 0;
-  (areaSources||[]).forEach(function(s){ folhaArea += (folhaByAreaRef[s.toUpperCase()]||{})[ym]||0; });
-  if(folhaArea <= 0) return 0;
-  var folhaTotal = folhaTotalMesFn(ym);
-  if(folhaTotal <= 0) return 0;
-  return bonusTotal * (folhaArea / folhaTotal);
+  return (ovr != null && ovr > 0) ? ovr : 0;
 }
 
 // Override manual de bônus por área. Chave: ÁREA-CANÔNICA|ym (usa a 1ª área-fonte como canônica).
@@ -9168,6 +9164,20 @@ function _bonusAreaOvrSet(areaSources, ym, val){
 }
 function _bonusAreaHasOvr(areaSources, ym){
   return _bonusAreaOvrGet(areaSources, ym) != null;
+}
+// Soma TODOS os bônus manuais do Budget para um mês específico (todas as áreas).
+// Usado no DRE Config pra mostrar a referência azul "total preenchido no Budget".
+function _bonusBudgetTotalForYm(ym){
+  if(!BUDGET_CFG.bonusAreaOverride) return 0;
+  var total = 0;
+  var sfx = '|' + ym;
+  Object.keys(BUDGET_CFG.bonusAreaOverride).forEach(function(k){
+    if(k.endsWith(sfx)){
+      var v = parseFloat(BUDGET_CFG.bonusAreaOverride[k]);
+      if(!isNaN(v)) total += v;
+    }
+  });
+  return total;
 }
 
 function budgetDespByTipoArea(ym, tipo, area){
@@ -10105,8 +10115,7 @@ function renderBudget(anoFilter){
             var v = sal * _pct13fAdmForYm(ym);
             return v>0?v:null;
           }, {sub:true, parentArea: areaUid});
-          // Bônus: valor total mensal do DRE rateado por folha, OU override manual por área.
-          // Botão "detalhes" abre modal pra digitar o bônus de cada área por mês.
+          // Bônus: input manual por área/mês (digitado no "detalhes"). Sem rateio automático.
           dataRow('↳ Bônus', function(ym){
             var v = _bonusAreaForYm(sourcesCapture, ym, folhaByArea, _folhaTotalMes);
             return v>0?v:null;
@@ -10114,17 +10123,8 @@ function renderBudget(anoFilter){
             bonusDetailSources: sourcesCapture, bonusDetailArea: areaCapFolha,
             dotFn: function(ym){ return _bonusAreaHasOvr(sourcesCapture, ym); },
             tooltipFn: function(ym, val){
-              if(val==null||val===0) return '';
-              if(_bonusAreaHasOvr(sourcesCapture, ym)){
-                return 'Bônus (ajuste manual): R$ '+Math.round(val).toLocaleString('pt-BR');
-              }
-              var tot = _bonusTotalForYm(ym);
-              var folhaArea = 0; sourcesCapture.forEach(function(s){ folhaArea += (folhaByArea[s.toUpperCase()]||{})[ym]||0; });
-              var folhaTot = _folhaTotalMes(ym);
-              var share = folhaTot>0 ? (folhaArea/folhaTot)*100 : 0;
-              return 'Bônus rateado: R$ '+Math.round(val).toLocaleString('pt-BR')
-                + ' • Bônus total do mês: R$ '+Math.round(tot).toLocaleString('pt-BR')
-                + ' • Esta área representa '+share.toFixed(1).replace('.',',')+'% da folha';
+              if(val==null||val===0) return 'Clique em "detalhes" pra inserir o bônus manualmente';
+              return 'Bônus (manual): R$ '+Math.round(val).toLocaleString('pt-BR');
             }});
           // Colaboradores: contagem de pessoas únicas com pagamento no mês (vem da Folha)
           // Nota: NÃO é valor monetário — passa flag {count:true} pra dataRow formatar como número inteiro
@@ -10317,34 +10317,21 @@ function openBonusDetail(areaDisplay, ano){
 
   var h = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">';
   h += '<div style="font-size:11px;color:#7a8ab0">'+months.length+' meses — Bônus da área <b>'+escHtml(areaDisplay)+'</b></div>';
-  h += '<div style="font-size:11px;color:#9a7400">🎁 Valor manual substitui o rateio automático do DRE</div>';
+  h += '<div style="font-size:11px;color:#9a7400">🎁 Valor manual por mês — entra na linha Bônus do Budget</div>';
   h += '</div>';
   h += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#1a2547;color:#fff">';
   h += '<th style="padding:7px 10px;text-align:left">MÊS</th>';
-  h += '<th style="padding:7px 10px;text-align:center">Bônus Rateado (auto)</th>';
-  h += '<th style="padding:7px 10px;text-align:center">Bônus Manual</th></tr></thead><tbody>';
+  h += '<th style="padding:7px 10px;text-align:center">Bônus (R$)</th></tr></thead><tbody>';
 
   months.forEach(function(ym){
     var ovr = _bonusAreaOvrGet(sources, ym);
-    // Rateio automático (pra exibir como referência) — recalcula direto
-    var bonusTotal = _bonusTotalForYm(ym);
-    var autoVal = 0;
-    var fba = window.BUDGET_FOLHA_BY_AREA;
-    if(bonusTotal > 0 && fba){
-      var folhaArea=0, folhaTot=0;
-      Object.keys(fba).forEach(function(a){ folhaTot += (fba[a]||{})[ym]||0; });
-      sources.forEach(function(s){ folhaArea += (fba[s.toUpperCase()]||{})[ym]||0; });
-      if(folhaTot>0) autoVal = bonusTotal*(folhaArea/folhaTot);
-    }
-    var autoDisp = autoVal>0 ? 'R$ '+Math.round(autoVal).toLocaleString('pt-BR') : '<span style="color:#ccc">—</span>';
     var inputVal = ovr!=null ? 'R$ '+Math.round(ovr).toLocaleString('pt-BR') : '';
     h += '<tr>';
     h += '<td style="padding:5px 10px;border-bottom:1px solid #eef1f8;font-weight:600">'+fmtMes(ym)+'</td>';
-    h += '<td style="padding:5px 10px;border-bottom:1px solid #eef1f8;text-align:center;color:#7a8ab0">'+autoDisp+'</td>';
     h += '<td style="padding:5px 10px;border-bottom:1px solid #eef1f8;text-align:center">'
       + '<input type="text" data-area="'+escHtml(areaDisplay)+'" data-ym="'+ym+'" value="'+escHtml(inputVal)+'" '
-      + 'placeholder="(usa rateio)" onblur="bonusDetailOnInputBlur(this)" onfocus="this.select()" '
-      + 'style="width:120px;padding:4px 6px;border:1px solid '+(ovr!=null?'#c79a16':'#d0d8ee')+';border-radius:4px;text-align:center;font-size:11px;background:'+(ovr!=null?'#fffbe9':'#fff')+';color:'+(ovr!=null?'#9a7400':'#0f1a3a')+';font-weight:'+(ovr!=null?'700':'400')+'">'
+      + 'placeholder="—" onblur="bonusDetailOnInputBlur(this)" onfocus="this.select()" '
+      + 'style="width:130px;padding:4px 6px;border:1px solid '+(ovr!=null?'#c79a16':'#d0d8ee')+';border-radius:4px;text-align:center;font-size:11px;background:'+(ovr!=null?'#fffbe9':'#fff')+';color:'+(ovr!=null?'#9a7400':'#0f1a3a')+';font-weight:'+(ovr!=null?'700':'400')+'">'
       + '</td></tr>';
   });
   h += '</tbody></table>';
