@@ -3787,7 +3787,7 @@ function renderTable(){
 // ═══════════════════════════════════════════════════════
 var DRE_RAW=[], DRE_LOADED=false, DRE_TAB='mensal', DRE_SNAPSHOT=false;
 var DRE_FOLHA_RAW=[], DRE_DESP_RAW=[], DRE_CFG_PARAMS={}, DRE_CANAIS_RAW=[], DRE_CLUSTER_RAW=[], DRE_FRETE_RAW=[]; // params por ano_mes
-var DRE_CANAL_LOOKUP={}, DRE_CLUSTER_LOOKUP={}, DRE_HAS_CLUSTER_LOOKUP=false, DRE_VENDEDOR_LOOKUP={};
+var DRE_CANAL_LOOKUP={}, DRE_CANAL_BY_NOME={}, DRE_CLUSTER_LOOKUP={}, DRE_HAS_CLUSTER_LOOKUP=false, DRE_VENDEDOR_LOOKUP={};
 var DRE_FRETE_LOOKUP={}; // filial_nf_serie -> custo_frete_total_da_nota
 var DRE_NF_RECEITA={};   // filial_nf_serie -> receita_bruta_total_da_nota (para cálculo de rateio)
 var FIXOS_DEF={sal_vend:191500,sal_adm:409000,marketing:79800,desp_gerais:579000,cd_mensal:270000};
@@ -4228,12 +4228,17 @@ function dreResolveCanal(r, vendedorLookup){
     }
   }
   if(nome && /^\s*RCA\b/i.test(nome)) return 'RCA';
-  // Fallback: lookup canal por cod_vendedor (já existente)
+  // Fallback 1: lookup canal por cod_vendedor (dados brutos têm cod)
   if(!c && Object.keys(DRE_CANAL_LOOKUP).length){
     var a = String(r.ANO||r.ano||'');
     var m = String(r.MES||r.mes||'').padStart(2,'0');
     var _cod = String(r.COD_VENDEDOR||r.cod_vendedor||r.VENDEDOR||r.vendedor||'').trim();
     c = DRE_CANAL_LOOKUP[a+m+'|'+_cod] || '';
+  }
+  // Fallback 2: lookup canal por NOME do vendedor (snapshot só guarda nome em `vd`,
+  // não guarda cod_vendedor — sem isso a aba Canal fica vazia ao ler de snapshot).
+  if(!c && nome && DRE_CANAL_BY_NOME && Object.keys(DRE_CANAL_BY_NOME).length){
+    c = DRE_CANAL_BY_NOME[nome.toUpperCase()] || '';
   }
   return c;
 }
@@ -4381,6 +4386,8 @@ function dreExpandSnapshot(snap){
 function dreEnrichWithCanais(raw, canaisRaw, clusterRaw){
   // ── Canal lookup: YYYYMM|cod_vendedor -> canal ──────────────
   var canalLookup = {};
+  // ── Canal lookup por NOME de vendedor (fallback p/ snapshot, que não guarda cod) ──
+  var canalByNome = {};
   // ── Vendedor lookup: cod_vendedor -> nome_vendedor ──────────
   var vendedorLookup = {};
   if(canaisRaw && canaisRaw.length){
@@ -4390,10 +4397,10 @@ function dreEnrichWithCanais(raw, canaisRaw, clusterRaw){
       var canal = String(c.canal||c.CANAL||'').trim();
       if(am && cod && canal) canalLookup[am+'|'+cod] = canal;
       // nome_vendedor: tenta vários campos comuns
-      if(cod){
-        var nome = String(c.nome_vendedor||c.NOME_VENDEDOR||c.nom_vendedor||c.NOM_VENDEDOR||c.nome||c.NOME||'').trim();
-        if(nome && !vendedorLookup[cod]) vendedorLookup[cod] = nome;
-      }
+      var nome = String(c.nome_vendedor||c.NOME_VENDEDOR||c.nom_vendedor||c.NOM_VENDEDOR||c.nome||c.NOME||'').trim();
+      if(cod && nome && !vendedorLookup[cod]) vendedorLookup[cod] = nome;
+      // Lookup canal por nome (último canal visto pra esse nome — geralmente estável)
+      if(nome && canal) canalByNome[nome.toUpperCase()] = canal;
     });
   }
 
@@ -4409,6 +4416,8 @@ function dreEnrichWithCanais(raw, canaisRaw, clusterRaw){
 
   var hasCanalLookup   = Object.keys(canalLookup).length > 0;
   var hasClusterLookup = Object.keys(clusterLookup).length > 0;
+  // Sempre guarda o lookup por nome (usado como fallback no snapshot)
+  DRE_CANAL_BY_NOME = canalByNome;
   if(!hasCanalLookup && !hasClusterLookup) return raw;
 
   // Instead of mapping all raw rows (slow), store lookups globally
