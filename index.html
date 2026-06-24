@@ -9843,13 +9843,10 @@ function renderBudget(anoFilter){
       if(parts.length !== 3) return;
       var area = parts[0], nome = parts[1], ym = parts[2];
       if(!months.includes(ym)) return;
-      // Se mês já tem QUALQUER folha realizada, projeções são consideradas estagnadas
-      var amCheck = ym.replace('-','');
-      if(typeof _monthHasAnyRealizedFolha === 'function' && _monthHasAnyRealizedFolha(amCheck)){
-        _projDiag.skippedPastMonth++;
-        return;
-      }
-      // Se ESSA pessoa tem realizado nesse mês, não soma projeção (caso geral, mês futuro parcial)
+      // Critério POR PESSOA (igual ao detalhe da Folha): a projeção entra se ESSA pessoa
+      // não tem realizado nesse mês. Antes havia um bloqueio global por mês
+      // (_monthHasAnyRealizedFolha) que causava divergência: o detalhe mostrava a projeção
+      // (decisão por pessoa) mas o Budget a ignorava (decisão global), gerando totais diferentes.
       if(_realPersonSet[area+'|'+nome+'|'+ym]){ _projDiag.skipped++; return; }
       var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
       if(isNaN(v) || v <= 0) return;
