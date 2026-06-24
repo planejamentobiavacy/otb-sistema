@@ -10611,25 +10611,27 @@ function folhaProjReplicarLinha(btn, area, nome){
   if(!tbl) return;
   var row = tbl.querySelector('tr[data-nome="'+CSS.escape(nome)+'"]');
   if(!row) return;
-  // Coleta valores realizados + lista de inputs (futuros)
+  // Coleta valores realizados + lista de inputs (apenas dos meses FUTUROS).
+  // Importante: depois que os meses realizados também viraram input (com data-real),
+  // não podemos mais usar "td tem input?" pra decidir realizado vs futuro — agora
+  // distinguimos pelo atributo data-real (presente só nos inputs de mês realizado).
   var realizados = [];
   var inputs = [];
   row.querySelectorAll('td').forEach(function(td, idx){
     if(idx === 0) return; // skip nome column
     var inp = td.querySelector('input[data-ym]');
     if(inp){
-      inputs.push(inp);
-    } else {
-      var txt = td.textContent.trim();
-      var match = txt.match(/-?R\$\s*([\d.]+(?:,\d+)?)/);
-      if(match){
-        var v = parseFloat(match[1].replace(/\./g,'').replace(',','.'));
-        if(!isNaN(v) && v > 0) realizados.push(v);
+      if(inp.hasAttribute('data-real')){
+        // Realizado: pega o valor real ORIGINAL (não o override, pra média ser estável)
+        var vReal = parseFloat(inp.dataset.real)||0;
+        if(vReal > 0) realizados.push(vReal);
+      } else {
+        // Futuro: vai receber a projeção
+        inputs.push(inp);
       }
     }
+    // Células sem input (—) não contribuem
   });
-  // Pega TOTAL (último td) — exclude ele
-  if(realizados.length) realizados.pop(); // remove o TOTAL que é o último
   var last3 = realizados.slice(-3);
   if(!last3.length){ toast('⚠ '+nome+' não tem meses realizados pra calcular média','err'); return; }
   var media = last3.reduce(function(s,v){return s+v;},0) / last3.length;
@@ -10663,17 +10665,15 @@ function folhaProjReplicarTodos(area, ano){
     row.querySelectorAll('td').forEach(function(td, idx){
       if(idx === 0) return;
       var inp = td.querySelector('input[data-ym]');
-      if(inp){ inputs.push(inp); }
-      else {
-        var txt = td.textContent.trim();
-        var match = txt.match(/-?R\$\s*([\d.]+(?:,\d+)?)/);
-        if(match){
-          var v = parseFloat(match[1].replace(/\./g,'').replace(',','.'));
-          if(!isNaN(v) && v > 0) realizados.push(v);
+      if(inp){
+        if(inp.hasAttribute('data-real')){
+          var vReal = parseFloat(inp.dataset.real)||0;
+          if(vReal > 0) realizados.push(vReal);
+        } else {
+          inputs.push(inp);
         }
       }
     });
-    if(realizados.length) realizados.pop(); // remove TOTAL
     var last3 = realizados.slice(-3);
     if(!last3.length || !inputs.length) return;
     var media = last3.reduce(function(s,v){return s+v;},0) / last3.length;
