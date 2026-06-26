@@ -3267,15 +3267,33 @@ function recomputeFuture(sup){
   var avgFatQ=last3.length?last3.reduce(function(s,y){return s+m[y].fatQty;},0)/last3.length:0;
   months.forEach(function(ym,i){
     var cell=m[ym]; if(!cell||!cell.isFuture) return;
-    var hasManual=state.edits[sup]&&state.edits[sup][ym]&&state.edits[sup][ym].fatQty!=null;
-    if(!hasManual&&(!cell.fatQty||cell.fatQty<=0)){
-      var lyYm=(parseInt(ym.split('-')[0])-1)+'-'+ym.split('-')[1],ly=m[lyYm];
-      var sQ=1; if(ly&&avgFatQ>0) sQ=Math.max(0.4,Math.min(2.0,(ly.fatQty||0)/avgFatQ));
-      cell.fatQty=Math.round(avgFatQ*sQ);
+    // ── 1. Preço médio (PMV) ──
+    var precoOvr=(state.edits[sup]&&state.edits[sup][ym]&&state.edits[sup][ym].precoMedio!=null)?state.edits[sup][ym].precoMedio:null;
+    var precoUsado=(precoOvr!=null&&!isNaN(precoOvr))?precoOvr:avgPreco;
+    cell.precoMedio=precoUsado;
+    // ── 2. Pares e R$ do faturamento ──
+    // Nova lógica de simulação:
+    //  (a) Se houver override de fatVal (usuário digitou VAR.LY do FATURAMENTO no bloco VALOR)
+    //      → fatVal vem do override e fatQty = fatVal / PMV
+    //  (b) Senão (modo legado, edição de varLyQty no bloco PARES, ou nenhuma edição)
+    //      → mantém o fatQty atual (do edits ou default) e fatVal = fatQty × PMV
+    var fatValOvr=(state.edits[sup]&&state.edits[sup][ym]&&state.edits[sup][ym].fatVal!=null)?state.edits[sup][ym].fatVal:null;
+    var hasManualQty=state.edits[sup]&&state.edits[sup][ym]&&state.edits[sup][ym].fatQty!=null;
+    if(fatValOvr!=null && precoUsado>0){
+      cell.fatVal=fatValOvr;
+      cell.fatQty=Math.max(0,Math.round(fatValOvr/precoUsado));
+    } else {
+      // Default de fatQty quando não há manual nem fatVal
+      if(!hasManualQty && (!cell.fatQty||cell.fatQty<=0)){
+        var lyYm=(parseInt(ym.split('-')[0])-1)+'-'+ym.split('-')[1],ly=m[lyYm];
+        var sQ=1; if(ly&&avgFatQ>0) sQ=Math.max(0.4,Math.min(2.0,(ly.fatQty||0)/avgFatQ));
+        cell.fatQty=Math.round(avgFatQ*sQ);
+      }
+      cell.fatVal=Math.round(cell.fatQty*precoUsado);
     }
+    // ── 3. Estoque e OTB (dependem do fatQty já definido) ──
     var covQ=cell.coberturaQ||0,fwd3=months.slice(i+1,i+4);
     var avgNQ=fwd3.length?fwd3.reduce(function(s,y){return s+(m[y].fatQty||0);},0)/fwd3.length:cell.fatQty;
-    // Dezembro (e meses sem forward): estoque = estoque anterior - faturamento do mês
     if(fwd3.length===0){
       var prevCell=i>0?m[months[i-1]]:null;
       cell.estQty=Math.max(0,Math.round((prevCell?prevCell.estQty:0)-(cell.fatQty||0)));
@@ -3285,12 +3303,7 @@ function recomputeFuture(sup){
     var prev=i>0?m[months[i-1]]:null,pEQ=prev?(prev.estQty||0):0,pEV=prev?(prev.estVal||0):0;
     cell.otbQty=Math.round(cell.estQty-pEQ+cell.fatQty-(cell.cartQty||0));
     cell.otbCartRealQty=(cell.cartQty||0)+cell.otbQty;
-    // Preço médio: usa override manual se houver (linha "Preço Médio Venda" simulável),
-    // senão usa a média dos últimos 3 meses (avgPreco).
-    var precoOvr=(state.edits[sup]&&state.edits[sup][ym]&&state.edits[sup][ym].precoMedio!=null)?state.edits[sup][ym].precoMedio:null;
-    var precoUsado=(precoOvr!=null&&!isNaN(precoOvr))?precoOvr:avgPreco;
-    cell.precoMedio=precoUsado;
-    cell.fatVal=Math.round(cell.fatQty*precoUsado); cell.estVal=Math.round(cell.estQty*avgPreco);
+    cell.estVal=Math.round(cell.estQty*avgPreco);
     cell.otbVal=Math.round(cell.estVal-pEV+cell.fatVal-(cell.cartVal||0));
     cell.otbCartRealVal=(cell.cartVal||0)+cell.otbVal;
     var forward=months.slice(i+1,i+13),remV=cell.estVal,covV=0;
@@ -3587,7 +3600,7 @@ function renderTable(){
   });
   var kpiDef=[
     {id:'FATURAMENTO',    qKey:'fatQty',         vKey:'fatVal',         editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
-    {id:'VAR. LY',        qKey:'varLyQty',       vKey:'varLyVal',       editableQ:true, editableV:false,isCob:false,isVar:true, aggType:'avg'},
+    {id:'VAR. LY',        qKey:'varLyQty',       vKey:'varLyVal',       editableQ:false,editableV:false,isCob:false,isVar:true, aggType:'avg'},
     {id:'ESTOQUE',        qKey:'estQty',         vKey:'estVal',         editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'avg'},
     {id:'VAR. LY',        qKey:'estVarLyQty',    vKey:'estVarLyVal',    editableQ:false,editableV:false,isCob:false,isVar:true, aggType:'avg'},
     {id:'COB FUTURA',     qKey:'coberturaQ',     vKey:'coberturaV',     editableQ:true, editableV:false,isCob:true, isVar:false,aggType:'avg'},
@@ -3595,12 +3608,12 @@ function renderTable(){
     {id:'OTB',            qKey:'otbQty',         vKey:'otbVal',         editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
     {id:'OTB+CARTEIRA',   qKey:'otbCartRealQty', vKey:'otbCartRealVal', editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
   ];
-  // Bloco VALOR tem a mesma estrutura, MAS com a linha "Preço Médio de Venda" logo após
-  // o VAR. LY do FATURAMENTO. É simulável (editável em meses futuros) e dirige o cálculo
-  // de fatVal = fatQty × precoMedio nesses meses.
+  // Bloco VALOR: VAR.LY do faturamento é EDITÁVEL (input do usuário) e PMV também.
+  // Lógica de simulação: usuário digita a variação do faturamento em R$ e o PMV.
+  // Pares (fatQty) é calculado: fatVal / PMV. Fica readonly no bloco PARES.
   var kpiDefValor=[
     {id:'FATURAMENTO',    qKey:'fatQty',         vKey:'fatVal',         editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
-    {id:'VAR. LY',        qKey:'varLyQty',       vKey:'varLyVal',       editableQ:true, editableV:false,isCob:false,isVar:true, aggType:'avg'},
+    {id:'VAR. LY',        qKey:'varLyQty',       vKey:'varLyVal',       editableQ:false,editableV:true, isCob:false,isVar:true, aggType:'avg'},
     {id:'PMV', qKey:'precoMedio',  vKey:'precoMedio',     editableQ:false,editableV:true, isCob:false,isVar:false,aggType:'avg',isPreco:true},
     {id:'ESTOQUE',        qKey:'estQty',         vKey:'estVal',         editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'avg'},
     {id:'VAR. LY',        qKey:'estVarLyQty',    vKey:'estVarLyVal',    editableQ:false,editableV:false,isCob:false,isVar:true, aggType:'avg'},
@@ -3754,6 +3767,16 @@ function renderTable(){
         var lyYm=(parseInt(ym.split('-')[0])-1)+'-'+ym.split('-')[1],ly=mBlur[lyYm];
         if(type==='pct'){cell.margProd=num/100;state.edits[sup][ym].margProd=num/100;}
       else if(key==='varLyQty'&&ly&&ly.fatQty>0){cell.fatQty=Math.max(0,Math.round(ly.fatQty*(1+num/100)));state.edits[sup][ym].varLyQty=num;state.edits[sup][ym].fatQty=cell.fatQty;}
+      else if(key==='varLyVal'&&ly&&ly.fatVal>0){
+        // Nova lógica de simulação: usuário digita VAR.LY do FATURAMENTO em R$ (bloco VALOR).
+        // → fatVal = fatVal_LY × (1+var/100). Pares (fatQty) é calculado em recomputeFuture:
+        //   fatQty = fatVal / PMV. Limpa qualquer override antigo de varLyQty/fatQty pra não conflitar.
+        cell.fatVal=Math.max(0,Math.round(ly.fatVal*(1+num/100)));
+        state.edits[sup][ym].varLyVal=num;
+        state.edits[sup][ym].fatVal=cell.fatVal;
+        delete state.edits[sup][ym].varLyQty;
+        delete state.edits[sup][ym].fatQty;
+      }
       } else if(type==='preco'){
         // Preço Médio de Venda: salva override e recalcula fatVal = fatQty × preço.
         // recomputeFuture vai respeitar esse override (ver lógica lá).
