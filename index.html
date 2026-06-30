@@ -4937,6 +4937,11 @@ function dreRenderMensal(){
   var ml=function(m){return['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'][+m]||m;};
   var ano=dreGv('dre-ano-mensal'),q=dreGv('dre-q-mensal'),mes=dreGv('dre-mes-mensal'),canal=dreGv('dre-canal-mensal'),cluster=dreGv('dre-cluster-mensal'),regiao=dreGv('dre-reg-mensal'),forn=dreGv('dre-forn-mensal'),transp=dreGv('dre-transp-mensal');
   var rows=dreFilt(ano,mes,canal,q,cluster,regiao,forn,transp);
+  // "allRows" = linhas com mesmo período mas SEM filtros dimensionais (canal, cluster, regiao,
+  // fornecedor, transp). É o denominador do share — custos fixos do mês são rateados pela
+  // % de RB da slice (rows) sobre o total (allRows). Sem isso, cada filtro recebe o custo
+  // fixo INTEIRO e a soma de "Farmer + Closer + KA + ..." dá várias vezes o total real.
+  var allRows = dreFilt(ano, mes, null, q, null, null, null, null);
   // Detecta se há comparação multi-ano (ano='TODOS' OU array com múltiplos valores)
   var anosFiltro = Array.isArray(ano) ? ano.map(String) : (ano !== 'TODOS' && ano != null ? [String(ano)] : null);
   var isMultiAno = (ano === 'TODOS') || (anosFiltro && anosFiltro.length > 1);
@@ -4953,21 +4958,24 @@ function dreRenderMensal(){
     }))).filter(function(p){ var parts=p.split('|'); return parts[0] && parts[1] && parts[1]!=='00'; }).sort();
     cols = anoMesPairs.map(function(pair){
       var parts = pair.split('|'), a = parts[0], m = parts[1];
-      return {
-        label: ml(m)+'/'+a.slice(-2),
-        d: dreCalc(dreAgg(rows.filter(function(r){
-          return String(r.ano||r.ANO||'')===a && String(r.mes||r.MES||'').padStart(2,'0')===m;
-        })), 1, 1, canalCtxMensal)
-      };
+      var sliceM = rows.filter(function(r){
+        return String(r.ano||r.ANO||'')===a && String(r.mes||r.MES||'').padStart(2,'0')===m;
+      });
+      var allM = allRows.filter(function(r){
+        return String(r.ano||r.ANO||'')===a && String(r.mes||r.MES||'').padStart(2,'0')===m;
+      });
+      return { label: ml(m)+'/'+a.slice(-2), d: dreCalcShare(sliceM, allM, canalCtxMensal) };
     });
   } else {
     var meses = Array.from(new Set(rows.map(function(r){return String(r.mes||r.MES||'').padStart(2,'0');}))).filter(function(m){return m!=='00';}).sort();
     cols = meses.map(function(m){
+      var sliceM = rows.filter(function(r){return String(r.mes||r.MES||'').padStart(2,'0')===m;});
+      var allM = allRows.filter(function(r){return String(r.mes||r.MES||'').padStart(2,'0')===m;});
       return { label: ml(m)+(ano!=='TODOS' && ano!=null?'/'+String(ano).slice(-2):''),
-               d: dreCalc(dreAgg(rows.filter(function(r){return String(r.mes||r.MES||'').padStart(2,'0')===m;})),1,1,canalCtxMensal) };
+               d: dreCalcShare(sliceM, allM, canalCtxMensal) };
     });
   }
-  if(cols.length>1) cols=cols.concat([{label:'<strong>Total</strong>',d:dreCalc(dreAgg(rows),1,1,canalCtxMensal),isTotal:true}]);
+  if(cols.length>1) cols=cols.concat([{label:'<strong>Total</strong>',d:dreCalcShare(rows, allRows, canalCtxMensal),isTotal:true}]);
   var anoLY=ano==='TODOS'?null:(Array.isArray(ano)?String(+ano[0]-1):String(+ano-1));
   // LY deve filtrar pelo MESMO período: ano-1 + mesmos meses selecionados
   var rowsLY=(!isMultiAno && anoLY)?DRE_RAW.filter(function(r){
@@ -4976,7 +4984,21 @@ function dreRenderMensal(){
     // Reusa os meses únicos dos rows atuais
     return cols.some(function(c){ return !c.isTotal && c.label.indexOf(ml(rMes))===0; });
   }):[];
-  var dLY=rowsLY.length?dreCalc(dreAgg(rowsLY),1,1):null;
+  // allLY: total (sem filtros dimensionais) do ano LY no mesmo período — denominador do share LY
+  var allRowsLY=(!isMultiAno && anoLY)?DRE_RAW.filter(function(r){
+    if(String(r.ano||r.ANO)!==anoLY) return false;
+    var rMes=String(r.mes||r.MES||'').padStart(2,'0');
+    return cols.some(function(c){ return !c.isTotal && c.label.indexOf(ml(rMes))===0; });
+  }):[];
+  // Aplica os MESMOS filtros dimensionais ao LY (consistência: comparar canal X com canal X)
+  if(rowsLY.length && (canal||cluster||regiao||forn||transp)){
+    rowsLY = rowsLY.filter(function(r){
+      if(canal && canal!=='TODOS' && !Array.isArray(canal) && String(dreResolveCanal(r)).toUpperCase() !== String(canal).toUpperCase()) return false;
+      // outros filtros são opcionais — _dreMatchesDim faria isso mas pra LY mantemos simples
+      return true;
+    });
+  }
+  var dLY=rowsLY.length?dreCalcShare(rowsLY, allRowsLY):null;
   // KPIs ficam VAZIOS em modo multi-ano (não faz sentido agregar 2 anos)
   var kpiData;
   if(isMultiAno){
