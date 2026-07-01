@@ -5319,11 +5319,23 @@ function dreCalc(a,shareRB,shareQTD,canalCtx,vendedorOverride){
       return totalInd;
     }
     var total = 0;
+    // Prioridade 1: override manual do DRE Config (campos closer_abs, developer_abs, farmer_abs, hava_abs, ka_abs)
+    // Usado tipicamente em meses futuros onde a Folha ainda não foi lançada no ERP.
+    // Se o usuário preencher o campo, esse valor SUBSTITUI a folha realizada do mês.
+    var manualCampo = key+'_abs';
+    var hasAnyManual = false;
     a.anomesList.forEach(function(am){
-      total += folhaSalCanalAm(key.toUpperCase(), am);
+      var p = DRE_CFG_PARAMS[String(am)];
+      var manual = (p && p[manualCampo] != null) ? parseFloat(p[manualCampo]) : null;
+      if(manual != null && !isNaN(manual) && manual > 0){
+        total += manual;
+        hasAnyManual = true;
+      } else {
+        total += folhaSalCanalAm(key.toUpperCase(), am);
+      }
     });
     if(total > 0) return total;
-    // Fallback: % da RB (caso Folha não esteja carregada)
+    // Fallback: % da RB (caso Folha não esteja carregada e sem override)
     return rb*getSalPct(key);
   }
   // Quando sem contexto de canal (fornecedor/transportadora): rateia pelo shareRB
