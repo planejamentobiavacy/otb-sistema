@@ -10432,6 +10432,10 @@ function bonusDetailOnInputBlur(inp){
     inp.style.background = '#fffbe9'; inp.style.color = '#9a7400'; inp.style.borderColor = '#c79a16'; inp.style.fontWeight = '700';
   }
   if(typeof scheduleClassifSave === 'function') scheduleClassifSave();
+  // Save imediato — mesmo motivo do folhaRealOvr (ação deliberada, modal fecha logo)
+  if(typeof flushSaveQueue === 'function'){
+    flushSaveQueue().catch(function(e){ console.warn('[bonusDetail] save falhou:', e.message); });
+  }
 }
 
 function openFolhaDetail(area, ano){
@@ -10704,7 +10708,13 @@ function folhaProjReplicarLinha(btn, area, nome){
   });
   folhaProjClearCache();
   folhaProjAtualizarTotal();
-  _folhaProjScheduleSyncBudget(); // dispara save (debounce 1.5s)
+  _folhaProjShowSaveStatus('saving');
+  if(typeof scheduleClassifSave === 'function') scheduleClassifSave();
+  if(typeof flushSaveQueue === 'function'){
+    flushSaveQueue().then(function(){ _folhaProjShowSaveStatus('saved'); })
+      .catch(function(e){ _folhaProjShowSaveStatus('error'); });
+  }
+  if(typeof renderBudget === 'function'){ setTimeout(function(){ try{renderBudget();}catch(e){} }, 100); }
   toast('✔ '+nome+': '+changed+' meses projetados com média de R$ '+Math.round(media).toLocaleString('pt-BR'));
 }
 
@@ -10749,7 +10759,13 @@ function folhaProjReplicarTodos(area, ano){
   });
   folhaProjClearCache();
   folhaProjAtualizarTotal();
-  _folhaProjScheduleSyncBudget(); // dispara save (debounce 1.5s)
+  _folhaProjShowSaveStatus('saving');
+  if(typeof scheduleClassifSave === 'function') scheduleClassifSave();
+  if(typeof flushSaveQueue === 'function'){
+    flushSaveQueue().then(function(){ _folhaProjShowSaveStatus('saved'); })
+      .catch(function(e){ _folhaProjShowSaveStatus('error'); });
+  }
+  if(typeof renderBudget === 'function'){ setTimeout(function(){ try{renderBudget();}catch(e){} }, 100); }
   toast('✔ '+totalPpl+' colaboradores · '+totalChanged+' projeções criadas');
 }
 
@@ -10792,7 +10808,22 @@ function folhaRealOvrOnInputBlur(inp){
   }
   folhaProjClearCache();
   folhaProjAtualizarTotal();
-  _folhaProjScheduleSyncBudget();
+  // Save IMEDIATO (não espera debounce) — ajuste manual de realizado é uma ação deliberada
+  // e o usuário costuma fechar o modal logo em seguida. Debounce longo perdia a alteração.
+  _folhaProjShowSaveStatus('saving');
+  if(typeof scheduleClassifSave === 'function') scheduleClassifSave();
+  if(typeof flushSaveQueue === 'function'){
+    flushSaveQueue().then(function(){
+      _folhaProjShowSaveStatus('saved');
+    }).catch(function(e){
+      console.warn('[folhaRealOvr] save falhou:', e.message);
+      _folhaProjShowSaveStatus('error');
+    });
+  }
+  // Re-render do Budget atrás do modal (sem bloquear o save)
+  if(typeof renderBudget === 'function'){
+    setTimeout(function(){ try { renderBudget(); } catch(e){} }, 100);
+  }
 }
 
 function folhaProjOnInputBlur(inp){
@@ -10817,7 +10848,16 @@ function folhaProjOnInputBlur(inp){
   }
   folhaProjClearCache();
   folhaProjAtualizarTotal();
-  _folhaProjScheduleSyncBudget();
+  // Save imediato (mesmo padrão dos outros overrides do modal)
+  _folhaProjShowSaveStatus('saving');
+  if(typeof scheduleClassifSave === 'function') scheduleClassifSave();
+  if(typeof flushSaveQueue === 'function'){
+    flushSaveQueue().then(function(){ _folhaProjShowSaveStatus('saved'); })
+      .catch(function(e){ console.warn('[folhaProj] save falhou:', e.message); _folhaProjShowSaveStatus('error'); });
+  }
+  if(typeof renderBudget === 'function'){
+    setTimeout(function(){ try { renderBudget(); } catch(e){} }, 100);
+  }
 }
 
 // Re-renderiza o Budget atrás do modal + autosave da projeção no Supabase (debounce 1.5s)
