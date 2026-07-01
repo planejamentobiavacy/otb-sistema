@@ -11542,7 +11542,7 @@ async function handleSaveBudget(btn){
     };
     var kb = Math.round(JSON.stringify(payload).length/1024);
     // Salva classif em chave separada ANTES do payload (snapshot pode falhar)
-    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados||{}, tiposDespGerais: BUDGET_CFG.tiposDespGerais||{}, tiposCD: BUDGET_CFG.tiposCD||{}, budgetOverrides: BUDGET_CFG.budgetOverrides||{}, folhaProjecao: BUDGET_CFG.folhaProjecao||{}, sim: BUDGET_CFG.sim||{}, savedAt: new Date().toISOString()});
+    await supaSave(TBLS.save_dre,'budget_classif', {classif: BUDGET_CFG.classif, tiposIgnorados: BUDGET_CFG.tiposIgnorados||{}, tiposDespGerais: BUDGET_CFG.tiposDespGerais||{}, tiposCD: BUDGET_CFG.tiposCD||{}, budgetOverrides: BUDGET_CFG.budgetOverrides||{}, folhaProjecao: BUDGET_CFG.folhaProjecao||{}, folhaRealOverride: BUDGET_CFG.folhaRealOverride||{}, bonusAreaOverride: BUDGET_CFG.bonusAreaOverride||{}, sim: BUDGET_CFG.sim||{}, savedAt: new Date().toISOString()});
     if(typeof _clearBudgetClassifVol === 'function') await _clearBudgetClassifVol();
     await supaSave(TBLS.save_dre,'budget_cfg', payload);
     toast('✔ Budget salvo — snapshot de '+(snapshot?snapshot.length.toLocaleString('pt-BR'):0)+' linhas ('+kb+'KB), era '+BUDGET_DESP_RAW.length.toLocaleString('pt-BR')+' linhas brutas');
@@ -12109,6 +12109,8 @@ async function saveBudgetCfg(btn){
       tiposCD:         BUDGET_CFG.tiposCD||{},
       budgetOverrides: BUDGET_CFG.budgetOverrides||{},
       folhaProjecao:   BUDGET_CFG.folhaProjecao||{},
+      folhaRealOverride: BUDGET_CFG.folhaRealOverride||{},
+      bonusAreaOverride: BUDGET_CFG.bonusAreaOverride||{},
       sim:             BUDGET_CFG.sim||{},
       savedAt:         new Date().toISOString()
     });
