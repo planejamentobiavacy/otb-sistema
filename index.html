@@ -9862,6 +9862,14 @@ function renderBudget(anoFilter){
       if(totalVerbas > 0) _realPersonSet[area+'|'+nome+'|'+am_ym] = 1;
     });
   }
+  // Último mês (ym) que tem QUALQUER folha realizada — projeção nunca deve ser aplicada
+  // em meses <= esse (são meses fechados/realizados; projeção ali é lixo de dados de quando
+  // o mês ainda era futuro). Só meses ESTRITAMENTE após o último realizado aceitam projeção.
+  var _lastRealizedYm = '';
+  Object.keys(_realPersonSet).forEach(function(k){
+    var parts = k.split('|'); var ym = parts[parts.length-1];
+    if(ym > _lastRealizedYm) _lastRealizedYm = ym;
+  });
   // Aplica overrides de REALIZADO: para cada ajuste manual (area|nome|ym), substitui o
   // valor real da pessoa pelo ajustado. O delta (ajustado − real) é somado ao total da área.
   // É isso que faz a linha "Salário Folha" do Budget refletir os ajustes feitos no detalhe.
@@ -9909,10 +9917,13 @@ function renderBudget(anoFilter){
       if(parts.length !== 3) return;
       var area = parts[0], nome = parts[1], ym = parts[2];
       if(!months.includes(ym)) return;
+      // GUARD: projeção só vale pra meses ESTRITAMENTE APÓS o último mês realizado.
+      // Meses fechados (<=último realizado) já têm o valor real — projeção ali é lixo de
+      // dados de quando o mês ainda era futuro. Isso resolve o caso "Budget = real + proj"
+      // (ex: Mai/26 mostrava 79k = 42k real + 37k projeção órfã).
+      if(_lastRealizedYm && ym <= _lastRealizedYm){ _projDiag.skippedPastMonth++; return; }
       // Critério POR PESSOA (igual ao detalhe da Folha): a projeção entra se ESSA pessoa
-      // não tem realizado nesse mês. Antes havia um bloqueio global por mês
-      // (_monthHasAnyRealizedFolha) que causava divergência: o detalhe mostrava a projeção
-      // (decisão por pessoa) mas o Budget a ignorava (decisão global), gerando totais diferentes.
+      // não tem realizado nesse mês.
       if(_realPersonSet[area+'|'+nome+'|'+ym]){ _projDiag.skipped++; return; }
       var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
       if(isNaN(v) || v <= 0) return;
