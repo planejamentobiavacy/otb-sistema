@@ -9597,7 +9597,7 @@ function renderBudget(anoFilter){
           ? ('Restaurar valor da OTB (R$ '+Math.round(otbVal).toLocaleString('pt-BR')+')')
           : 'Limpar valor manual';
         display = '<input type="text" class="budget-cell-input"'+(ss?' data-ss="1"':'')+' '
-          + 'data-ovrkey="'+escHtml(ovrKey)+'" data-otb="'+otbVal+'" '
+          + 'data-ovrkey="'+escHtml(ovrKey)+'" data-otb="'+otbVal+'"'+(opts.editable.manual?' data-manual="1"':'')+' '
           + 'value="'+escHtml(displayVal)+'" '
           + 'title="'+escHtml(tip)+'" '
           + 'onblur="budgetSaveOverride(this);setTimeout(function(){if(typeof renderBudget===\'function\')renderBudget(BUDGET_ANO_FILTER);},10);" '
@@ -9798,7 +9798,7 @@ function renderBudget(anoFilter){
   dataRow('Receita Bruta AVACY', function(ym){ return budgetAvacyFatValCached(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_BRUTA_AVACY', lockRealized:true}, summaryStyle:{gradStart:'#0a7c4e', gradEnd:'#0a7c4e', icon:'📊'}});
   // Receita PLANO Avacy — totalmente manual, valores salvos em BUDGET_CFG.budgetOverrides
   // A função retorna o valor salvo para que não-admin (modo leitura) também enxergue o plano.
-  dataRow('Receita PLANO Avacy', function(ym){ return budgetReceitaPlano(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_PLANO_AVACY'}});
+  dataRow('Receita PLANO Avacy', function(ym){ return budgetReceitaPlano(ym)||null; }, {bold:true, editable:{keyPrefix:'RECEITA_PLANO_AVACY', manual:true}});
   // Diff x Plano = Receita Bruta − Plano (positivo = bateu/superou plano, negativo = abaixo)
   dataRow('Diff x Plano', function(ym){ return budgetDiffPlano(ym); }, {sub:true});
   // Var Plano = Bruta/Plano - 1 (positivo = realizado superou plano)
@@ -10971,7 +10971,7 @@ function budgetSaveOverride(input){
       delete BUDGET_CFG.budgetOverrides[key];
       changed = true;
     }
-  } else if(Math.abs(typed - otbRaw) < 0.01){
+  } else if(!input.getAttribute('data-manual') && Math.abs(typed - otbRaw) < 0.01){
     // Valor digitado igual ao otb → não precisa override
     if(BUDGET_CFG.budgetOverrides && BUDGET_CFG.budgetOverrides[key] != null){
       delete BUDGET_CFG.budgetOverrides[key];
