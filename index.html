@@ -4625,6 +4625,7 @@ async function initDre(){
     if(t.id===DRE_TAB) btn.classList.add('active');
     btn.onclick=function(){dreSwitchTab(t.id);}; bar.appendChild(btn);
   });
+  (function(){ var gb=document.createElement('button'); gb.textContent='📊 Gráfico'; gb.title='Abrir gráfico de ponte de EBITDA'; gb.style.cssText='margin-left:auto;padding:8px 18px;border:none;border-radius:18px;background:#1a2a6c;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;box-shadow:0 2px 8px rgba(26,42,108,.25)'; gb.onmouseover=function(){gb.style.background='#22357f';}; gb.onmouseout=function(){gb.style.background='#1a2a6c';}; gb.onclick=function(){ if(typeof openDreGrafico==='function') openDreGrafico(); }; bar.appendChild(gb); })();
   // Default: ano atual (se existir na lista de anos com dados). Usuário pode desmarcar pra ver todos.
   var _dreDefaultAno = String(new Date().getFullYear());
   var _dreAnoDefaults = anos.indexOf(_dreDefaultAno) >= 0 ? [_dreDefaultAno] : [];
@@ -12241,5 +12242,199 @@ async function saveBudgetCfg(btn){
   </div>
 </div>
 
+<script>
+/* DRE GRAFICO PONTE EBITDA ADDON */
+/* ============================================================
+   DRE — Ponte de EBITDA (waterfall de variação Ano atual x anterior)
+   Botão na aba DRE abre modal. Parte do EBITDA anterior, cada barra é
+   o impacto da variação de uma linha do DRE, e fecha no EBITDA atual.
+   Usa dreFilt/dreAgg/dreCalc/dreCalcShare.
+   ============================================================ */
+(function(){
+  var GRF_BRL = function(v){ v=Math.round(v||0); return (v<0?'-R$ ':'R$ ')+Math.abs(v).toLocaleString('pt-BR'); };
+  var GRF_SIGN= function(v){ v=Math.round(v||0); return (v>=0?'+R$ ':'-R$ ')+Math.abs(v).toLocaleString('pt-BR'); };
+  var GRF_PCT = function(v){ return (v>=0?'+':'')+((v||0)*100).toFixed(1)+'%'; };
+  var ML = ['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+  function grfUniq(getter){
+    var out={}; (DRE_RAW||[]).forEach(function(r){ var v=getter(r); if(v!=null && String(v).trim()!=='') out[String(v).trim()]=true; });
+    return Object.keys(out).sort();
+  }
+  function grfAnos(){ return grfUniq(function(r){ return r.ano!=null?r.ano:r.ANO; }).sort().reverse(); }
+  function grfCanais(){
+    if(typeof dreResolveCanal==='function'){
+      var o={}; (DRE_RAW||[]).forEach(function(r){ var c=dreResolveCanal(r); if(c) o[String(c)]=true; });
+      return Object.keys(o).sort();
+    }
+    return grfUniq(function(r){ return r.canal||r.CANAL; });
+  }
+
+  function grfCalc(ano, mes, canal, cluster, regiao, forn){
+    var nn=function(v){ return (v && v!=='TODOS')?v:null; };
+    var rows = dreFilt(String(ano), nn(mes), nn(canal), null, nn(cluster), nn(regiao), nn(forn), null);
+    if(!rows || !rows.length) return null;
+    var hasDim = nn(canal)||nn(cluster)||nn(regiao)||nn(forn);
+    if(!hasDim) return dreCalc(dreAgg(rows), 1, 1);
+    var allRows = dreFilt(String(ano), nn(mes), null, null, null, null, null, null);
+    var canalCtx = nn(canal) ? String(canal).toUpperCase() : null;
+    return dreCalcShare(rows, allRows, canalCtx);
+  }
+
+  // Linhas da ponte: impacto da variação de cada conta no EBITDA
+  function grfDelta(dA, dP){
+    function L(label, a, p, isCost){
+      a=a||0; p=p||0;
+      var delta=a-p;                       // variação da própria linha
+      var impact = isCost ? -(a-p) : (a-p);// efeito no EBITDA
+      var pctLine = p!==0 ? (a-p)/Math.abs(p) : null;
+      return {label:label, aVal:a, pVal:p, delta:delta, impact:impact, pctLine:pctLine};
+    }
+    var comA=(dA.sv||0)+(dA.com||0)+(dA.sv13ferias||0), comP=(dP.sv||0)+(dP.com||0)+(dP.sv13ferias||0);
+    var frA=(dA.rf||0)-(dA.cf||0)-(dA.cf_dev||0), frP=(dP.rf||0)-(dP.cf||0)-(dP.cf_dev||0);
+    return [
+      L('Δ Receita Bruta',  dA.rb_gross, dP.rb_gross, false),
+      L('Δ Devolução',      dA.dev,      dP.dev,      true),
+      L('Δ Impostos',       dA.imp,      dP.imp,      true),
+      L('Δ CMV',            dA.cmv,      dP.cmv,      true),
+      L('Δ FOB',            dA.fob,      dP.fob,      true),
+      L('Δ Mont. Grade',    dA.grade,    dP.grade,    true),
+      L('Δ Etiquetagem',    dA.etq,      dP.etq,      true),
+      L('Δ Comercial',      comA,        comP,        true),
+      L('Δ Frete líq.',     frA,         frP,         false),
+      L('Δ Marketing',      dA.mkt,      dP.mkt,      true),
+      L('Δ Salários Adm',   dA.sa,       dP.sa,       true),
+      L('Δ 13º+Férias Adm', dA.sa13ferias, dP.sa13ferias, true),
+      L('Δ Bônus',          dA.bonus,    dP.bonus,    true),
+      L('Δ Desp. Gerais',   dA.dg,       dP.dg,       true),
+      L('Δ CD',             dA.cd,       dP.cd,       true)
+    ];
+  }
+
+  function grfSvg(dA, dP, titulo, lblAnt, lblAtu){
+    if(!dA || !dP) return '<div style="padding:40px;text-align:center;color:#7a8ab0;font-size:13px">Sem dados para comparar ('+titulo+'). Verifique se há dados nos dois anos.</div>';
+    var ebtP=dP.ebt||0, ebtA=dA.ebt||0;
+    var deltas = grfDelta(dA, dP);
+    var bars = [{kind:'aStart', label:'EBITDA '+lblAnt, val:ebtP}];
+    deltas.forEach(function(d){ bars.push({kind:'delta', label:d.label, impact:d.impact, delta:d.delta, pctLine:d.pctLine}); });
+    bars.push({kind:'aEnd', label:'EBITDA '+lblAtu, val:ebtA});
+    var n=bars.length;
+
+    var barW=52, gap=13, padL=8, padR=58, padTop=56, chartH=300, padBot=118;
+    var W=padL+padR+n*barW+(n-1)*gap, H=padTop+chartH+padBot;
+
+    var lvl=0, geom=[], allVals=[0];
+    bars.forEach(function(b){
+      var top,bot;
+      if(b.kind==='aStart'||b.kind==='aEnd'){ top=Math.max(b.val,0); bot=Math.min(b.val,0); lvl=b.val; }
+      else { var nl=lvl+b.impact; top=Math.max(lvl,nl); bot=Math.min(lvl,nl); lvl=nl; }
+      allVals.push(top,bot); geom.push({top:top,bot:bot});
+    });
+    var vMax=Math.max.apply(null,allVals), vMin=Math.min.apply(null,allVals);
+    if(vMax===vMin){ vMax=vMax||1; vMin=Math.min(0,vMax-1); }
+    // Escala comprimida (raiz com sinal): mantém favoráveis/desfavoráveis legíveis
+    var K=0.62, cmp=function(v){ return (v<0?-1:1)*Math.pow(Math.abs(v),K); };
+    var cMax=cmp(vMax), cMin=cmp(vMin), cR=(cMax-cMin)||1;
+    var y=function(v){ return padTop+(cMax-cmp(v))/cR*chartH; };
+    var yZero=y(0);
+
+    var svg='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" font-family="inherit" style="display:block">';
+    svg+='<text x="'+(W/2)+'" y="24" font-size="15" font-weight="800" text-anchor="middle" fill="#0f1a3a">'+titulo+'</text>';
+    svg+='<line x1="'+padL+'" y1="'+yZero+'" x2="'+(W-padR)+'" y2="'+yZero+'" stroke="#c9d2e6" stroke-width="1"/>';
+
+    for(var i=0;i<n;i++){
+      var b=bars[i], g=geom[i];
+      var x=padL+i*(barW+gap);
+      var yt=y(g.top), yb=y(g.bot), h=Math.max(Math.abs(yb-yt),2), topY=Math.min(yt,yb);
+      var col, lblc, valStr, pctStr='';
+      if(b.kind==='aStart'){ col='#2f3b52'; lblc='#2f3b52'; valStr=GRF_BRL(b.val); }
+      else if(b.kind==='aEnd'){ col=(ebtA>=ebtP?'#0a7c4e':'#c0181a'); lblc=col; valStr=GRF_BRL(b.val); }
+      else {
+        var fav=b.impact>=0;
+        col=fav?'#2ea56a':'#d1495b'; lblc=col;
+        valStr=GRF_SIGN(b.impact);
+        if(b.pctLine!=null) pctStr=GRF_PCT(b.pctLine); else pctStr='novo';
+      }
+      if(i>0){
+        var prev=geom[i-1];
+        var yConn=y((b.kind==='aEnd')?prev.bot:(bars[i].kind==='delta'&&bars[i].impact<0?prev.bot:prev.top));
+        // conecta pelo nível de saída da barra anterior
+        var outLvl = (bars[i-1].kind==='aStart'||bars[i-1].kind==='aEnd') ? bars[i-1].val : null;
+        var yc = y( (function(){ // nível corrente após a barra anterior
+            var l=0; for(var k=0;k<i;k++){ var bb=bars[k]; if(bb.kind==='aStart'||bb.kind==='aEnd') l=bb.val; else l+=bb.impact; } return l; })() );
+        svg+='<line x1="'+(x-gap)+'" y1="'+yc+'" x2="'+x+'" y2="'+yc+'" stroke="#aeb8d0" stroke-width="1" stroke-dasharray="3,3"/>';
+      }
+      svg+='<rect x="'+x+'" y="'+topY+'" width="'+barW+'" height="'+h+'" rx="3" fill="'+col+'"/>';
+      svg+='<text x="'+(x+barW/2)+'" y="'+(topY-16)+'" font-size="10.5" font-weight="800" text-anchor="middle" fill="'+lblc+'">'+valStr+'</text>';
+      if(pctStr) svg+='<text x="'+(x+barW/2)+'" y="'+(topY-4)+'" font-size="9.5" font-weight="600" text-anchor="middle" fill="#7a8ab0">'+pctStr+'</text>';
+      var lx=x+barW/2, ly=padTop+chartH+14;
+      svg+='<text x="'+lx+'" y="'+ly+'" font-size="10" font-weight="600" fill="#33405c" transform="rotate(45 '+lx+' '+ly+')">'+b.label+'</text>';
+    }
+    svg+='</svg>';
+    return svg;
+  }
+
+  function grfOpt(list, sel, withTodos){
+    var o=withTodos?'<option value="TODOS"'+((!sel||sel==='TODOS')?' selected':'')+'>Todos</option>':'';
+    list.forEach(function(v){ o+='<option value="'+String(v).replace(/"/g,'&quot;')+'"'+(String(sel)===String(v)?' selected':'')+'>'+v+'</option>'; });
+    return o;
+  }
+
+  function grfRender(){
+    var g=function(id){ var e=document.getElementById(id); return e?e.value:'TODOS'; };
+    var ano=g('grf-ano'), mes=g('grf-mes'), canal=g('grf-canal'), cluster=g('grf-cluster'), regiao=g('grf-regiao'), forn=g('grf-forn');
+    var anoN=parseInt(ano,10);
+    var dA=grfCalc(anoN, mes, canal, cluster, regiao, forn);
+    var dP=grfCalc(anoN-1, mes, canal, cluster, regiao, forn);
+    var mesLbl=(mes&&mes!=='TODOS')?(ML[parseInt(mes,10)]||mes):'Ano cheio';
+    var body=document.getElementById('grf-body'); if(!body) return;
+    var titulo='EBITDA '+(anoN-1)+' - '+anoN+' ('+mesLbl+')';
+    body.innerHTML=
+      '<div style="overflow-x:auto;border:1px solid #e6ebf5;border-radius:10px;padding:10px 10px 4px;background:#fff">'+
+        grfSvg(dA, dP, titulo, String(anoN-1), String(anoN))+
+      '</div>'+
+      '<div style="font-size:11px;color:#5a6a8a;margin-top:10px;padding:0 2px;line-height:1.5">'+
+        'Parte do <b>EBITDA de '+(anoN-1)+'</b> e chega ao <b>EBITDA de '+anoN+'</b>. Cada barra é o <b>impacto da variação</b> daquela linha no EBITDA: '+
+        '<span style="color:#2ea56a;font-weight:700">verde = favorável</span> (receita/frete que sobem, ou custos que caem) e '+
+        '<span style="color:#d1495b;font-weight:700">vermelho = desfavorável</span>. O % é a variação da própria linha vs. '+(anoN-1)+'. '+
+        'Altura em escala comprimida; os rótulos trazem o valor exato.'+
+      '</div>';
+  }
+  window.grfRender=grfRender;
+
+  window.openDreGrafico=function(){
+    if(typeof DRE_RAW==='undefined' || !DRE_RAW || !DRE_RAW.length){ if(typeof toast==='function') toast('Carregue os dados do DRE primeiro.','err'); return; }
+    var old=document.getElementById('grf-overlay'); if(old) old.remove();
+    var anos=grfAnos(); var anoDef=anos.length?anos[0]:String(new Date().getFullYear());
+    var meses=[]; for(var m=1;m<=12;m++){ meses.push(String(m).padStart(2,'0')); }
+    var selStyle='padding:5px 8px;border:1.5px solid #d0d8ee;border-radius:7px;font-size:12px;font-family:inherit;background:#fff;color:#1a2547';
+    var fld=function(lbl,id,inner){ return '<div style="display:flex;flex-direction:column;gap:3px"><label style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#7a8ab0;font-weight:700">'+lbl+'</label><select id="'+id+'" onchange="grfRender()" style="'+selStyle+'">'+inner+'</select></div>'; };
+    var mesInner=grfOpt(meses,'TODOS',true).replace(/>(\d{2})</g,function(_,mm){ return '>'+ML[parseInt(mm,10)]+'<'; });
+
+    var ov=document.createElement('div'); ov.id='grf-overlay';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(15,26,58,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:2vh 1vw';
+    ov.innerHTML=
+      '<div style="background:#f4f7fc;border-radius:14px;width:98vw;max-width:1240px;height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden">'+
+        '<div style="background:linear-gradient(90deg,#1a2a6c,#2352c8);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between">'+
+          '<div><div style="font-size:17px;font-weight:800">📊 DRE — Ponte de EBITDA (ano vs. ano anterior)</div>'+
+          '<div style="font-size:11px;opacity:.85;margin-top:2px">Variação linha a linha, do EBITDA anterior ao atual</div></div>'+
+          '<button onclick="document.getElementById(\'grf-overlay\').remove()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;font-weight:700">✕ Fechar</button>'+
+        '</div>'+
+        '<div style="padding:12px 20px;background:#fff;border-bottom:1px solid #e6ebf5;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">'+
+          fld('Ano (atual)','grf-ano', grfOpt(anos, anoDef, false))+
+          fld('Mês','grf-mes', mesInner)+
+          fld('Canal','grf-canal', grfOpt(grfCanais(),'TODOS',true))+
+          fld('Cluster','grf-cluster', grfOpt(grfUniq(function(r){return r.cluster||r.CLUSTER;}),'TODOS',true))+
+          fld('Região','grf-regiao', grfOpt(grfUniq(function(r){return r.regiao||r.REGIAO;}),'TODOS',true))+
+          fld('Fornecedor','grf-forn', grfOpt(grfUniq(function(r){return r.fornecedor||r.FORNECEDOR;}),'TODOS',true))+
+        '</div>'+
+        '<div id="grf-body" style="flex:1;overflow:auto;padding:16px 20px"></div>'+
+      '</div>';
+    ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
+    document.body.appendChild(ov);
+    grfRender();
+  };
+})();
+
+</script>
 </body>
 </html>
