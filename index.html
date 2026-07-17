@@ -3261,6 +3261,7 @@ function applyMargByYm(byYm, bySupYm){
 }
 
 function recomputeFuture(sup){
+  if(sup==='AVACY'){ if(typeof buildAvacyMatrix==='function') buildAvacyMatrix(); return; }
   var m=state.matrices[sup]; if(!m) return;
   var months=state.months,cur=state.currentMonth;
   var realized=months.filter(function(y){return y<cur;});
