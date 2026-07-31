@@ -9931,14 +9931,12 @@ function renderBudget(anoFilter){
       if(_realPersonSet[keyArea+'|'+nome+'|'+ym]){ _projDiag.skipped++; return; }
       var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
       if(isNaN(v) || v <= 0) return;
-      // FIX: bucketa pela area ATUAL da pessoa (FOLHA_CFG.classif), nao pela area
-      // gravada na chave (que fica presa apos reclassificacao). Faz o dashboard
-      // bater com o modal. Sem classif atual -> mantem a area da chave.
+      // FIX: bucketa pela area ATUAL da classificacao manual (FOLHA_CFG.classif[nome].area),
+      // exatamente como o modal de Detalhes (openFolhaDetail). Sem classif manual de area,
+      // mantem a area da chave (= area do dado no momento da projecao, mesmo fallback do modal).
+      // NAO usa a flag admin: ela marca quase todos e inflaria o Administrativo.
       var _cc = (typeof FOLHA_CFG!=='undefined' && FOLHA_CFG.classif) ? FOLHA_CFG.classif[nome] : null;
-      var area;
-      if(_cc && (_cc.admin==='sim' || (_cc.area && String(_cc.area).toUpperCase()==='ADMINISTRATIVO'))) area='ADMINISTRATIVO';
-      else if(_cc && _cc.area) area=String(_cc.area).toUpperCase();
-      else area=keyArea;
+      var area = (_cc && _cc.area) ? String(_cc.area).toUpperCase() : keyArea;
       if(!folhaByArea[area]) folhaByArea[area]={};
       folhaByArea[area][ym] = (folhaByArea[area][ym]||0) + v;
       // Conta nome também como colaborador "projetado" se ele não tem realizado nesse mês
