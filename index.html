@@ -3181,6 +3181,7 @@ function processAll(){
   }
   state.suppliers.filter(function(s){return s!=='AVACY';}).forEach(function(sup){recomputeFuture(sup);});
   buildAvacyMatrix(vendaAgg);
+  if(typeof applyOtbCmvDespesa==='function') applyOtbCmvDespesa();
   renderTabs(); renderTable();
   // Populate margProd once after build (not on every recalc)
   if(!state._margProdBuilt && state.venda && state.venda.length) buildMargProdFromDre();
@@ -12269,7 +12270,7 @@ async function saveBudgetCfg(btn){
 </div>
 
 <script>
-/* DRE GRAFICO PONTE EBITDA ADDON */
+/* DRE GRAFICO */
 /* ============================================================
    DRE — Ponte de EBITDA (waterfall de variação Ano atual x anterior)
    ============================================================ */
@@ -12453,7 +12454,7 @@ async function saveBudgetCfg(btn){
 
 </script>
 <script>
-/* OTB CMV CONFIG ADDON */
+/* OTB CMV CONFIG + ETAPA2 */
 /* ============================================================
    OTB — Configurações: mapear fornecedores CMV -> supplier OTB
    ============================================================ */
@@ -12526,6 +12527,41 @@ async function saveBudgetCfg(btn){
       if(typeof handleSaveAll==='function'){ try{ handleSaveAll(document.createElement('button')); }catch(e){ if(typeof toast==='function') toast('Salvo em memória; clique em Salvar Tudo para persistir.','ok'); } }
       else if(typeof toast==='function'){ toast('Mapeamento definido ('+Object.keys(map).length+'). Clique em Salvar Tudo para persistir.','ok'); }
     };
+  };
+
+  // ETAPA 2: sobrepõe OTB+Carteira VALOR dos meses REALIZADOS com o CMV real
+  // do dw_otb_despesa (por ano_mes_venc), mapeado ao fornecedor OTB. Futuro fica intacto.
+  window.applyOtbCmvDespesa = function(){
+    try{
+      if(typeof state==='undefined' || !state.matrices || typeof BUDGET_CFG==='undefined') return;
+      if(!BUDGET_CFG.otbCmvMap || typeof BUDGET_DESP_RAW==='undefined' || !BUDGET_DESP_RAW) return;
+      var map = BUDGET_CFG.otbCmvMap;
+      if(!Object.keys(map).length) return; // sem mapeamento → não mexe (mantém projeção atual)
+      // soma CMV por (fornecedor OTB, ym)
+      var sumMap = {};
+      BUDGET_DESP_RAW.forEach(function(r){
+        var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
+        var otbSup=map[nomfor]; if(!otbSup) return;
+        var hist=String(r.e2_hist||r.E2_HIST||'').trim();
+        var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
+        if(!c || String(c.tipo||'').toUpperCase()!=='CMV') return;
+        var am=(typeof budgetDespAm==='function')?budgetDespAm(r):''; if(!am||String(am).length!==6) return;
+        var ym=String(am).slice(0,4)+'-'+String(am).slice(4,6);
+        var v=parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0)||0;
+        if(!sumMap[otbSup]) sumMap[otbSup]={};
+        sumMap[otbSup][ym]=(sumMap[otbSup][ym]||0)+v;
+      });
+      // aplica só nos meses REALIZADOS de cada fornecedor filho
+      (state.suppliers||[]).filter(function(s){return s!=='AVACY';}).forEach(function(sup){
+        var m=state.matrices[sup]; if(!m) return;
+        var supSum=sumMap[sup]||{};
+        (state.months||[]).forEach(function(ym){
+          var cell=m[ym]; if(!cell || cell.isFuture) return; // futuro fica na projeção/CMC
+          cell.otbCartRealVal = Math.round(supSum[ym]||0);
+        });
+      });
+      if(typeof buildAvacyMatrix==='function') buildAvacyMatrix();
+    }catch(e){ console.error('[applyOtbCmvDespesa]', e); }
   };
 })();
 
