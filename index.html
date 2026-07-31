@@ -9919,7 +9919,7 @@ function renderBudget(anoFilter){
     Object.keys(BUDGET_CFG.folhaProjecao).forEach(function(k){
       var parts = k.split('|'); // area|nome|ym
       if(parts.length !== 3) return;
-      var area = parts[0], nome = parts[1], ym = parts[2];
+      var keyArea = parts[0], nome = parts[1], ym = parts[2];
       if(!months.includes(ym)) return;
       // GUARD: projeção só vale pra meses ESTRITAMENTE APÓS o último mês realizado.
       // Meses fechados (<=último realizado) já têm o valor real — projeção ali é lixo de
@@ -9928,9 +9928,17 @@ function renderBudget(anoFilter){
       if(_lastRealizedYm && ym <= _lastRealizedYm){ _projDiag.skippedPastMonth++; return; }
       // Critério POR PESSOA (igual ao detalhe da Folha): a projeção entra se ESSA pessoa
       // não tem realizado nesse mês.
-      if(_realPersonSet[area+'|'+nome+'|'+ym]){ _projDiag.skipped++; return; }
+      if(_realPersonSet[keyArea+'|'+nome+'|'+ym]){ _projDiag.skipped++; return; }
       var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
       if(isNaN(v) || v <= 0) return;
+      // FIX: bucketa pela area ATUAL da pessoa (FOLHA_CFG.classif), nao pela area
+      // gravada na chave (que fica presa apos reclassificacao). Faz o dashboard
+      // bater com o modal. Sem classif atual -> mantem a area da chave.
+      var _cc = (typeof FOLHA_CFG!=='undefined' && FOLHA_CFG.classif) ? FOLHA_CFG.classif[nome] : null;
+      var area;
+      if(_cc && (_cc.admin==='sim' || (_cc.area && String(_cc.area).toUpperCase()==='ADMINISTRATIVO'))) area='ADMINISTRATIVO';
+      else if(_cc && _cc.area) area=String(_cc.area).toUpperCase();
+      else area=keyArea;
       if(!folhaByArea[area]) folhaByArea[area]={};
       folhaByArea[area][ym] = (folhaByArea[area][ym]||0) + v;
       // Conta nome também como colaborador "projetado" se ele não tem realizado nesse mês
@@ -12247,9 +12255,6 @@ async function saveBudgetCfg(btn){
 /* DRE GRAFICO PONTE EBITDA ADDON */
 /* ============================================================
    DRE — Ponte de EBITDA (waterfall de variação Ano atual x anterior)
-   Botão na aba DRE abre modal. Parte do EBITDA anterior, cada barra é
-   o impacto da variação de uma linha do DRE, e fecha no EBITDA atual.
-   Usa dreFilt/dreAgg/dreCalc/dreCalcShare.
    ============================================================ */
 (function(){
   var GRF_BRL = function(v){ v=Math.round(v||0); return (v<0?'-R$ ':'R$ ')+Math.abs(v).toLocaleString('pt-BR'); };
@@ -12281,12 +12286,11 @@ async function saveBudgetCfg(btn){
     return dreCalcShare(rows, allRows, canalCtx);
   }
 
-  // Linhas da ponte: impacto da variação de cada conta no EBITDA
   function grfDelta(dA, dP){
     function L(label, a, p, isCost){
       a=a||0; p=p||0;
-      var delta=a-p;                       // variação da própria linha
-      var impact = isCost ? -(a-p) : (a-p);// efeito no EBITDA
+      var delta=a-p;
+      var impact = isCost ? -(a-p) : (a-p);
       var pctLine = p!==0 ? (a-p)/Math.abs(p) : null;
       return {label:label, aVal:a, pVal:p, delta:delta, impact:impact, pctLine:pctLine};
     }
@@ -12332,7 +12336,6 @@ async function saveBudgetCfg(btn){
     });
     var vMax=Math.max.apply(null,allVals), vMin=Math.min.apply(null,allVals);
     if(vMax===vMin){ vMax=vMax||1; vMin=Math.min(0,vMax-1); }
-    // Escala comprimida (raiz com sinal): mantém favoráveis/desfavoráveis legíveis
     var K=0.62, cmp=function(v){ return (v<0?-1:1)*Math.pow(Math.abs(v),K); };
     var cMax=cmp(vMax), cMin=cmp(vMin), cR=(cMax-cMin)||1;
     var y=function(v){ return padTop+(cMax-cmp(v))/cR*chartH; };
@@ -12356,12 +12359,7 @@ async function saveBudgetCfg(btn){
         if(b.pctLine!=null) pctStr=GRF_PCT(b.pctLine); else pctStr='novo';
       }
       if(i>0){
-        var prev=geom[i-1];
-        var yConn=y((b.kind==='aEnd')?prev.bot:(bars[i].kind==='delta'&&bars[i].impact<0?prev.bot:prev.top));
-        // conecta pelo nível de saída da barra anterior
-        var outLvl = (bars[i-1].kind==='aStart'||bars[i-1].kind==='aEnd') ? bars[i-1].val : null;
-        var yc = y( (function(){ // nível corrente após a barra anterior
-            var l=0; for(var k=0;k<i;k++){ var bb=bars[k]; if(bb.kind==='aStart'||bb.kind==='aEnd') l=bb.val; else l+=bb.impact; } return l; })() );
+        var yc = y( (function(){ var l=0; for(var k=0;k<i;k++){ var bb=bars[k]; if(bb.kind==='aStart'||bb.kind==='aEnd') l=bb.val; else l+=bb.impact; } return l; })() );
         svg+='<line x1="'+(x-gap)+'" y1="'+yc+'" x2="'+x+'" y2="'+yc+'" stroke="#aeb8d0" stroke-width="1" stroke-dasharray="3,3"/>';
       }
       svg+='<rect x="'+x+'" y="'+topY+'" width="'+barW+'" height="'+h+'" rx="3" fill="'+col+'"/>';
