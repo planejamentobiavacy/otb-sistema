@@ -452,6 +452,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
     <div class="chip"><span>Estoque/Vendas:</span><b id="st1">—</b></div>
     <div class="chip"><span>Carteira:</span><b id="st2">—</b></div>
     <div class="chip"><span>Produtos:</span><b id="st3">—</b></div>
+    <button onclick="if(typeof openOtbCmvConfig==='function')openOtbCmvConfig()" style="margin-left:auto;padding:6px 14px;border:none;border-radius:8px;background:#1a2a6c;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">⚙️ Configurações</button>
   </div>
   <div class="tabs-bar" id="otbTabs"></div>
   <div class="cat-tabs" id="otbCatTabs" style="display:none"></div>
@@ -2688,6 +2689,7 @@ async function handleSaveAll(btn){
       tiposCD:        (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.tiposCD)||{},
       budgetOverrides:(typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.budgetOverrides)||{},
       folhaProjecao:  (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.folhaProjecao)||{},
+      otbCmvMap:      (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.otbCmvMap)||{},
       folhaRealOverride: (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.folhaRealOverride)||{},
       bonusAreaOverride: (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.bonusAreaOverride)||{},
       sim:            (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.sim)||{},
@@ -3309,7 +3311,6 @@ function recomputeFuture(sup){
     cell.estVal=Math.round(cell.estQty*avgPreco);
     cell.otbVal=Math.round(cell.estVal-pEV+cell.fatVal-(cell.cartVal||0));
     cell.otbCartRealVal=(cell.cartVal||0)+cell.otbVal;
-    // CMC override: se usuario digitou CMC, forca OTB+Carteira Valor = CMC x Pares
     var cmcOvr=(state.edits[sup]&&state.edits[sup][ym]&&state.edits[sup][ym].cmc!=null)?state.edits[sup][ym].cmc:null;
     if(cmcOvr!=null && !isNaN(cmcOvr) && cell.otbCartRealQty>0){
       cell.otbCartRealVal=Math.round(cmcOvr*cell.otbCartRealQty);
@@ -3696,7 +3697,6 @@ function renderTable(){
             v = (cell.fatQty>0) ? (cell.fatVal/cell.fatQty) : null;
           }
         }
-        // CMC = OTB+Carteira Valor / OTB+Carteira Pares
         if(key==='cmc'){
           if(isYearTotal){
             var yearMsC=months.filter(function(m){return m.startsWith(yearNum);});
@@ -4646,7 +4646,7 @@ async function initDre(){
     if(t.id===DRE_TAB) btn.classList.add('active');
     btn.onclick=function(){dreSwitchTab(t.id);}; bar.appendChild(btn);
   });
-  (function(){ var gb=document.createElement('button'); gb.textContent='📊 Gráfico'; gb.title='Abrir gráfico de ponte de EBITDA'; gb.style.cssText='margin-left:auto;padding:8px 18px;border:none;border-radius:18px;background:#1a2a6c;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;box-shadow:0 2px 8px rgba(26,42,108,.25)'; gb.onmouseover=function(){gb.style.background='#22357f';}; gb.onmouseout=function(){gb.style.background='#1a2a6c';}; gb.onclick=function(){ if(typeof openDreGrafico==='function') openDreGrafico(); }; bar.appendChild(gb); })();
+  (function(){ var gb=document.createElement('button'); gb.textContent='📊 Gráfico'; gb.style.cssText='margin-left:auto;padding:8px 18px;border:none;border-radius:18px;background:#1a2a6c;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;box-shadow:0 2px 8px rgba(26,42,108,.25)'; gb.onclick=function(){ if(typeof openDreGrafico==='function') openDreGrafico(); }; bar.appendChild(gb); })();
   // Default: ano atual (se existir na lista de anos com dados). Usuário pode desmarcar pra ver todos.
   var _dreDefaultAno = String(new Date().getFullYear());
   var _dreAnoDefaults = anos.indexOf(_dreDefaultAno) >= 0 ? [_dreDefaultAno] : [];
@@ -7017,6 +7017,7 @@ async function _smartReloadKeys(changedKeys){
         if(data.folhaProjecao != null) BUDGET_CFG.folhaProjecao = data.folhaProjecao;
         if(data.folhaRealOverride != null) BUDGET_CFG.folhaRealOverride = data.folhaRealOverride;
         if(data.bonusAreaOverride != null) BUDGET_CFG.bonusAreaOverride = data.bonusAreaOverride;
+        if(data.otbCmvMap != null) BUDGET_CFG.otbCmvMap = data.otbCmvMap;
         rerenderTargets.budget = true;
         rerenderTargets.dreCfg = true; // base de Desp Gerais/CD muda
       } else if(key === 'budget_cfg'){
@@ -8395,6 +8396,7 @@ var BUDGET_CFG = {
   // folhaProjecao[area|nome|ym] = valor projetado de salário pra meses futuros (sem dados na Folha)
   folhaProjecao: {},
   // sim: valores simulados por mês {ym: {icms_pct, piscofins_pct, mg_prod}}
+  otbCmvMap: {}, // fornecedor CMV -> supplier OTB (ALPARG/BEIRAR/VULCAB/DEMAIS)
   sim: {}
 };
 var USER_PERMISSIONS = {}; // { "email": { budgetAreas: ["E-comm/Mkt","Operações"] } } — null/empty = acesso total
@@ -8707,6 +8709,7 @@ async function loadBudget(forceRaw){
       if(savedClassif.tiposCD) BUDGET_CFG.tiposCD = savedClassif.tiposCD;
       if(savedClassif.budgetOverrides) BUDGET_CFG.budgetOverrides = savedClassif.budgetOverrides;
       if(savedClassif.folhaProjecao) BUDGET_CFG.folhaProjecao = savedClassif.folhaProjecao;
+      if(savedClassif.otbCmvMap) BUDGET_CFG.otbCmvMap = savedClassif.otbCmvMap;
       if(savedClassif.sim) BUDGET_CFG.sim = savedClassif.sim;
       if(savedClassif.classif){
         // Merge: preserva entradas existentes, aplica por cima as salvas na chave dedicada
@@ -9951,8 +9954,6 @@ function renderBudget(anoFilter){
       if(_realPersonSet[keyArea+'|'+nome+'|'+ym]){ _projDiag.skipped++; return; }
       var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
       if(isNaN(v) || v <= 0) return;
-      // FIX: bucketa pela area ATUAL da classificacao manual (FOLHA_CFG.classif[nome].area),
-      // exatamente como o modal (openFolhaDetail). Sem classif manual, mantem a area da chave.
       var _cc = (typeof FOLHA_CFG!=='undefined' && FOLHA_CFG.classif) ? FOLHA_CFG.classif[nome] : null;
       var area = (_cc && _cc.area) ? String(_cc.area).toUpperCase() : keyArea;
       if(!folhaByArea[area]) folhaByArea[area]={};
@@ -12447,6 +12448,84 @@ async function saveBudgetCfg(btn){
     ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
     document.body.appendChild(ov);
     grfRender();
+  };
+})();
+
+</script>
+<script>
+/* OTB CMV CONFIG ADDON */
+/* ============================================================
+   OTB — Configurações: mapear fornecedores CMV -> supplier OTB
+   ============================================================ */
+(function(){
+  window.openOtbCmvConfig = function(){
+    if(typeof BUDGET_DESP_RAW==='undefined' || !BUDGET_DESP_RAW || !BUDGET_DESP_RAW.length){
+      if(typeof toast==='function') toast('Carregue os dados de Despesas (Budget) primeiro.','err'); return;
+    }
+    if(typeof BUDGET_CFG==='undefined') return;
+    if(!BUDGET_CFG.otbCmvMap) BUDGET_CFG.otbCmvMap = {};
+
+    // Coleta fornecedores com tipo CMV + total
+    var byForn = {};
+    BUDGET_DESP_RAW.forEach(function(r){
+      var nomfor = String(r.e2_nomfor||r.E2_NOMFOR||'').trim();
+      if(!nomfor) return;
+      var hist = String(r.e2_hist||r.E2_HIST||'').trim();
+      var c = (typeof getBudgetClassif==='function') ? getBudgetClassif(nomfor, hist) : null;
+      if(!c || String(c.tipo||'').toUpperCase()!=='CMV') return;
+      byForn[nomfor] = (byForn[nomfor]||0) + (parseFloat(r.valor||r.VALOR)||0);
+    });
+    var forns = Object.keys(byForn).sort(function(a,b){ return byForn[b]-byForn[a]; });
+    var otbSups = (typeof state!=='undefined' && state.suppliers) ? state.suppliers.filter(function(s){return s!=='AVACY';}) : ['ALPARG','BEIRAR','VULCAB','DEMAIS'];
+    var brl = function(v){ return 'R$ '+Math.round(v||0).toLocaleString('pt-BR'); };
+
+    var old=document.getElementById('otbCmvCfgOverlay'); if(old) old.remove();
+    var rowsH = forns.map(function(f){
+      var cur = BUDGET_CFG.otbCmvMap[f]||'';
+      var opts = '<option value="">— não classificado —</option>'+otbSups.map(function(s){
+        return '<option value="'+s+'"'+(cur===s?' selected':'')+'>'+s+'</option>';
+      }).join('');
+      return '<tr style="border-bottom:1px solid #eef1f8">'
+        +'<td style="padding:7px 10px;font-size:12px;color:#1a2547">'+f+'</td>'
+        +'<td style="padding:7px 10px;font-size:12px;text-align:right;color:#5a6a8a;white-space:nowrap">'+brl(byForn[f])+'</td>'
+        +'<td style="padding:7px 10px"><select data-forn="'+String(f).replace(/"/g,'&quot;')+'" style="padding:5px 8px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:12px;font-family:inherit;min-width:150px">'+opts+'</select></td>'
+        +'</tr>';
+    }).join('');
+    if(!forns.length) rowsH = '<tr><td colspan="3" style="padding:30px;text-align:center;color:#7a8ab0">Nenhum fornecedor classificado como CMV no Budget. Classifique-os primeiro no Budget (tipo = CMV).</td></tr>';
+
+    var ov=document.createElement('div'); ov.id='otbCmvCfgOverlay';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(15,26,58,.55);z-index:99998;display:flex;align-items:center;justify-content:center;padding:3vh 2vw';
+    ov.innerHTML=
+      '<div style="background:#fff;border-radius:14px;width:min(760px,96vw);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden">'+
+        '<div style="background:linear-gradient(90deg,#1a2a6c,#2352c8);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between">'+
+          '<div><div style="font-size:16px;font-weight:800">⚙️ Configurações OTB — Fornecedores CMV</div>'+
+          '<div style="font-size:11px;opacity:.85;margin-top:2px">Atribua cada fornecedor CMV a um fornecedor da aba OTB</div></div>'+
+          '<button onclick="document.getElementById(\'otbCmvCfgOverlay\').remove()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;font-weight:700">✕ Fechar</button>'+
+        '</div>'+
+        '<div style="flex:1;overflow:auto">'+
+          '<table style="width:100%;border-collapse:collapse">'+
+            '<thead><tr style="background:#f1f5fb;position:sticky;top:0"><th style="padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#7a8ab0">Fornecedor (CMV)</th><th style="padding:8px 10px;text-align:right;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#7a8ab0">Total</th><th style="padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#7a8ab0">Fornecedor OTB</th></tr></thead>'+
+            '<tbody>'+rowsH+'</tbody>'+
+          '</table>'+
+        '</div>'+
+        '<div style="padding:12px 20px;border-top:1px solid #e6ebf5;display:flex;gap:10px;align-items:center;justify-content:flex-end">'+
+          '<span style="font-size:11px;color:#7a8ab0;margin-right:auto">'+forns.length+' fornecedores CMV</span>'+
+          '<button onclick="document.getElementById(\'otbCmvCfgOverlay\').remove()" style="padding:8px 16px;border:1.5px solid #d0d8ee;background:#fff;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600">Cancelar</button>'+
+          '<button id="otbCmvCfgSave" style="padding:8px 18px;border:none;background:#0a7c4e;color:#fff;border-radius:8px;font-size:13px;cursor:pointer;font-weight:700">💾 Salvar mapeamento</button>'+
+        '</div>'+
+      '</div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
+    document.getElementById('otbCmvCfgSave').onclick = function(){
+      var selects = ov.querySelectorAll('select[data-forn]');
+      var map = {};
+      Array.prototype.forEach.call(selects, function(sel){ var f=sel.getAttribute('data-forn'); if(sel.value) map[f]=sel.value; });
+      BUDGET_CFG.otbCmvMap = map;
+      ov.remove();
+      // Persiste via save canônico (budget_classif já inclui otbCmvMap)
+      if(typeof handleSaveAll==='function'){ try{ handleSaveAll(document.createElement('button')); }catch(e){ if(typeof toast==='function') toast('Salvo em memória; clique em Salvar Tudo para persistir.','ok'); } }
+      else if(typeof toast==='function'){ toast('Mapeamento definido ('+Object.keys(map).length+'). Clique em Salvar Tudo para persistir.','ok'); }
+    };
   };
 })();
 
