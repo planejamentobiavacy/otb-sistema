@@ -3309,6 +3309,12 @@ function recomputeFuture(sup){
     cell.estVal=Math.round(cell.estQty*avgPreco);
     cell.otbVal=Math.round(cell.estVal-pEV+cell.fatVal-(cell.cartVal||0));
     cell.otbCartRealVal=(cell.cartVal||0)+cell.otbVal;
+    // CMC override: se usuario digitou CMC, forca OTB+Carteira Valor = CMC x Pares
+    var cmcOvr=(state.edits[sup]&&state.edits[sup][ym]&&state.edits[sup][ym].cmc!=null)?state.edits[sup][ym].cmc:null;
+    if(cmcOvr!=null && !isNaN(cmcOvr) && cell.otbCartRealQty>0){
+      cell.otbCartRealVal=Math.round(cmcOvr*cell.otbCartRealQty);
+      cell.otbVal=cell.otbCartRealVal-(cell.cartVal||0);
+    }
     var forward=months.slice(i+1,i+13),remV=cell.estVal,covV=0;
     for(var _fi=0;_fi<forward.length;_fi++){var fy=forward[_fi],fv=m[fy].fatVal||0;if(fv<=0) continue;if(remV>=fv){covV+=1;remV-=fv;}else{covV+=remV/fv;remV=0;break;}}
     cell.coberturaV=covV;
@@ -3624,6 +3630,7 @@ function renderTable(){
     {id:'CARTEIRA',       qKey:'cartQty',        vKey:'cartVal',        editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
     {id:'OTB',            qKey:'otbQty',         vKey:'otbVal',         editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
     {id:'OTB+CARTEIRA',   qKey:'otbCartRealQty', vKey:'otbCartRealVal', editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum'},
+    {id:'CMC',            qKey:'cmc',            vKey:'cmc',            editableQ:false,editableV:true, isCob:false,isVar:false,aggType:'avg',isPreco:true,isCmc:true},
   ];
   var kpiMarg=[
     {id:'Marg Prod R$',   qKey:'margProdVal',    vKey:'margProdVal',    editableQ:false,editableV:false,isCob:false,isVar:false,aggType:'sum',isPct:false},
@@ -3689,6 +3696,17 @@ function renderTable(){
             v = (cell.fatQty>0) ? (cell.fatVal/cell.fatQty) : null;
           }
         }
+        // CMC = OTB+Carteira Valor / OTB+Carteira Pares
+        if(key==='cmc'){
+          if(isYearTotal){
+            var yearMsC=months.filter(function(m){return m.startsWith(yearNum);});
+            var sumOV=yearMsC.reduce(function(s,m){return s+(matrix[m].otbCartRealVal||0);},0);
+            var sumOQ=yearMsC.reduce(function(s,m){return s+(matrix[m].otbCartRealQty||0);},0);
+            v = sumOQ>0 ? sumOV/sumOQ : null;
+          } else {
+            v = (cell.otbCartRealQty>0) ? (cell.otbCartRealVal/cell.otbCartRealQty) : null;
+          }
+        }
         // Compute estVarLy on the fly if null
         if(v===null&&key==='estVarLyQty'){
           var lyYm2=(parseInt(yearNum)-1)+'-'+monthNum;
@@ -3717,7 +3735,7 @@ function renderTable(){
         else if(row.isCob) display=(v===0||v===null||v===undefined||isNaN(v))?'0':v.toFixed(1);
         else display=fmtNum(v);
         var editDisplay = (editable&&row.isPct&&v!=null&&!isNaN(v)) ? (v*100).toFixed(1) : ((editable&&row.isPreco&&v!=null&&!isNaN(v)) ? v.toFixed(2) : display);
-        var attrs=editable?'contenteditable="true" data-sup="'+sup+'" data-ym="'+ym+'" data-key="'+key+'" data-type="'+(row.isPct?'pct':row.isVar?'var':row.isCob?'cob':row.isPreco?'preco':'num')+'"':'';
+        var attrs=editable?'contenteditable="true" data-sup="'+sup+'" data-ym="'+ym+'" data-key="'+key+'" data-type="'+(row.isPct?'pct':row.isVar?'var':row.isCob?'cob':row.isCmc?'cmc':row.isPreco?'preco':'num')+'"':'';
         if(v===0) cls.push('zero');
         html.push('<td class="'+cls.join(' ')+'" '+attrs+(hidden?' style="display:none"':'')+'>'+display+'</td>');
       });
@@ -3786,6 +3804,8 @@ function renderTable(){
         cell.precoMedio=num;
         state.edits[sup][ym].precoMedio=num;
         if(cell.fatQty>0){ cell.fatVal=Math.round(cell.fatQty*num); state.edits[sup][ym].fatVal=cell.fatVal; }
+      } else if(type==='cmc'){
+        state.edits[sup][ym].cmc=num;
       } else {cell[key]=num;state.edits[sup][ym][key]=num;}
       recomputeFuture(sup);
       state.suppliers.filter(function(s){return s!=='AVACY';}).forEach(function(s){if(s!==sup) recomputeFuture(s);});
@@ -9932,9 +9952,7 @@ function renderBudget(anoFilter){
       var v = parseFloat(BUDGET_CFG.folhaProjecao[k]);
       if(isNaN(v) || v <= 0) return;
       // FIX: bucketa pela area ATUAL da classificacao manual (FOLHA_CFG.classif[nome].area),
-      // exatamente como o modal de Detalhes (openFolhaDetail). Sem classif manual de area,
-      // mantem a area da chave (= area do dado no momento da projecao, mesmo fallback do modal).
-      // NAO usa a flag admin: ela marca quase todos e inflaria o Administrativo.
+      // exatamente como o modal (openFolhaDetail). Sem classif manual, mantem a area da chave.
       var _cc = (typeof FOLHA_CFG!=='undefined' && FOLHA_CFG.classif) ? FOLHA_CFG.classif[nome] : null;
       var area = (_cc && _cc.area) ? String(_cc.area).toUpperCase() : keyArea;
       if(!folhaByArea[area]) folhaByArea[area]={};
