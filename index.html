@@ -445,6 +445,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
         <a data-perm-otb class="current">OTB</a>
         <a onclick="openDre()">DRE</a>
         <a onclick="openBudget()">Budget</a>
+        <a onclick="if(typeof openFluxoCaixa==='function')openFluxoCaixa()">FCL</a>
         <a onclick="openFolha()">Folha</a>
       </nav>
     </div>
@@ -504,6 +505,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
         <a data-perm-otb onclick="openOtb()">OTB</a>
         <a class="current">DRE</a>
         <a onclick="openBudget()">Budget</a>
+        <a onclick="if(typeof openFluxoCaixa==='function')openFluxoCaixa()">FCL</a>
         <a onclick="openFolha()">Folha</a>
       </nav>
     </div>
@@ -537,6 +539,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
         <a data-perm-otb onclick="openOtb()">OTB</a>
         <a onclick="openDre()">DRE</a>
         <a onclick="openBudget()">Budget</a>
+        <a onclick="if(typeof openFluxoCaixa==='function')openFluxoCaixa()">FCL</a>
         <a class="current">Folha</a>
       </nav>
     </div>
@@ -12218,6 +12221,7 @@ async function saveBudgetCfg(btn){
         <a data-perm-otb onclick="openOtb()">OTB</a>
         <a onclick="openDre()">DRE</a>
         <a class="current">Budget</a>
+        <a onclick="if(typeof openFluxoCaixa==='function')openFluxoCaixa()">FCL</a>
         <a onclick="openFolha()">Folha</a>
       </nav>
     </div>
@@ -12656,6 +12660,43 @@ async function saveBudgetCfg(btn){
   }
   window.computeCmvLagPct = computeCmvLagPct;
 
+  // Lag realizado por MÊS de emissão (valores brutos), por fornecedor
+  function _cmvLagRaw(){
+    var out={};
+    if(typeof BUDGET_DESP_RAW==='undefined'||!BUDGET_DESP_RAW||typeof BUDGET_CFG==='undefined'||!BUDGET_CFG.otbCmvMap) return out;
+    var map=BUDGET_CFG.otbCmvMap;
+    var m2=function(raw){ raw=String(raw||'').replace(/\D/g,''); var am=''; if(raw.length>=8) am=raw.slice(0,4)+raw.slice(4,6); else if(raw.length===6) am=raw; if(am.length!==6) return null; var y=parseInt(am.slice(0,4)),mo=parseInt(am.slice(4,6)); if(y<2015||y>2030||mo<1||mo>12) return null; return {ym:am.slice(0,4)+'-'+am.slice(4,6), idx:y*12+(mo-1)}; };
+    BUDGET_DESP_RAW.forEach(function(r){
+      var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
+      var sup=map[nomfor]; if(!sup) return;
+      var hist=String(r.e2_hist||r.E2_HIST||'').trim();
+      var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
+      if(!c||String(c.tipo||'').toUpperCase()!=='CMV') return;
+      var em=m2(r.ano_mes_emissao||r.ANO_MES_EMISSAO), vc=m2(r.ano_mes_venc||r.ANO_MES_VENC);
+      if(!em||!vc) return;
+      var lag=vc.idx-em.idx; if(lag<0) lag=0; if(lag>3) lag=3;
+      var val=parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0)||0;
+      if(!out[sup]) out[sup]={};
+      if(!out[sup][em.ym]) out[sup][em.ym]=[0,0,0,0];
+      out[sup][em.ym][lag]+=val;
+    });
+    return out;
+  }
+  function computeCmvLagByMonth(){
+    var raw=_cmvLagRaw(), pct={};
+    Object.keys(raw).forEach(function(sup){ pct[sup]={};
+      Object.keys(raw[sup]).forEach(function(ym){ var a=raw[sup][ym],t=a[0]+a[1]+a[2]+a[3]; pct[sup][ym]= t>0?a.map(function(v){return Math.round(v/t*1000)/10;}):[0,0,0,0]; });
+    });
+    return pct;
+  }
+  function computeCmvLag3M(sup){
+    var raw=_cmvLagRaw(), sr=raw[sup]; if(!sr) return [100,0,0,0];
+    var last3=Object.keys(sr).sort().slice(-3), a=[0,0,0,0];
+    last3.forEach(function(ym){ for(var d=0;d<4;d++) a[d]+=sr[ym][d]; });
+    var t=a[0]+a[1]+a[2]+a[3]; return t>0?a.map(function(v){return Math.round(v/t*1000)/10;}):[100,0,0,0];
+  }
+  window.computeCmvLag3M=computeCmvLag3M;
+
   function computeFluxo(months){
     var C=cfg(), ent=C.entrada, sups=otbSups();
     var derivedLag=computeCmvLagPct();
@@ -12749,10 +12790,25 @@ async function saveBudgetCfg(btn){
       }).join('');
     };
     var derivedLag=computeCmvLagPct();
+    var lagByMonth=computeCmvLagByMonth();
     var cmvRows=sups.map(function(sup){
       var cc=C.cmv[sup]; var ccSum=cc?((+cc[0]||0)+(+cc[1]||0)+(+cc[2]||0)+(+cc[3]||0)):0;
       var eff=(ccSum>0)?cc:(derivedLag[sup]||[100,0,0,0]);
-      return '<tr style="border-bottom:1px solid #eef1f8"><td style="padding:6px 10px;font-size:12px;font-weight:600">'+sup+'</td><td style="padding:6px 10px">'+pctInputs('cmv:'+sup, eff)+'</td></tr>';
+      var lm=lagByMonth[sup]||{}; var yms=Object.keys(lm).sort();
+      var mtbl;
+      if(yms.length){
+        mtbl='<div style="max-height:130px;overflow:auto;margin-top:6px;border:1px solid #f0f2f8;border-radius:6px">'
+          +'<table style="width:100%;border-collapse:collapse;font-size:10.5px"><thead><tr style="background:#f7f9fc;position:sticky;top:0">'
+          +'<th style="padding:3px 6px;text-align:left;color:#9aa6c0">Mês emissão</th><th style="padding:3px 6px;color:#9aa6c0">M</th><th style="padding:3px 6px;color:#9aa6c0">M+1</th><th style="padding:3px 6px;color:#9aa6c0">M+2</th><th style="padding:3px 6px;color:#9aa6c0">M+3</th></tr></thead><tbody>'
+          +yms.map(function(ym){ var a=lm[ym]; return '<tr><td style="padding:2px 6px;color:#5a6a8a">'+mlbl(ym)+'</td>'+a.map(function(v){return '<td style="padding:2px 6px;text-align:center;color:#33405c">'+v+'%</td>';}).join('')+'</tr>'; }).join('')
+          +'</tbody></table></div>';
+      } else { mtbl='<div style="font-size:10.5px;color:#9aa6c0;margin-top:4px">Sem histórico de emissão×vencimento para este fornecedor.</div>'; }
+      return '<div style="border:1px solid #eef1f8;border-radius:8px;padding:8px 10px;margin-bottom:8px">'
+        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+        +'<b style="font-size:12px;min-width:64px">'+sup+'</b>'
+        +'<span style="font-size:11px;color:#5a6a8a">Projeção (M/M+1/M+2/M+3):</span> '+pctInputs('cmv:'+sup, eff)
+        +'<button type="button" data-m3="'+sup+'" style="padding:3px 10px;border:1px solid #2352c8;background:#eef3ff;color:#2352c8;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700">média 3M</button>'
+        +'</div>'+mtbl+'</div>';
     }).join('');
 
     var ov=document.createElement('div'); ov.id='fluxoCfgOverlay';
@@ -12766,8 +12822,8 @@ async function saveBudgetCfg(btn){
           '<div style="margin-bottom:6px"><span style="font-size:11px;color:#5a6a8a;display:inline-block;width:auto">M / M+1 / M+2 / M+3: </span>'+pctInputs('entrada', C.entrada)+'</div>'+
           '<hr style="border:none;border-top:1px solid #eef1f8;margin:16px 0">'+
           '<div style="font-size:13px;font-weight:800;color:#c0181a;margin-bottom:6px">CMV — % de pagamento por fornecedor OTB</div>'+
-          '<div style="font-size:11px;color:#7a8ab0;margin-bottom:8px">Derivado do histórico: diferença de meses entre <b>ano_mes_venc</b> e <b>ano_mes_emissao</b> por fornecedor. Você pode ajustar manualmente. <button type="button" id="fluxoRecalcCmv" style="margin-left:6px;padding:3px 10px;border:1px solid #0a7c4e;background:#eafaf1;color:#0a7c4e;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700">📊 Recalcular do histórico</button></div>'+
-          '<table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f1f5fb"><th style="padding:6px 10px;text-align:left;font-size:10px;color:#7a8ab0">Fornecedor OTB</th><th style="padding:6px 10px;text-align:left;font-size:10px;color:#7a8ab0">M / M+1 / M+2 / M+3 (%)</th></tr></thead><tbody>'+cmvRows+'</tbody></table>'+
+          '<div style="font-size:11px;color:#7a8ab0;margin-bottom:8px">Realizado aberto por mês (diferença <b>ano_mes_venc</b> − <b>ano_mes_emissao</b>). A "Projeção" é o % usado no futuro; ajuste manual ou use os botões. <button type="button" id="fluxoRecalcCmv" style="margin-left:6px;padding:3px 10px;border:1px solid #0a7c4e;background:#eafaf1;color:#0a7c4e;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700">📊 Recalcular do histórico (geral)</button> <button type="button" id="fluxoM3Todos" style="padding:3px 10px;border:1px solid #2352c8;background:#eef3ff;color:#2352c8;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700">📊 Replicar média 3M (todos)</button></div>'+
+          cmvRows+
         '</div>'+
         '<div style="padding:12px 20px;border-top:1px solid #e6ebf5;display:flex;gap:10px;justify-content:flex-end">'+
           '<button onclick="document.getElementById(\'fluxoCfgOverlay\').remove()" style="padding:8px 16px;border:1.5px solid #d0d8ee;background:#fff;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600">Cancelar</button>'+
@@ -12784,6 +12840,20 @@ async function saveBudgetCfg(btn){
         if(id.indexOf('cmv:')===0){ var sup=id.slice(4); var arr=dl[sup]||[100,0,0,0]; inp.value=(parseFloat(arr[d])||0); }
       });
       if(typeof toast==='function') toast('% do CMV recalculado do histórico (venc − emissão).','ok');
+    };
+    Array.prototype.forEach.call(ov.querySelectorAll('button[data-m3]'), function(btn){
+      btn.onclick=function(){
+        var sup=btn.getAttribute('data-m3'); var arr=computeCmvLag3M(sup);
+        Array.prototype.forEach.call(ov.querySelectorAll('input[data-pct="cmv:'+sup+'"]'), function(inp){ var d=parseInt(inp.getAttribute('data-d'),10); inp.value=(parseFloat(arr[d])||0); });
+      };
+    });
+    var _m3all=document.getElementById('fluxoM3Todos');
+    if(_m3all) _m3all.onclick=function(){
+      Array.prototype.forEach.call(ov.querySelectorAll('input[data-pct]'), function(inp){
+        var id=inp.getAttribute('data-pct'), d=parseInt(inp.getAttribute('data-d'),10);
+        if(id.indexOf('cmv:')===0){ var sup=id.slice(4); var arr=computeCmvLag3M(sup); inp.value=(parseFloat(arr[d])||0); }
+      });
+      if(typeof toast==='function') toast('% do CMV = média dos últimos 3 meses.','ok');
     };
     document.getElementById('fluxoCfgSave').onclick=function(){
       var C2=cfg();
