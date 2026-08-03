@@ -12663,6 +12663,7 @@ async function saveBudgetCfg(btn){
     if(!BUDGET_CFG.fluxoCfg) BUDGET_CFG.fluxoCfg = {entrada:[100,0,0,0], cmv:{}};
     if(!BUDGET_CFG.fluxoCfg.entrada) BUDGET_CFG.fluxoCfg.entrada=[100,0,0,0];
     if(!BUDGET_CFG.fluxoCfg.cmv) BUDGET_CFG.fluxoCfg.cmv={};
+    if(!BUDGET_CFG.fluxoCfg.fclManual) BUDGET_CFG.fluxoCfg.fclManual={};
     return BUDGET_CFG.fluxoCfg;
   }
   function otbSups(){ return (typeof state!=='undefined' && state.suppliers)?state.suppliers.filter(function(s){return s!=='AVACY';}):['ALPARG','BEIRAR','VULCAB','DEMAIS']; }
@@ -12802,21 +12803,50 @@ async function saveBudgetCfg(btn){
         });
       }
       cmv[T]=cv;
-      fcl[T]=entradas[T]-despTot[T]-cmv[T];
     });
-    var acc=0; months.forEach(function(T){ acc+=fcl[T]; fclAcc[T]=acc; });
-    return {entradas:entradas, despTot:despTot, cmv:cmv, fcl:fcl, fclAcc:fclAcc};
+    // último mês realizado (não-futuro)
+    var lastReal=null; months.forEach(function(m){ if(!isFut(m)) lastReal=m; });
+    var fclManual=C.fclManual||{};
+    months.forEach(function(T){
+      if(isFut(T)) fcl[T]=entradas[T]-despTot[T]-cmv[T];       // futuro: calculado
+      else if(T===lastReal) fcl[T]=(fclManual[T]!=null)?fclManual[T]:0; // último realizado: editável
+      else fcl[T]=null;                                        // realizado antigo: vazio
+    });
+    var acc=null;
+    months.forEach(function(T){
+      if(fcl[T]===null){ fclAcc[T]=null; }
+      else { acc=(acc==null?fcl[T]:acc+fcl[T]); fclAcc[T]=acc; }
+    });
+    return {entradas:entradas, despTot:despTot, cmv:cmv, fcl:fcl, fclAcc:fclAcc, lastReal:lastReal};
   }
 
   function rowHTML(label, data, months, opts){
     opts=opts||{};
     var tds=months.map(function(m){
-      var v=data[m]||0;
+      var raw=data[m];
+      if(raw==null){ return '<td style="padding:6px 10px;text-align:center;'+(isFut(m)?'background:#fffdf5;':'')+'border-bottom:1px solid #eef1f8;color:#c9d2e6">—</td>'; }
+      var v=raw;
       var col=opts.color|| (v<0?'#c0181a':'#1a2547');
       return '<td style="padding:6px 10px;text-align:center;white-space:nowrap;font-size:12px;color:'+col+';'+(opts.bold?'font-weight:800;':'')+(isFut(m)?'background:#fffdf5;':'')+'border-bottom:1px solid #eef1f8">'+BRL(v)+'</td>';
     }).join('');
     return '<tr'+(opts.bg?' style="background:'+opts.bg+'"':'')+'>'
       +'<td style="padding:6px 12px;position:sticky;left:0;background:'+(opts.bg||'#fff')+';font-size:12px;'+(opts.bold?'font-weight:800;':'font-weight:600;')+'color:'+(opts.lblColor||'#1a2547')+';border-bottom:1px solid #eef1f8;white-space:nowrap">'+label+'</td>'+tds+'</tr>';
+  }
+  function parseBRL(s){ s=String(s).replace(/[^0-9,.-]/g,'').replace(/\./g,'').replace(',','.'); return parseFloat(s)||0; }
+  window.fluxoSetFclManual=function(ym,valStr){ var C=cfg(); if(!C.fclManual) C.fclManual={}; C.fclManual[ym]=parseBRL(valStr); renderFluxoScreen(); };
+  function fclRow(F, months){
+    var lastReal=F.lastReal;
+    var tds=months.map(function(m){
+      var bg=isFut(m)?'background:#fffdf5;':'';
+      if(m===lastReal){
+        var v=F.fcl[m]||0;
+        return '<td style="padding:4px 6px;text-align:center;'+bg+'border-bottom:1px solid #eef1f8"><input type="text" value="'+BRL(v)+'" onchange="fluxoSetFclManual(\''+m+'\',this.value)" title="Saldo do último mês realizado (editável)" style="width:120px;text-align:center;padding:4px 6px;border:1.5px solid #2352c8;border-radius:6px;font-size:12px;font-weight:800;background:#eef3ff;color:#1a2547"></td>';
+      }
+      var raw=F.fcl[m];
+      if(raw==null){ return '<td style="padding:6px 10px;text-align:center;'+bg+'border-bottom:1px solid #eef1f8;color:#c9d2e6">—</td>'; }
+      return '<td style="padding:6px 10px;text-align:center;white-space:nowrap;font-size:12px;font-weight:800;color:'+(raw<0?'#c0181a':'#1a2547')+';'+bg+'border-bottom:1px solid #eef1f8">'+BRL(raw)+'</td>';
+    }).join('');
+    return '<tr style="background:#eef2fb"><td style="padding:6px 12px;position:sticky;left:0;background:#eef2fb;font-size:12px;font-weight:800;color:#1a2547;border-bottom:1px solid #eef1f8;white-space:nowrap">💰 FCL</td>'+tds+'</tr>';
   }
 
   function _ensureFluxoScreen(){
@@ -12843,7 +12873,7 @@ async function saveBudgetCfg(btn){
     document.body.appendChild(el);
     return el;
   }
-  var _fluxoAno='TODOS';
+  var _fluxoAno='2026';
   window.fluxoSetAno=function(v){ _fluxoAno=v; renderFluxoScreen(); };
   function renderFluxoScreen(){
     var bodyEl=document.getElementById('fluxoScreenBody'); if(!bodyEl) return;
@@ -12853,6 +12883,7 @@ async function saveBudgetCfg(btn){
     var F=computeFluxo(months);
     // filtro de ano (só afeta as COLUNAS exibidas; o cálculo e o acumulado usam todos os meses)
     var anos=[]; months.forEach(function(m){ var y=m.split('-')[0]; if(anos.indexOf(y)<0) anos.push(y); }); anos.sort();
+    if(_fluxoAno!=='TODOS' && anos.indexOf(_fluxoAno)<0) _fluxoAno = anos.length?anos[anos.length-1]:'TODOS';
     var disp = (_fluxoAno==='TODOS') ? months : months.filter(function(m){ return m.indexOf(_fluxoAno+'-')===0; });
     var anoSel='<select onchange="fluxoSetAno(this.value)" style="padding:5px 10px;border:1.5px solid #d0d8ee;border-radius:7px;font-size:12px;background:#fff;color:#1a2547;font-family:inherit">'+
       '<option value="TODOS"'+(_fluxoAno==='TODOS'?' selected':'')+'>Todos</option>'+
@@ -12865,7 +12896,7 @@ async function saveBudgetCfg(btn){
       rowHTML('↳ Despesas Totais', F.despTot, disp, {color:'#c0181a'})+
       rowHTML('↳ CMV', F.cmv, disp, {color:'#c0181a'})+
       rowHTML('⬇️ Saídas', (function(){var o={};disp.forEach(function(m){o[m]=(F.despTot[m]||0)+(F.cmv[m]||0);});return o;})(), disp, {bold:true, color:'#c0181a', bg:'#fdf3f3', lblColor:'#c0181a'})+
-      rowHTML('💰 FCL', F.fcl, disp, {bold:true, bg:'#eef2fb'})+
+      fclRow(F, disp)+
       rowHTML('📈 FCL Acc', F.fclAcc, disp, {bold:true, bg:'#e6ecfa'});
     bodyEl.innerHTML=filters+'<div style="overflow:auto;background:#fff;border:1px solid #e6ebf5;border-radius:10px"><table style="border-collapse:collapse;min-width:100%"><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table></div>';
   }
