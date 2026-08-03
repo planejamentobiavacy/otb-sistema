@@ -414,6 +414,11 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
       <div class="name">BUDGET</div>
       <div class="desc">Orçamento<br>Metas · Projeções · Desvios</div>
     </button>
+    <button class="home-card" onclick="if(typeof openFluxoCaixa==='function')openFluxoCaixa()" style="border-left:4px solid #0a7c4e">
+      <div class="icon">💵</div>
+      <div class="name">FLUXO DE CAIXA</div>
+      <div class="desc">Entradas · Saídas<br>FCL · Acumulado</div>
+    </button>
     <button class="home-card folha" onclick="openFolha()">
       <div class="icon">👥</div>
       <div class="name">FOLHA</div>
@@ -2690,6 +2695,7 @@ async function handleSaveAll(btn){
       budgetOverrides:(typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.budgetOverrides)||{},
       folhaProjecao:  (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.folhaProjecao)||{},
       otbCmvMap:      (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.otbCmvMap)||{},
+      fluxoCfg:       (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.fluxoCfg)||{},
       folhaRealOverride: (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.folhaRealOverride)||{},
       bonusAreaOverride: (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.bonusAreaOverride)||{},
       sim:            (typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.sim)||{},
@@ -7019,6 +7025,7 @@ async function _smartReloadKeys(changedKeys){
         if(data.folhaRealOverride != null) BUDGET_CFG.folhaRealOverride = data.folhaRealOverride;
         if(data.bonusAreaOverride != null) BUDGET_CFG.bonusAreaOverride = data.bonusAreaOverride;
         if(data.otbCmvMap != null) BUDGET_CFG.otbCmvMap = data.otbCmvMap;
+        if(data.fluxoCfg != null) BUDGET_CFG.fluxoCfg = data.fluxoCfg;
         rerenderTargets.budget = true;
         rerenderTargets.dreCfg = true; // base de Desp Gerais/CD muda
       } else if(key === 'budget_cfg'){
@@ -8397,7 +8404,8 @@ var BUDGET_CFG = {
   // folhaProjecao[area|nome|ym] = valor projetado de salário pra meses futuros (sem dados na Folha)
   folhaProjecao: {},
   // sim: valores simulados por mês {ym: {icms_pct, piscofins_pct, mg_prod}}
-  otbCmvMap: {}, // fornecedor CMV -> supplier OTB (ALPARG/BEIRAR/VULCAB/DEMAIS)
+  otbCmvMap: {},
+  fluxoCfg: {entrada:[100,0,0,0], cmv:{}},
   sim: {}
 };
 var USER_PERMISSIONS = {}; // { "email": { budgetAreas: ["E-comm/Mkt","Operações"] } } — null/empty = acesso total
@@ -8711,6 +8719,7 @@ async function loadBudget(forceRaw){
       if(savedClassif.budgetOverrides) BUDGET_CFG.budgetOverrides = savedClassif.budgetOverrides;
       if(savedClassif.folhaProjecao) BUDGET_CFG.folhaProjecao = savedClassif.folhaProjecao;
       if(savedClassif.otbCmvMap) BUDGET_CFG.otbCmvMap = savedClassif.otbCmvMap;
+      if(savedClassif.fluxoCfg) BUDGET_CFG.fluxoCfg = savedClassif.fluxoCfg;
       if(savedClassif.sim) BUDGET_CFG.sim = savedClassif.sim;
       if(savedClassif.classif){
         // Merge: preserva entradas existentes, aplica por cima as salvas na chave dedicada
@@ -10076,6 +10085,7 @@ function renderBudget(anoFilter){
     });
 
     // Linha "Total Despesas" — primeira linha após o título, cor vermelha, com toggle
+    window.__budgetTotDesp = totalDespesasGeral;
     summaryRow('Total Despesas', '💸', '#d62b3a', '#ed5a4d', function(ym){ return totalDespesasGeral[ym]||0; }, {toggleGroup:'despesas'});
 
     areasUsadas.forEach(function(area){
@@ -12454,7 +12464,7 @@ async function saveBudgetCfg(btn){
 
 </script>
 <script>
-/* OTB CMV CONFIG + ETAPA2 */
+/* OTB CMV CONFIG */
 /* ============================================================
    OTB — Configurações: mapear fornecedores CMV -> supplier OTB
    ============================================================ */
@@ -12545,8 +12555,14 @@ async function saveBudgetCfg(btn){
         var hist=String(r.e2_hist||r.E2_HIST||'').trim();
         var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
         if(!c || String(c.tipo||'').toUpperCase()!=='CMV') return;
-        var am=(typeof budgetDespAm==='function')?budgetDespAm(r):''; if(!am||String(am).length!==6) return;
-        var ym=String(am).slice(0,4)+'-'+String(am).slice(4,6);
+        // Mês pela EMISSÃO (ano_mes_emissao) — específico da aba OTB
+        var _em=String(r.ano_mes_emissao||r.ANO_MES_EMISSAO||'').replace(/\D/g,'');
+        var am='';
+        if(_em.length>=8) am=_em.slice(0,4)+_em.slice(4,6);   // YYYYMMDD -> YYYYMM
+        else if(_em.length===6) am=_em;                        // YYYYMM
+        if(am.length!==6) return;
+        var _ano=parseInt(am.slice(0,4)); if(_ano<2015||_ano>2030) return;
+        var ym=am.slice(0,4)+'-'+am.slice(4,6);
         var v=parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0)||0;
         if(!sumMap[otbSup]) sumMap[otbSup]={};
         sumMap[otbSup][ym]=(sumMap[otbSup][ym]||0)+v;
@@ -12562,6 +12578,228 @@ async function saveBudgetCfg(btn){
       });
       if(typeof buildAvacyMatrix==='function') buildAvacyMatrix();
     }catch(e){ console.error('[applyOtbCmvDespesa]', e); }
+  };
+})();
+
+</script>
+<script>
+/* FLUXO DE CAIXA */
+/* ============================================================
+   FLUXO DE CAIXA — tela + configurações
+   Entradas: Receita Bruta (Budget) distribuída por % (M..M+3), global.
+   Saídas: Despesas Totais (Budget) + CMV (OTB+Carteira Valor distribuído
+     por % M..M+3 por fornecedor OTB no futuro; dw_otb_despesa por
+     ano_mes_venc no realizado).
+   FCL = Entradas - Saídas. FCL Acc = acumulado.
+   ============================================================ */
+(function(){
+  var BRL=function(v){ v=Math.round(v||0); return (v<0?'-R$ ':'R$ ')+Math.abs(v).toLocaleString('pt-BR'); };
+  var ML=['','Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  var mlbl=function(ym){ var p=String(ym).split('-'); return p.length===2?(ML[parseInt(p[1],10)]+'/'+p[0].slice(2)):ym; };
+
+  function cfg(){
+    if(typeof BUDGET_CFG==='undefined') return {entrada:[100,0,0,0], cmv:{}};
+    if(!BUDGET_CFG.fluxoCfg) BUDGET_CFG.fluxoCfg = {entrada:[100,0,0,0], cmv:{}};
+    if(!BUDGET_CFG.fluxoCfg.entrada) BUDGET_CFG.fluxoCfg.entrada=[100,0,0,0];
+    if(!BUDGET_CFG.fluxoCfg.cmv) BUDGET_CFG.fluxoCfg.cmv={};
+    return BUDGET_CFG.fluxoCfg;
+  }
+  function otbSups(){ return (typeof state!=='undefined' && state.suppliers)?state.suppliers.filter(function(s){return s!=='AVACY';}):['ALPARG','BEIRAR','VULCAB','DEMAIS']; }
+  function rbMes(ym){ return (typeof budgetAvacyFatValCached==='function')?(budgetAvacyFatValCached(ym)||0):0; }
+  function despTotMes(ym){ return (typeof window.__budgetTotDesp!=='undefined' && window.__budgetTotDesp)?(window.__budgetTotDesp[ym]||0):0; }
+  function isFut(ym){ var m=(state.matrices&&state.matrices.AVACY)?state.matrices.AVACY[ym]:null; return m?!!m.isFuture:false; }
+
+  // CMV realizado por ano_mes_venc (todos fornecedores CMV)
+  function cmvRealByVenc(){
+    var out={};
+    if(typeof BUDGET_DESP_RAW==='undefined' || !BUDGET_DESP_RAW) return out;
+    BUDGET_DESP_RAW.forEach(function(r){
+      var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
+      var hist=String(r.e2_hist||r.E2_HIST||'').trim();
+      var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
+      if(!c || String(c.tipo||'').toUpperCase()!=='CMV') return;
+      var raw=String(r.ano_mes_venc||r.ANO_MES_VENC||'').replace(/\D/g,'');
+      var am=''; if(raw.length>=8) am=raw.slice(0,4)+raw.slice(4,6); else if(raw.length===6) am=raw; if(am.length!==6) return;
+      var ano=parseInt(am.slice(0,4)); if(ano<2015||ano>2030) return;
+      var ym=am.slice(0,4)+'-'+am.slice(4,6);
+      out[ym]=(out[ym]||0)+(parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0)||0);
+    });
+    return out;
+  }
+
+  // % de pagamento derivado do histórico: diferença de meses entre ano_mes_venc e
+  // ano_mes_emissao, por fornecedor OTB (lag 0=M, 1=M+1, 2=M+2, 3=M+3 ou mais).
+  function computeCmvLagPct(){
+    var out={};
+    if(typeof BUDGET_DESP_RAW==='undefined' || !BUDGET_DESP_RAW || typeof BUDGET_CFG==='undefined' || !BUDGET_CFG.otbCmvMap) return {};
+    var map=BUDGET_CFG.otbCmvMap;
+    var m2i=function(raw){ raw=String(raw||'').replace(/\D/g,''); var am=''; if(raw.length>=8) am=raw.slice(0,4)+raw.slice(4,6); else if(raw.length===6) am=raw; if(am.length!==6) return null; var y=parseInt(am.slice(0,4)),mo=parseInt(am.slice(4,6)); if(y<2015||y>2030||mo<1||mo>12) return null; return y*12+(mo-1); };
+    BUDGET_DESP_RAW.forEach(function(r){
+      var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
+      var sup=map[nomfor]; if(!sup) return;
+      var hist=String(r.e2_hist||r.E2_HIST||'').trim();
+      var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
+      if(!c || String(c.tipo||'').toUpperCase()!=='CMV') return;
+      var em=m2i(r.ano_mes_emissao||r.ANO_MES_EMISSAO), vc=m2i(r.ano_mes_venc||r.ANO_MES_VENC);
+      if(em==null||vc==null) return;
+      var lag=vc-em; if(lag<0) lag=0; if(lag>3) lag=3;
+      var val=parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0)||0;
+      if(!out[sup]) out[sup]=[0,0,0,0];
+      out[sup][lag]+=val;
+    });
+    var pct={};
+    Object.keys(out).forEach(function(sup){
+      var a=out[sup], tot=a[0]+a[1]+a[2]+a[3];
+      pct[sup]= tot>0 ? a.map(function(v){ return Math.round(v/tot*1000)/10; }) : [100,0,0,0];
+    });
+    return pct;
+  }
+  window.computeCmvLagPct = computeCmvLagPct;
+
+  function computeFluxo(months){
+    var C=cfg(), ent=C.entrada, sups=otbSups();
+    var derivedLag=computeCmvLagPct();
+    var realCmv=cmvRealByVenc();
+    var idx={}; months.forEach(function(m,i){ idx[m]=i; });
+    var entradas={}, despTot={}, cmv={}, fcl={}, fclAcc={};
+    months.forEach(function(T,i){
+      // Entradas: Receita Bruta dos meses T, T-1, T-2, T-3 * %
+      var e=0;
+      for(var d=0; d<4; d++){ var s=i-d; if(s<0) continue; e += rbMes(months[s]) * ((parseFloat(ent[d])||0)/100); }
+      entradas[T]=e;
+      // Despesas Totais (Budget)
+      despTot[T]=despTotMes(T);
+      // CMV
+      var cv;
+      if(!isFut(T)){
+        cv = realCmv[T]||0; // realizado por vencimento
+      } else {
+        cv=0;
+        sups.forEach(function(sup){
+          var cc=C.cmv[sup]; var ccSum=cc?((+cc[0]||0)+(+cc[1]||0)+(+cc[2]||0)+(+cc[3]||0)):0;
+          var p=(ccSum>0)?cc:(derivedLag[sup]||[100,0,0,0]);
+          for(var d=0; d<4; d++){ var s=i-d; if(s<0) continue;
+            if(!isFut(months[s])) continue; // só compras futuras projetam pra frente
+            var m=(state.matrices&&state.matrices[sup])?state.matrices[sup][months[s]]:null;
+            var val=m?(m.otbCartRealVal||0):0;
+            cv += val * ((parseFloat(p[d])||0)/100);
+          }
+        });
+      }
+      cmv[T]=cv;
+      fcl[T]=entradas[T]-despTot[T]-cmv[T];
+    });
+    var acc=0; months.forEach(function(T){ acc+=fcl[T]; fclAcc[T]=acc; });
+    return {entradas:entradas, despTot:despTot, cmv:cmv, fcl:fcl, fclAcc:fclAcc};
+  }
+
+  function rowHTML(label, data, months, opts){
+    opts=opts||{};
+    var tds=months.map(function(m){
+      var v=data[m]||0;
+      var col=opts.color|| (v<0?'#c0181a':'#1a2547');
+      return '<td style="padding:6px 10px;text-align:right;white-space:nowrap;font-size:12px;color:'+col+';'+(opts.bold?'font-weight:800;':'')+(isFut(m)?'background:#fffdf5;':'')+'border-bottom:1px solid #eef1f8">'+BRL(v)+'</td>';
+    }).join('');
+    return '<tr'+(opts.bg?' style="background:'+opts.bg+'"':'')+'>'
+      +'<td style="padding:6px 12px;position:sticky;left:0;background:'+(opts.bg||'#fff')+';font-size:12px;'+(opts.bold?'font-weight:800;':'font-weight:600;')+'color:'+(opts.lblColor||'#1a2547')+';border-bottom:1px solid #eef1f8;white-space:nowrap">'+label+'</td>'+tds+'</tr>';
+  }
+
+  window.openFluxoCaixa=function(){
+    if(typeof state==='undefined' || !state.months || !state.months.length){ if(typeof toast==='function') toast('Carregue os dados (OTB) primeiro.','err'); return; }
+    if(typeof window.__budgetTotDesp==='undefined'){ if(typeof toast==='function') toast('Abra o Budget uma vez para carregar as Despesas Totais.','err'); }
+    var months=state.months.slice();
+    var F=computeFluxo(months);
+    var old=document.getElementById('fluxoOverlay'); if(old) old.remove();
+    var head='<th style="padding:8px 12px;position:sticky;left:0;background:#1a2a6c;color:#fff;font-size:11px;text-align:left;z-index:2">INDICADOR</th>'+
+      months.map(function(m){ return '<th style="padding:8px 10px;background:'+(isFut(m)?'#2352c8':'#1a2a6c')+';color:#fff;font-size:11px;text-align:right;white-space:nowrap">'+mlbl(m)+'</th>'; }).join('');
+    var body=
+      rowHTML('⬆️ Entradas', F.entradas, months, {bold:true, color:'#0a7c4e', bg:'#f2fbf6', lblColor:'#0a7c4e'})+
+      rowHTML('↳ Despesas Totais', F.despTot, months, {color:'#c0181a'})+
+      rowHTML('↳ CMV', F.cmv, months, {color:'#c0181a'})+
+      rowHTML('⬇️ Saídas', (function(){var o={};months.forEach(function(m){o[m]=(F.despTot[m]||0)+(F.cmv[m]||0);});return o;})(), months, {bold:true, color:'#c0181a', bg:'#fdf3f3', lblColor:'#c0181a'})+
+      rowHTML('💰 FCL', F.fcl, months, {bold:true, bg:'#eef2fb'})+
+      rowHTML('📈 FCL Acc', F.fclAcc, months, {bold:true, bg:'#e6ecfa'});
+
+    var ov=document.createElement('div'); ov.id='fluxoOverlay';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(15,26,58,.55);z-index:99997;display:flex;align-items:center;justify-content:center;padding:2vh 1vw';
+    ov.innerHTML=
+      '<div style="background:#f4f7fc;border-radius:14px;width:98vw;height:94vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden">'+
+        '<div style="background:linear-gradient(90deg,#0a3d2e,#0a7c4e);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between">'+
+          '<div><div style="font-size:17px;font-weight:800">💵 Fluxo de Caixa</div>'+
+          '<div style="font-size:11px;opacity:.85;margin-top:2px">Entradas − Saídas · FCL e FCL acumulado</div></div>'+
+          '<div style="display:flex;gap:10px">'+
+            '<button onclick="if(typeof openFluxoConfig===\'function\')openFluxoConfig()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;font-weight:700">⚙️ Configurações</button>'+
+            '<button onclick="document.getElementById(\'fluxoOverlay\').remove()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;font-weight:700">✕ Fechar</button>'+
+          '</div>'+
+        '</div>'+
+        '<div style="flex:1;overflow:auto;padding:14px 18px">'+
+          '<table style="border-collapse:collapse;min-width:100%"><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table>'+
+        '</div>'+
+      '</div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
+  };
+
+  window.openFluxoConfig=function(){
+    var C=cfg(), sups=otbSups();
+    var old=document.getElementById('fluxoCfgOverlay'); if(old) old.remove();
+    var pctInputs=function(id, arr){
+      return [0,1,2,3].map(function(d){
+        return '<input type="number" step="1" data-pct="'+id+'" data-d="'+d+'" value="'+(parseFloat(arr[d])||0)+'" style="width:56px;padding:4px 6px;border:1.5px solid #d0d8ee;border-radius:6px;font-size:12px;text-align:right"> ';
+      }).join('');
+    };
+    var derivedLag=computeCmvLagPct();
+    var cmvRows=sups.map(function(sup){
+      var cc=C.cmv[sup]; var ccSum=cc?((+cc[0]||0)+(+cc[1]||0)+(+cc[2]||0)+(+cc[3]||0)):0;
+      var eff=(ccSum>0)?cc:(derivedLag[sup]||[100,0,0,0]);
+      return '<tr style="border-bottom:1px solid #eef1f8"><td style="padding:6px 10px;font-size:12px;font-weight:600">'+sup+'</td><td style="padding:6px 10px">'+pctInputs('cmv:'+sup, eff)+'</td></tr>';
+    }).join('');
+
+    var ov=document.createElement('div'); ov.id='fluxoCfgOverlay';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(15,26,58,.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:3vh 2vw';
+    ov.innerHTML=
+      '<div style="background:#fff;border-radius:14px;width:min(680px,96vw);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden">'+
+        '<div style="background:linear-gradient(90deg,#0a3d2e,#0a7c4e);color:#fff;padding:14px 20px;font-size:16px;font-weight:800">⚙️ Configurações do Fluxo de Caixa</div>'+
+        '<div style="flex:1;overflow:auto;padding:16px 20px">'+
+          '<div style="font-size:13px;font-weight:800;color:#0a7c4e;margin-bottom:6px">Entradas — % de recebimento da Receita Bruta</div>'+
+          '<div style="font-size:11px;color:#7a8ab0;margin-bottom:8px">Distribuição do mês da venda (M) e dos 3 seguintes.</div>'+
+          '<div style="margin-bottom:6px"><span style="font-size:11px;color:#5a6a8a;display:inline-block;width:auto">M / M+1 / M+2 / M+3: </span>'+pctInputs('entrada', C.entrada)+'</div>'+
+          '<hr style="border:none;border-top:1px solid #eef1f8;margin:16px 0">'+
+          '<div style="font-size:13px;font-weight:800;color:#c0181a;margin-bottom:6px">CMV — % de pagamento por fornecedor OTB</div>'+
+          '<div style="font-size:11px;color:#7a8ab0;margin-bottom:8px">Derivado do histórico: diferença de meses entre <b>ano_mes_venc</b> e <b>ano_mes_emissao</b> por fornecedor. Você pode ajustar manualmente. <button type="button" id="fluxoRecalcCmv" style="margin-left:6px;padding:3px 10px;border:1px solid #0a7c4e;background:#eafaf1;color:#0a7c4e;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700">📊 Recalcular do histórico</button></div>'+
+          '<table style="width:100%;border-collapse:collapse"><thead><tr style="background:#f1f5fb"><th style="padding:6px 10px;text-align:left;font-size:10px;color:#7a8ab0">Fornecedor OTB</th><th style="padding:6px 10px;text-align:left;font-size:10px;color:#7a8ab0">M / M+1 / M+2 / M+3 (%)</th></tr></thead><tbody>'+cmvRows+'</tbody></table>'+
+        '</div>'+
+        '<div style="padding:12px 20px;border-top:1px solid #e6ebf5;display:flex;gap:10px;justify-content:flex-end">'+
+          '<button onclick="document.getElementById(\'fluxoCfgOverlay\').remove()" style="padding:8px 16px;border:1.5px solid #d0d8ee;background:#fff;border-radius:8px;font-size:13px;cursor:pointer;font-weight:600">Cancelar</button>'+
+          '<button id="fluxoCfgSave" style="padding:8px 18px;border:none;background:#0a7c4e;color:#fff;border-radius:8px;font-size:13px;cursor:pointer;font-weight:700">💾 Salvar</button>'+
+        '</div>'+
+      '</div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
+    var _rc=document.getElementById('fluxoRecalcCmv');
+    if(_rc) _rc.onclick=function(){
+      var dl=computeCmvLagPct();
+      Array.prototype.forEach.call(ov.querySelectorAll('input[data-pct]'), function(inp){
+        var id=inp.getAttribute('data-pct'), d=parseInt(inp.getAttribute('data-d'),10);
+        if(id.indexOf('cmv:')===0){ var sup=id.slice(4); var arr=dl[sup]||[100,0,0,0]; inp.value=(parseFloat(arr[d])||0); }
+      });
+      if(typeof toast==='function') toast('% do CMV recalculado do histórico (venc − emissão).','ok');
+    };
+    document.getElementById('fluxoCfgSave').onclick=function(){
+      var C2=cfg();
+      var ent=[0,0,0,0]; var cmvM={};
+      Array.prototype.forEach.call(ov.querySelectorAll('input[data-pct]'), function(inp){
+        var id=inp.getAttribute('data-pct'), d=parseInt(inp.getAttribute('data-d'),10), val=parseFloat(inp.value)||0;
+        if(id==='entrada'){ ent[d]=val; }
+        else if(id.indexOf('cmv:')===0){ var sup=id.slice(4); if(!cmvM[sup]) cmvM[sup]=[0,0,0,0]; cmvM[sup][d]=val; }
+      });
+      C2.entrada=ent; C2.cmv=cmvM;
+      BUDGET_CFG.fluxoCfg=C2;
+      ov.remove();
+      if(typeof handleSaveAll==='function'){ try{ handleSaveAll(document.createElement('button')); }catch(e){} }
+      if(typeof openFluxoCaixa==='function' && document.getElementById('fluxoOverlay')){ openFluxoCaixa(); }
+      if(typeof toast==='function') toast('Configurações do Fluxo salvas.','ok');
+    };
   };
 })();
 
