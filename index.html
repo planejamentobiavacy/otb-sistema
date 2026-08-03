@@ -12666,7 +12666,24 @@ async function saveBudgetCfg(btn){
     return BUDGET_CFG.fluxoCfg;
   }
   function otbSups(){ return (typeof state!=='undefined' && state.suppliers)?state.suppliers.filter(function(s){return s!=='AVACY';}):['ALPARG','BEIRAR','VULCAB','DEMAIS']; }
-  function rbMes(ym){ return (typeof budgetAvacyFatValCached==='function')?(budgetAvacyFatValCached(ym)||0):0; }
+  function rbMes(ym){
+    // usa a versão SEM cache (o cache do budget nunca é resetado e pode ficar preso em 0)
+    if(typeof budgetAvacyFatVal==='function'){ var v=budgetAvacyFatVal(ym); if(v) return v; }
+    if(typeof budgetAvacyFatValCached==='function'){ var c=budgetAvacyFatValCached(ym); if(c) return c; }
+    // fallback direto às matrizes OTB
+    if(typeof state!=='undefined' && state.matrices){
+      var t=0; Object.keys(state.matrices).forEach(function(sup){ if(sup==='AVACY') return; var m=state.matrices[sup][ym]; if(m) t+=m.fatVal||0; });
+      if(t>0) return t;
+      var a=state.matrices.AVACY; if(a && a[ym]) return a[ym].fatVal||0;
+    }
+    return 0;
+  }
+  function ensureBudgetComputed(){
+    if(typeof window.__budgetTotDesp!=='undefined' && window.__budgetTotDesp) return true;
+    var loaded=(typeof DRE_LOADED!=='undefined' && DRE_LOADED) && (typeof BUDGET_LOADED!=='undefined' && BUDGET_LOADED);
+    if(loaded && typeof renderBudget==='function'){ try{ renderBudget(typeof BUDGET_ANO_FILTER!=='undefined'?BUDGET_ANO_FILTER:''); return true; }catch(e){ console.error('[fluxo] renderBudget',e); } }
+    return false;
+  }
   function despTotMes(ym){ return (typeof window.__budgetTotDesp!=='undefined' && window.__budgetTotDesp)?(window.__budgetTotDesp[ym]||0):0; }
   function isFut(ym){ var m=(state.matrices&&state.matrices.AVACY)?state.matrices.AVACY[ym]:null; return m?!!m.isFuture:false; }
 
@@ -12796,7 +12813,7 @@ async function saveBudgetCfg(btn){
     var tds=months.map(function(m){
       var v=data[m]||0;
       var col=opts.color|| (v<0?'#c0181a':'#1a2547');
-      return '<td style="padding:6px 10px;text-align:right;white-space:nowrap;font-size:12px;color:'+col+';'+(opts.bold?'font-weight:800;':'')+(isFut(m)?'background:#fffdf5;':'')+'border-bottom:1px solid #eef1f8">'+BRL(v)+'</td>';
+      return '<td style="padding:6px 10px;text-align:center;white-space:nowrap;font-size:12px;color:'+col+';'+(opts.bold?'font-weight:800;':'')+(isFut(m)?'background:#fffdf5;':'')+'border-bottom:1px solid #eef1f8">'+BRL(v)+'</td>';
     }).join('');
     return '<tr'+(opts.bg?' style="background:'+opts.bg+'"':'')+'>'
       +'<td style="padding:6px 12px;position:sticky;left:0;background:'+(opts.bg||'#fff')+';font-size:12px;'+(opts.bold?'font-weight:800;':'font-weight:600;')+'color:'+(opts.lblColor||'#1a2547')+';border-bottom:1px solid #eef1f8;white-space:nowrap">'+label+'</td>'+tds+'</tr>';
@@ -12826,22 +12843,31 @@ async function saveBudgetCfg(btn){
     document.body.appendChild(el);
     return el;
   }
+  var _fluxoAno='TODOS';
+  window.fluxoSetAno=function(v){ _fluxoAno=v; renderFluxoScreen(); };
   function renderFluxoScreen(){
     var bodyEl=document.getElementById('fluxoScreenBody'); if(!bodyEl) return;
     if(typeof state==='undefined' || !state.months || !state.months.length){ bodyEl.innerHTML='<div style="padding:40px;color:#7a8ab0;font-size:13px">Carregue os dados (OTB) primeiro.</div>'; return; }
-    if(typeof window.__budgetTotDesp==='undefined' && typeof toast==='function'){ toast('Abra o Budget uma vez para carregar as Despesas Totais.','err'); }
-    var months=state.months.slice();
+    if(!ensureBudgetComputed() && typeof toast==='function'){ toast('Abra o Budget uma vez para carregar as Despesas Totais.','err'); }
+    var months=state.months.slice();              // TODOS os meses (para o lag M..M+3 funcionar)
     var F=computeFluxo(months);
+    // filtro de ano (só afeta as COLUNAS exibidas; o cálculo e o acumulado usam todos os meses)
+    var anos=[]; months.forEach(function(m){ var y=m.split('-')[0]; if(anos.indexOf(y)<0) anos.push(y); }); anos.sort();
+    var disp = (_fluxoAno==='TODOS') ? months : months.filter(function(m){ return m.indexOf(_fluxoAno+'-')===0; });
+    var anoSel='<select onchange="fluxoSetAno(this.value)" style="padding:5px 10px;border:1.5px solid #d0d8ee;border-radius:7px;font-size:12px;background:#fff;color:#1a2547;font-family:inherit">'+
+      '<option value="TODOS"'+(_fluxoAno==='TODOS'?' selected':'')+'>Todos</option>'+
+      anos.map(function(y){ return '<option value="'+y+'"'+(_fluxoAno===y?' selected':'')+'>'+y+'</option>'; }).join('')+'</select>';
+    var filters='<div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:12px"><div style="display:flex;flex-direction:column;gap:3px"><label style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#7a8ab0;font-weight:700">Ano</label>'+anoSel+'</div></div>';
     var head='<th style="padding:8px 12px;position:sticky;left:0;background:#1a2a6c;color:#fff;font-size:11px;text-align:left;z-index:2">INDICADOR</th>'+
-      months.map(function(m){ return '<th style="padding:8px 10px;background:'+(isFut(m)?'#2352c8':'#1a2a6c')+';color:#fff;font-size:11px;text-align:right;white-space:nowrap">'+mlbl(m)+'</th>'; }).join('');
+      disp.map(function(m){ return '<th style="padding:8px 10px;background:'+(isFut(m)?'#2352c8':'#1a2a6c')+';color:#fff;font-size:11px;text-align:center;white-space:nowrap">'+mlbl(m)+'</th>'; }).join('');
     var body=
-      rowHTML('⬆️ Entradas', F.entradas, months, {bold:true, color:'#0a7c4e', bg:'#f2fbf6', lblColor:'#0a7c4e'})+
-      rowHTML('↳ Despesas Totais', F.despTot, months, {color:'#c0181a'})+
-      rowHTML('↳ CMV', F.cmv, months, {color:'#c0181a'})+
-      rowHTML('⬇️ Saídas', (function(){var o={};months.forEach(function(m){o[m]=(F.despTot[m]||0)+(F.cmv[m]||0);});return o;})(), months, {bold:true, color:'#c0181a', bg:'#fdf3f3', lblColor:'#c0181a'})+
-      rowHTML('💰 FCL', F.fcl, months, {bold:true, bg:'#eef2fb'})+
-      rowHTML('📈 FCL Acc', F.fclAcc, months, {bold:true, bg:'#e6ecfa'});
-    bodyEl.innerHTML='<div style="overflow:auto;background:#fff;border:1px solid #e6ebf5;border-radius:10px"><table style="border-collapse:collapse;min-width:100%"><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table></div>';
+      rowHTML('⬆️ Entradas', F.entradas, disp, {bold:true, color:'#0a7c4e', bg:'#f2fbf6', lblColor:'#0a7c4e'})+
+      rowHTML('↳ Despesas Totais', F.despTot, disp, {color:'#c0181a'})+
+      rowHTML('↳ CMV', F.cmv, disp, {color:'#c0181a'})+
+      rowHTML('⬇️ Saídas', (function(){var o={};disp.forEach(function(m){o[m]=(F.despTot[m]||0)+(F.cmv[m]||0);});return o;})(), disp, {bold:true, color:'#c0181a', bg:'#fdf3f3', lblColor:'#c0181a'})+
+      rowHTML('💰 FCL', F.fcl, disp, {bold:true, bg:'#eef2fb'})+
+      rowHTML('📈 FCL Acc', F.fclAcc, disp, {bold:true, bg:'#e6ecfa'});
+    bodyEl.innerHTML=filters+'<div style="overflow:auto;background:#fff;border:1px solid #e6ebf5;border-radius:10px"><table style="border-collapse:collapse;min-width:100%"><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table></div>';
   }
   window.renderFluxoScreen=renderFluxoScreen;
   window.openFluxo=function(){ _ensureFluxoScreen(); if(typeof showScreen==='function') showScreen('screenFluxo'); renderFluxoScreen(); };
