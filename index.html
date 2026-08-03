@@ -1089,7 +1089,7 @@ function showScreen(id){
       flushSaveQueue();
     }
   }
-  ['screenLogin','screenHome','screenOtb','screenDre','screenFolha','screenBudget'].forEach(function(s){
+  ['screenLogin','screenHome','screenOtb','screenDre','screenFolha','screenBudget','screenFluxo'].forEach(function(s){
     var el = document.getElementById(s);
     if(el) el.classList.remove('screen-active');
   });
@@ -12410,13 +12410,63 @@ async function saveBudgetCfg(btn){
     return o;
   }
 
+  // ---- multi-seleção (dropdown com checkboxes) ----
+  function grfMsVal(id){
+    var drop=document.querySelector('[data-ms-drop="'+id+'"]'); if(!drop) return 'TODOS';
+    var cbs=drop.querySelectorAll('.grf-ms-cb'); var checked=[];
+    Array.prototype.forEach.call(cbs,function(c){ if(c.checked) checked.push(c.value); });
+    if(!checked.length || checked.length===cbs.length) return 'TODOS';
+    return checked;
+  }
+  function grfMsSummary(id){
+    var btn=document.querySelector('[data-ms-btn="'+id+'"]'); var drop=document.querySelector('[data-ms-drop="'+id+'"]');
+    if(!btn||!drop) return;
+    var cbs=drop.querySelectorAll('.grf-ms-cb'); var checked=[];
+    Array.prototype.forEach.call(cbs,function(c){ if(c.checked) checked.push(c); });
+    var txt;
+    if(!checked.length||checked.length===cbs.length) txt='Todos';
+    else if(checked.length===1) txt=checked[0].getAttribute('data-lbl')||checked[0].value;
+    else txt=checked.length+' selecionados';
+    btn.textContent=txt+' ▾';
+  }
+  window.grfMsToggle=function(btn){
+    var id=btn.getAttribute('data-ms-btn'); var drop=document.querySelector('[data-ms-drop="'+id+'"]');
+    var open=drop.style.display!=='none';
+    Array.prototype.forEach.call(document.querySelectorAll('.grf-ms-drop'),function(d){ d.style.display='none'; });
+    drop.style.display=open?'none':'block';
+  };
+  window.grfMsAll=function(cb){
+    var id=cb.getAttribute('data-ms'); var drop=document.querySelector('[data-ms-drop="'+id+'"]');
+    Array.prototype.forEach.call(drop.querySelectorAll('.grf-ms-cb'),function(c){ c.checked=cb.checked; });
+    grfMsSummary(id); grfRender();
+  };
+  window.grfMsChange=function(cb){
+    var id=cb.getAttribute('data-ms'); var drop=document.querySelector('[data-ms-drop="'+id+'"]');
+    var cbs=drop.querySelectorAll('.grf-ms-cb'); var n=0; Array.prototype.forEach.call(cbs,function(c){ if(c.checked) n++; });
+    var all=drop.querySelector('.grf-ms-all'); if(all) all.checked=(n===cbs.length);
+    grfMsSummary(id); grfRender();
+  };
+  function msFilter(id,label,opts){
+    var items=opts.map(function(o){
+      var val=(typeof o==='object')?o.val:o, lbl=(typeof o==='object')?o.lbl:o;
+      var vv=String(val).replace(/"/g,'&quot;'), ll=String(lbl).replace(/"/g,'&quot;');
+      return '<label style="display:flex;align-items:center;gap:6px;padding:3px 10px;font-size:12px;cursor:pointer"><input type="checkbox" class="grf-ms-cb" data-ms="'+id+'" data-lbl="'+ll+'" value="'+vv+'" checked onchange="grfMsChange(this)"> '+lbl+'</label>';
+    }).join('');
+    return '<div style="display:flex;flex-direction:column;gap:3px;position:relative">'
+      +'<label style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#7a8ab0;font-weight:700">'+label+'</label>'
+      +'<button type="button" class="grf-ms-btn" data-ms-btn="'+id+'" onclick="grfMsToggle(this)" style="padding:5px 10px;border:1.5px solid #d0d8ee;border-radius:7px;font-size:12px;background:#fff;color:#1a2547;cursor:pointer;text-align:left;min-width:130px;white-space:nowrap">Todos ▾</button>'
+      +'<div class="grf-ms-drop" data-ms-drop="'+id+'" style="display:none;position:absolute;top:100%;left:0;z-index:50;background:#fff;border:1px solid #d0d8ee;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.18);max-height:260px;overflow:auto;min-width:190px;margin-top:2px">'
+      +'<label style="display:flex;align-items:center;gap:6px;padding:5px 10px;font-size:12px;cursor:pointer;border-bottom:1px solid #eef1f8;font-weight:700"><input type="checkbox" class="grf-ms-all" data-ms="'+id+'" checked onchange="grfMsAll(this)"> Todos</label>'
+      +items+'</div></div>';
+  }
+
   function grfRender(){
-    var g=function(id){ var e=document.getElementById(id); return e?e.value:'TODOS'; };
-    var ano=g('grf-ano'), mes=g('grf-mes'), canal=g('grf-canal'), cluster=g('grf-cluster'), regiao=g('grf-regiao'), forn=g('grf-forn');
+    var anoEl=document.getElementById('grf-ano'); var ano=anoEl?anoEl.value:String(new Date().getFullYear());
+    var mes=grfMsVal('grf-mes'), canal=grfMsVal('grf-canal'), cluster=grfMsVal('grf-cluster'), regiao=grfMsVal('grf-regiao'), forn=grfMsVal('grf-forn');
     var anoN=parseInt(ano,10);
     var dA=grfCalc(anoN, mes, canal, cluster, regiao, forn);
     var dP=grfCalc(anoN-1, mes, canal, cluster, regiao, forn);
-    var mesLbl=(mes&&mes!=='TODOS')?(ML[parseInt(mes,10)]||mes):'Ano cheio';
+    var mesLbl = (mes==='TODOS') ? 'Ano cheio' : (Array.isArray(mes) ? (mes.length===1?(ML[parseInt(mes[0],10)]||mes[0]):(mes.length+' meses')) : (ML[parseInt(mes,10)]||mes));
     var body=document.getElementById('grf-body'); if(!body) return;
     var titulo='EBITDA '+(anoN-1)+' - '+anoN+' ('+mesLbl+')';
     body.innerHTML=
@@ -12452,16 +12502,23 @@ async function saveBudgetCfg(btn){
         '</div>'+
         '<div style="padding:12px 20px;background:#fff;border-bottom:1px solid #e6ebf5;display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">'+
           fld('Ano (atual)','grf-ano', grfOpt(anos, anoDef, false))+
-          fld('Mês','grf-mes', mesInner)+
-          fld('Canal','grf-canal', grfOpt(grfCanais(),'TODOS',true))+
-          fld('Cluster','grf-cluster', grfOpt(grfUniq(function(r){return r.cluster||r.CLUSTER;}),'TODOS',true))+
-          fld('Região','grf-regiao', grfOpt(grfUniq(function(r){return r.regiao||r.REGIAO;}),'TODOS',true))+
-          fld('Fornecedor','grf-forn', grfOpt(grfUniq(function(r){return r.fornecedor||r.FORNECEDOR;}),'TODOS',true))+
+          msFilter('grf-mes','Mês', meses.map(function(m){return {val:m,lbl:ML[parseInt(m,10)]};}))+
+          msFilter('grf-canal','Canal', grfCanais())+
+          msFilter('grf-cluster','Cluster', grfUniq(function(r){return r.cluster||r.CLUSTER;}))+
+          msFilter('grf-regiao','Região', grfUniq(function(r){return r.regiao||r.REGIAO;}))+
+          msFilter('grf-forn','Fornecedor', grfUniq(function(r){return r.fornecedor||r.FORNECEDOR;}))+
         '</div>'+
         '<div id="grf-body" style="flex:1;overflow:auto;padding:16px 20px"></div>'+
       '</div>';
     ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
     document.body.appendChild(ov);
+    if(!window.__grfMsDoc){ window.__grfMsDoc=true;
+      document.addEventListener('click', function(e){
+        var t=e.target;
+        if(t && t.closest && (t.closest('[data-ms-drop]')||t.closest('[data-ms-btn]'))) return;
+        Array.prototype.forEach.call(document.querySelectorAll('.grf-ms-drop'),function(d){ d.style.display='none'; });
+      });
+    }
     grfRender();
   };
 })();
@@ -12745,12 +12802,36 @@ async function saveBudgetCfg(btn){
       +'<td style="padding:6px 12px;position:sticky;left:0;background:'+(opts.bg||'#fff')+';font-size:12px;'+(opts.bold?'font-weight:800;':'font-weight:600;')+'color:'+(opts.lblColor||'#1a2547')+';border-bottom:1px solid #eef1f8;white-space:nowrap">'+label+'</td>'+tds+'</tr>';
   }
 
-  window.openFluxoCaixa=function(){
-    if(typeof state==='undefined' || !state.months || !state.months.length){ if(typeof toast==='function') toast('Carregue os dados (OTB) primeiro.','err'); return; }
-    if(typeof window.__budgetTotDesp==='undefined'){ if(typeof toast==='function') toast('Abra o Budget uma vez para carregar as Despesas Totais.','err'); }
+  function _ensureFluxoScreen(){
+    var el=document.getElementById('screenFluxo'); if(el) return el;
+    el=document.createElement('div'); el.id='screenFluxo';
+    el.style.cssText='position:fixed;inset:0;display:none;flex-direction:column;background:#f4f6fb';
+    el.innerHTML=
+      '<header class="app-header">'+
+        '<div class="app-brand">'+
+          '<button class="btn-back" onclick="showHome()">← Início</button>'+
+          '<div class="app-brand-mark" style="background:#0a7c4e">FCL</div>'+
+          '<div><h1>Fluxo de Caixa</h1><small>Entradas − Saídas · FCL e FCL acumulado</small></div>'+
+          '<nav class="nav-pills" data-perm-nav>'+
+            '<a data-perm-otb onclick="openOtb()">OTB</a>'+
+            '<a onclick="openDre()">DRE</a>'+
+            '<a onclick="openBudget()">Budget</a>'+
+            '<a class="current">FCL</a>'+
+            '<a onclick="openFolha()">Folha</a>'+
+          '</nav>'+
+        '</div>'+
+        '<div style="margin-left:auto"><button onclick="if(typeof openFluxoConfig===\'function\')openFluxoConfig()" style="padding:7px 16px;border:none;border-radius:8px;background:#0a7c4e;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">⚙️ Configurações</button></div>'+
+      '</header>'+
+      '<div id="fluxoScreenBody" style="flex:1;overflow:auto;padding:16px 20px"></div>';
+    document.body.appendChild(el);
+    return el;
+  }
+  function renderFluxoScreen(){
+    var bodyEl=document.getElementById('fluxoScreenBody'); if(!bodyEl) return;
+    if(typeof state==='undefined' || !state.months || !state.months.length){ bodyEl.innerHTML='<div style="padding:40px;color:#7a8ab0;font-size:13px">Carregue os dados (OTB) primeiro.</div>'; return; }
+    if(typeof window.__budgetTotDesp==='undefined' && typeof toast==='function'){ toast('Abra o Budget uma vez para carregar as Despesas Totais.','err'); }
     var months=state.months.slice();
     var F=computeFluxo(months);
-    var old=document.getElementById('fluxoOverlay'); if(old) old.remove();
     var head='<th style="padding:8px 12px;position:sticky;left:0;background:#1a2a6c;color:#fff;font-size:11px;text-align:left;z-index:2">INDICADOR</th>'+
       months.map(function(m){ return '<th style="padding:8px 10px;background:'+(isFut(m)?'#2352c8':'#1a2a6c')+';color:#fff;font-size:11px;text-align:right;white-space:nowrap">'+mlbl(m)+'</th>'; }).join('');
     var body=
@@ -12760,26 +12841,11 @@ async function saveBudgetCfg(btn){
       rowHTML('⬇️ Saídas', (function(){var o={};months.forEach(function(m){o[m]=(F.despTot[m]||0)+(F.cmv[m]||0);});return o;})(), months, {bold:true, color:'#c0181a', bg:'#fdf3f3', lblColor:'#c0181a'})+
       rowHTML('💰 FCL', F.fcl, months, {bold:true, bg:'#eef2fb'})+
       rowHTML('📈 FCL Acc', F.fclAcc, months, {bold:true, bg:'#e6ecfa'});
-
-    var ov=document.createElement('div'); ov.id='fluxoOverlay';
-    ov.style.cssText='position:fixed;inset:0;background:rgba(15,26,58,.55);z-index:99997;display:flex;align-items:center;justify-content:center;padding:2vh 1vw';
-    ov.innerHTML=
-      '<div style="background:#f4f7fc;border-radius:14px;width:98vw;height:94vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden">'+
-        '<div style="background:linear-gradient(90deg,#0a3d2e,#0a7c4e);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between">'+
-          '<div><div style="font-size:17px;font-weight:800">💵 Fluxo de Caixa</div>'+
-          '<div style="font-size:11px;opacity:.85;margin-top:2px">Entradas − Saídas · FCL e FCL acumulado</div></div>'+
-          '<div style="display:flex;gap:10px">'+
-            '<button onclick="if(typeof openFluxoConfig===\'function\')openFluxoConfig()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;font-weight:700">⚙️ Configurações</button>'+
-            '<button onclick="document.getElementById(\'fluxoOverlay\').remove()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:8px;padding:6px 14px;font-size:13px;cursor:pointer;font-weight:700">✕ Fechar</button>'+
-          '</div>'+
-        '</div>'+
-        '<div style="flex:1;overflow:auto;padding:14px 18px">'+
-          '<table style="border-collapse:collapse;min-width:100%"><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table>'+
-        '</div>'+
-      '</div>';
-    document.body.appendChild(ov);
-    ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
-  };
+    bodyEl.innerHTML='<div style="overflow:auto;background:#fff;border:1px solid #e6ebf5;border-radius:10px"><table style="border-collapse:collapse;min-width:100%"><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table></div>';
+  }
+  window.renderFluxoScreen=renderFluxoScreen;
+  window.openFluxo=function(){ _ensureFluxoScreen(); if(typeof showScreen==='function') showScreen('screenFluxo'); renderFluxoScreen(); };
+  window.openFluxoCaixa=window.openFluxo; // compat: card da home e nav FCL
 
   window.openFluxoConfig=function(){
     var C=cfg(), sups=otbSups();
@@ -12867,7 +12933,7 @@ async function saveBudgetCfg(btn){
       BUDGET_CFG.fluxoCfg=C2;
       ov.remove();
       if(typeof handleSaveAll==='function'){ try{ handleSaveAll(document.createElement('button')); }catch(e){} }
-      if(typeof openFluxoCaixa==='function' && document.getElementById('fluxoOverlay')){ openFluxoCaixa(); }
+      if(typeof renderFluxoScreen==='function' && document.getElementById('screenFluxo') && document.getElementById('screenFluxo').classList.contains('screen-active')){ renderFluxoScreen(); }
       if(typeof toast==='function') toast('Configurações do Fluxo salvas.','ok');
     };
   };
