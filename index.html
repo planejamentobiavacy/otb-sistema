@@ -13030,6 +13030,67 @@ async function saveBudgetCfg(btn){
   };
 })();
 
+/* ===== DIAGNÓSTICO CMV (emissão vs vencimento) — rodar no console ===== */
+(function(){
+  function _num(r){ return parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0)||0; }
+  function _ym(raw){ raw=String(raw||'').replace(/\D/g,''); var am=''; if(raw.length>=8) am=raw.slice(0,4)+raw.slice(4,6); else if(raw.length===6) am=raw; if(am.length!==6) return null; var y=parseInt(am.slice(0,4)); if(y<2015||y>2030) return null; return am.slice(0,4)+'-'+am.slice(4,6); }
+  window.fluxoDiagCmv=function(fornOtb){
+    var nRaw=(typeof BUDGET_DESP_RAW!=='undefined'&&BUDGET_DESP_RAW)?BUDGET_DESP_RAW.length:-1;
+    var nCls=(typeof BUDGET_CFG!=='undefined'&&BUDGET_CFG.classif)?Object.keys(BUDGET_CFG.classif).length:-1;
+    console.log('--- status de carga ---');
+    console.log('dw_otb_despesa (BUDGET_DESP_RAW):', nRaw<0?'NÃO CARREGADO — abra o Budget primeiro':nRaw+' linhas');
+    console.log('classificações (BUDGET_CFG.classif):', nCls<0?'NÃO CARREGADO':nCls+' itens');
+    console.log('otbCmvMap:', (typeof BUDGET_CFG!=='undefined'&&BUDGET_CFG.otbCmvMap)||'(vazio)');
+    if(nRaw<=0){ console.log('>> Sem despesa carregada. Abra a aba Budget (carrega despesa + classificação) e rode de novo.'); return; }
+    // contagem por tipo (pra ver se a classificação CMV existe)
+    var tipos={};
+    BUDGET_DESP_RAW.forEach(function(r){
+      var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
+      var hist=String(r.e2_hist||r.E2_HIST||'').trim();
+      var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
+      var t=String((c&&c.tipo)||'(sem classif)').toUpperCase(); tipos[t]=(tipos[t]||0)+1;
+    });
+    console.log('contagem de linhas por tipo:', tipos);
+    if(!tipos['CMV']){ console.log('>> Nenhuma linha classificada como CMV. Verifique no Budget se os fornecedores estão com tipo = CMV.'); }
+    var map=(typeof BUDGET_CFG!=='undefined'&&BUDGET_CFG.otbCmvMap)||{};
+    var byEmis={}, byVenc={}, totE=0, totV=0, n=0;
+    BUDGET_DESP_RAW.forEach(function(r){
+      var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
+      var hist=String(r.e2_hist||r.E2_HIST||'').trim();
+      var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
+      if(!c||String(c.tipo||'').toUpperCase()!=='CMV') return;
+      var sup=map[nomfor]||'DEMAIS';
+      if(fornOtb && sup!==fornOtb) return;
+      var v=_num(r), em=_ym(r.ano_mes_emissao||r.ANO_MES_EMISSAO), vc=_ym(r.ano_mes_venc||r.ANO_MES_VENC);
+      if(em){ byEmis[em]=(byEmis[em]||0)+v; totE+=v; }
+      if(vc){ byVenc[vc]=(byVenc[vc]||0)+v; totV+=v; }
+      n++;
+    });
+    console.log('=== DIAG CMV'+(fornOtb?' ('+fornOtb+')':' (todos)')+' ===');
+    console.log('Linhas CMV:', n, '| Soma por EMISSÃO:', Math.round(totE).toLocaleString('pt-BR'), '| Soma por VENC:', Math.round(totV).toLocaleString('pt-BR'));
+    console.log('(se as duas somas diferirem MUITO, há linhas sem emissão OU sem venc, ou valores duplicados)');
+    console.log('Por EMISSÃO:', byEmis);
+    console.log('Por VENCIMENTO:', byVenc);
+  };
+  window.fluxoDiagCmvMes=function(vencYm, fornOtb){
+    if(typeof BUDGET_DESP_RAW==='undefined'){ console.log('sem dados'); return; }
+    var map=(typeof BUDGET_CFG!=='undefined'&&BUDGET_CFG.otbCmvMap)||{};
+    var rows=[];
+    BUDGET_DESP_RAW.forEach(function(r){
+      var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
+      var hist=String(r.e2_hist||r.E2_HIST||'').trim();
+      var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
+      if(!c||String(c.tipo||'').toUpperCase()!=='CMV') return;
+      var sup=map[nomfor]||'DEMAIS'; if(fornOtb && sup!==fornOtb) return;
+      if(_ym(r.ano_mes_venc||r.ANO_MES_VENC)!==vencYm) return;
+      rows.push({forn:nomfor, otb:sup, emissao:_ym(r.ano_mes_emissao||r.ANO_MES_EMISSAO), venc:_ym(r.ano_mes_venc||r.ANO_MES_VENC), valor:_num(r), valor_pagamento:parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||0)||0, valor_col:parseFloat(r.valor||r.VALOR||0)||0});
+    });
+    rows.sort(function(a,b){return b.valor-a.valor;});
+    console.log('CMV vencendo em '+vencYm+(fornOtb?' ('+fornOtb+')':'')+' — '+rows.length+' linhas, soma '+Math.round(rows.reduce(function(s,r){return s+r.valor;},0)).toLocaleString('pt-BR'));
+    console.table(rows.slice(0,30));
+  };
+})();
+
 </script>
 </body>
 </html>
