@@ -12530,6 +12530,18 @@ async function saveBudgetCfg(btn){
    OTB — Configurações: mapear fornecedores CMV -> supplier OTB
    ============================================================ */
 (function(){
+  // Resolve o fornecedor da despesa para o fornecedor da aba OTB.
+  // Prioridade: 1) mapeamento manual (otbCmvMap); 2) por NOME (contém ALPARG/BEIRA RIO/VULCAB); 3) DEMAIS.
+  window.otbSupOf = function(nomfor, map){
+    map = map || ((typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.otbCmvMap) || {});
+    if(map && map[nomfor]) return map[nomfor];
+    var up = String(nomfor||'').toUpperCase();
+    if(up.indexOf('ALPARG')>=0) return 'ALPARG';
+    if(up.indexOf('BEIRA RIO')>=0 || up.indexOf('BEIRARIO')>=0 || up.indexOf('BEIRA-RIO')>=0) return 'BEIRAR';
+    if(up.indexOf('VULCAB')>=0) return 'VULCAB';
+    return 'DEMAIS';
+  };
+
   window.openOtbCmvConfig = function(){
     if(typeof BUDGET_DESP_RAW==='undefined' || !BUDGET_DESP_RAW || !BUDGET_DESP_RAW.length){
       if(typeof toast==='function') toast('Carregue os dados de Despesas (Budget) primeiro.','err'); return;
@@ -12553,7 +12565,7 @@ async function saveBudgetCfg(btn){
 
     var old=document.getElementById('otbCmvCfgOverlay'); if(old) old.remove();
     var rowsH = forns.map(function(f){
-      var cur = BUDGET_CFG.otbCmvMap[f]||'DEMAIS';
+      var cur = otbSupOf(f, BUDGET_CFG.otbCmvMap);
       var opts = otbSups.map(function(s){
         return '<option value="'+s+'"'+(cur===s?' selected':'')+'>'+s+'</option>';
       }).join('');
@@ -12612,7 +12624,7 @@ async function saveBudgetCfg(btn){
       var sumMap = {};
       BUDGET_DESP_RAW.forEach(function(r){
         var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
-        var otbSup=map[nomfor]||'DEMAIS';
+        var otbSup=(typeof otbSupOf==='function')?otbSupOf(nomfor,map):(map[nomfor]||'DEMAIS');
         var hist=String(r.e2_hist||r.E2_HIST||'').trim();
         var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
         if(!c || String(c.tipo||'').toUpperCase()!=='CMV') return;
@@ -12718,7 +12730,7 @@ async function saveBudgetCfg(btn){
     var m2i=function(raw){ raw=String(raw||'').replace(/\D/g,''); var am=''; if(raw.length>=8) am=raw.slice(0,4)+raw.slice(4,6); else if(raw.length===6) am=raw; if(am.length!==6) return null; var y=parseInt(am.slice(0,4)),mo=parseInt(am.slice(4,6)); if(y<2015||y>2030||mo<1||mo>12) return null; return y*12+(mo-1); };
     BUDGET_DESP_RAW.forEach(function(r){
       var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
-      var sup=map[nomfor]||'DEMAIS';
+      var sup=(typeof otbSupOf==='function')?otbSupOf(nomfor,map):(map[nomfor]||'DEMAIS');
       var hist=String(r.e2_hist||r.E2_HIST||'').trim();
       var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
       if(!c || String(c.tipo||'').toUpperCase()!=='CMV') return;
@@ -12746,7 +12758,7 @@ async function saveBudgetCfg(btn){
     var m2=function(raw){ raw=String(raw||'').replace(/\D/g,''); var am=''; if(raw.length>=8) am=raw.slice(0,4)+raw.slice(4,6); else if(raw.length===6) am=raw; if(am.length!==6) return null; var y=parseInt(am.slice(0,4)),mo=parseInt(am.slice(4,6)); if(y<2015||y>2030||mo<1||mo>12) return null; return {ym:am.slice(0,4)+'-'+am.slice(4,6), idx:y*12+(mo-1)}; };
     BUDGET_DESP_RAW.forEach(function(r){
       var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
-      var sup=map[nomfor]||'DEMAIS';
+      var sup=(typeof otbSupOf==='function')?otbSupOf(nomfor,map):(map[nomfor]||'DEMAIS');
       var hist=String(r.e2_hist||r.E2_HIST||'').trim();
       var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
       if(!c||String(c.tipo||'').toUpperCase()!=='CMV') return;
@@ -12791,7 +12803,7 @@ async function saveBudgetCfg(btn){
         var am=''; if(raw.length>=8) am=raw.slice(0,4)+raw.slice(4,6); else if(raw.length===6) am=raw; if(am.length!==6) return;
         var ano=parseInt(am.slice(0,4)); if(ano<2015||ano>2030) return;
         var ym=am.slice(0,4)+'-'+am.slice(4,6);
-        var sup=map[nomfor]||'DEMAIS';
+        var sup=(typeof otbSupOf==='function')?otbSupOf(nomfor,map):(map[nomfor]||'DEMAIS');
         var val=parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0)||0;
         out[sup]=out[sup]||{}; out[sup][ym]=(out[sup][ym]||0)+val;
       });
@@ -13059,7 +13071,7 @@ async function saveBudgetCfg(btn){
       var hist=String(r.e2_hist||r.E2_HIST||'').trim();
       var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
       if(!c||String(c.tipo||'').toUpperCase()!=='CMV') return;
-      var sup=map[nomfor]||'DEMAIS';
+      var sup=(typeof otbSupOf==='function')?otbSupOf(nomfor,map):(map[nomfor]||'DEMAIS');
       if(fornOtb && sup!==fornOtb) return;
       var v=_num(r), em=_ym(r.ano_mes_emissao||r.ANO_MES_EMISSAO), vc=_ym(r.ano_mes_venc||r.ANO_MES_VENC);
       if(em){ byEmis[em]=(byEmis[em]||0)+v; totE+=v; }
@@ -13081,7 +13093,7 @@ async function saveBudgetCfg(btn){
       var hist=String(r.e2_hist||r.E2_HIST||'').trim();
       var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
       if(!c||String(c.tipo||'').toUpperCase()!=='CMV') return;
-      var sup=map[nomfor]||'DEMAIS'; if(fornOtb && sup!==fornOtb) return;
+      var sup=(typeof otbSupOf==='function')?otbSupOf(nomfor,map):(map[nomfor]||'DEMAIS'); if(fornOtb && sup!==fornOtb) return;
       if(_ym(r.ano_mes_venc||r.ANO_MES_VENC)!==vencYm) return;
       rows.push({forn:nomfor, otb:sup, emissao:_ym(r.ano_mes_emissao||r.ANO_MES_EMISSAO), venc:_ym(r.ano_mes_venc||r.ANO_MES_VENC), valor:_num(r), valor_pagamento:parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||0)||0, valor_col:parseFloat(r.valor||r.VALOR||0)||0});
     });
