@@ -12801,6 +12801,7 @@ async function saveBudgetCfg(btn){
             cv += val * ((parseFloat(p[d])||0)/100);
           }
         });
+        cv += (realCmv[T]||0); // + despesa já lançada por venc para este mês futuro
       }
       cmv[T]=cv;
     });
@@ -12918,20 +12919,18 @@ async function saveBudgetCfg(btn){
       var cc=C.cmv[sup]; var ccSum=cc?((+cc[0]||0)+(+cc[1]||0)+(+cc[2]||0)+(+cc[3]||0)):0;
       var eff=(ccSum>0)?cc:(derivedLag[sup]||[100,0,0,0]);
       var lm=lagByMonth[sup]||{}; var yms=Object.keys(lm).sort();
-      var mtbl;
-      if(yms.length){
-        mtbl='<div style="max-height:130px;overflow:auto;margin-top:6px;border:1px solid #f0f2f8;border-radius:6px">'
-          +'<table style="width:100%;border-collapse:collapse;font-size:10.5px"><thead><tr style="background:#f7f9fc;position:sticky;top:0">'
-          +'<th style="padding:3px 6px;text-align:left;color:#9aa6c0">Mês emissão</th><th style="padding:3px 6px;color:#9aa6c0">M</th><th style="padding:3px 6px;color:#9aa6c0">M+1</th><th style="padding:3px 6px;color:#9aa6c0">M+2</th><th style="padding:3px 6px;color:#9aa6c0">M+3</th></tr></thead><tbody>'
-          +yms.map(function(ym){ var a=lm[ym]; return '<tr><td style="padding:2px 6px;color:#5a6a8a">'+mlbl(ym)+'</td>'+a.map(function(v){return '<td style="padding:2px 6px;text-align:center;color:#33405c">'+v+'%</td>';}).join('')+'</tr>'; }).join('')
-          +'</tbody></table></div>';
-      } else { mtbl='<div style="font-size:10.5px;color:#9aa6c0;margin-top:4px">Sem histórico de emissão×vencimento para este fornecedor.</div>'; }
+      var projCells=[0,1,2,3].map(function(d){
+        return '<td style="padding:3px 6px;text-align:center"><input type="number" step="1" data-pct="cmv:'+sup+'" data-d="'+d+'" value="'+(parseFloat(eff[d])||0)+'" style="width:56px;padding:4px 4px;border:1.5px solid #2352c8;border-radius:6px;font-size:12px;text-align:center;background:#eef3ff;font-weight:700"></td>';
+      }).join('');
+      var projRow='<tr style="background:#eef3ff"><td style="padding:4px 8px;font-weight:800;color:#2352c8;white-space:nowrap">Projeção (futuro)</td>'+projCells+'</tr>';
+      var histRows = yms.length ? yms.map(function(ym){ var a=lm[ym]; return '<tr><td style="padding:2px 8px;color:#5a6a8a">'+mlbl(ym)+'</td>'+a.map(function(v){return '<td style="padding:2px 6px;text-align:center;color:#33405c">'+v+'%</td>';}).join('')+'</tr>'; }).join('')
+        : '<tr><td colspan="5" style="padding:8px;color:#9aa6c0;font-size:10.5px">Sem histórico de emissão×vencimento.</td></tr>';
       return '<div style="border:1px solid #eef1f8;border-radius:8px;padding:8px 10px;margin-bottom:8px">'
-        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-        +'<b style="font-size:12px;min-width:64px">'+sup+'</b>'
-        +'<span style="font-size:11px;color:#5a6a8a">Projeção (M/M+1/M+2/M+3):</span> '+pctInputs('cmv:'+sup, eff)
-        +'<button type="button" data-m3="'+sup+'" style="padding:3px 10px;border:1px solid #2352c8;background:#eef3ff;color:#2352c8;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700">média 3M</button>'
-        +'</div>'+mtbl+'</div>';
+        +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:12px">'+sup+'</b>'
+        +'<button type="button" data-m3="'+sup+'" style="margin-left:auto;padding:3px 10px;border:1px solid #2352c8;background:#eef3ff;color:#2352c8;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700">média 3M</button></div>'
+        +'<div style="max-height:210px;overflow:auto;border:1px solid #f0f2f8;border-radius:6px"><table style="width:100%;border-collapse:collapse;font-size:11px">'
+        +'<thead><tr style="background:#f7f9fc;position:sticky;top:0"><th style="padding:4px 8px;text-align:left;color:#9aa6c0">Mês emissão</th><th style="padding:4px 6px;color:#9aa6c0;text-align:center">M</th><th style="padding:4px 6px;color:#9aa6c0;text-align:center">M+1</th><th style="padding:4px 6px;color:#9aa6c0;text-align:center">M+2</th><th style="padding:4px 6px;color:#9aa6c0;text-align:center">M+3</th></tr></thead>'
+        +'<tbody>'+projRow+histRows+'</tbody></table></div></div>';
     }).join('');
 
     var ov=document.createElement('div'); ov.id='fluxoCfgOverlay';
