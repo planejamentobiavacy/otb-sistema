@@ -12553,8 +12553,8 @@ async function saveBudgetCfg(btn){
 
     var old=document.getElementById('otbCmvCfgOverlay'); if(old) old.remove();
     var rowsH = forns.map(function(f){
-      var cur = BUDGET_CFG.otbCmvMap[f]||'';
-      var opts = '<option value="">— não classificado —</option>'+otbSups.map(function(s){
+      var cur = BUDGET_CFG.otbCmvMap[f]||'DEMAIS';
+      var opts = otbSups.map(function(s){
         return '<option value="'+s+'"'+(cur===s?' selected':'')+'>'+s+'</option>';
       }).join('');
       return '<tr style="border-bottom:1px solid #eef1f8">'
@@ -12591,7 +12591,7 @@ async function saveBudgetCfg(btn){
     document.getElementById('otbCmvCfgSave').onclick = function(){
       var selects = ov.querySelectorAll('select[data-forn]');
       var map = {};
-      Array.prototype.forEach.call(selects, function(sel){ var f=sel.getAttribute('data-forn'); if(sel.value) map[f]=sel.value; });
+      Array.prototype.forEach.call(selects, function(sel){ var f=sel.getAttribute('data-forn'); if(sel.value && sel.value!=='DEMAIS') map[f]=sel.value; });
       BUDGET_CFG.otbCmvMap = map;
       ov.remove();
       // Persiste via save canônico (budget_classif já inclui otbCmvMap)
@@ -12612,7 +12612,7 @@ async function saveBudgetCfg(btn){
       var sumMap = {};
       BUDGET_DESP_RAW.forEach(function(r){
         var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
-        var otbSup=map[nomfor]; if(!otbSup) return;
+        var otbSup=map[nomfor]||'DEMAIS';
         var hist=String(r.e2_hist||r.E2_HIST||'').trim();
         var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
         if(!c || String(c.tipo||'').toUpperCase()!=='CMV') return;
@@ -12715,7 +12715,7 @@ async function saveBudgetCfg(btn){
     var m2i=function(raw){ raw=String(raw||'').replace(/\D/g,''); var am=''; if(raw.length>=8) am=raw.slice(0,4)+raw.slice(4,6); else if(raw.length===6) am=raw; if(am.length!==6) return null; var y=parseInt(am.slice(0,4)),mo=parseInt(am.slice(4,6)); if(y<2015||y>2030||mo<1||mo>12) return null; return y*12+(mo-1); };
     BUDGET_DESP_RAW.forEach(function(r){
       var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
-      var sup=map[nomfor]; if(!sup) return;
+      var sup=map[nomfor]||'DEMAIS';
       var hist=String(r.e2_hist||r.E2_HIST||'').trim();
       var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
       if(!c || String(c.tipo||'').toUpperCase()!=='CMV') return;
@@ -12743,7 +12743,7 @@ async function saveBudgetCfg(btn){
     var m2=function(raw){ raw=String(raw||'').replace(/\D/g,''); var am=''; if(raw.length>=8) am=raw.slice(0,4)+raw.slice(4,6); else if(raw.length===6) am=raw; if(am.length!==6) return null; var y=parseInt(am.slice(0,4)),mo=parseInt(am.slice(4,6)); if(y<2015||y>2030||mo<1||mo>12) return null; return {ym:am.slice(0,4)+'-'+am.slice(4,6), idx:y*12+(mo-1)}; };
     BUDGET_DESP_RAW.forEach(function(r){
       var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
-      var sup=map[nomfor]; if(!sup) return;
+      var sup=map[nomfor]||'DEMAIS';
       var hist=String(r.e2_hist||r.E2_HIST||'').trim();
       var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
       if(!c||String(c.tipo||'').toUpperCase()!=='CMV') return;
@@ -12775,35 +12775,54 @@ async function saveBudgetCfg(btn){
   function computeFluxo(months){
     var C=cfg(), ent=C.entrada, sups=otbSups();
     var derivedLag=computeCmvLagPct();
-    var realCmv=cmvRealByVenc();
+    var realBySup=(function(){
+      var out={};
+      if(typeof BUDGET_DESP_RAW==='undefined' || !BUDGET_DESP_RAW) return out;
+      var map=(typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.otbCmvMap)?BUDGET_CFG.otbCmvMap:{};
+      BUDGET_DESP_RAW.forEach(function(r){
+        var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
+        var hist=String(r.e2_hist||r.E2_HIST||'').trim();
+        var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
+        if(!c || String(c.tipo||'').toUpperCase()!=='CMV') return;
+        var raw=String(r.ano_mes_venc||r.ANO_MES_VENC||'').replace(/\D/g,'');
+        var am=''; if(raw.length>=8) am=raw.slice(0,4)+raw.slice(4,6); else if(raw.length===6) am=raw; if(am.length!==6) return;
+        var ano=parseInt(am.slice(0,4)); if(ano<2015||ano>2030) return;
+        var ym=am.slice(0,4)+'-'+am.slice(4,6);
+        var sup=map[nomfor]||'DEMAIS';
+        var val=parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0)||0;
+        out[sup]=out[sup]||{}; out[sup][ym]=(out[sup][ym]||0)+val;
+      });
+      return out;
+    })();
     var idx={}; months.forEach(function(m,i){ idx[m]=i; });
-    var entradas={}, despTot={}, cmv={}, fcl={}, fclAcc={};
+    var entradas={}, despTot={}, cmv={}, cmvBySup={}, fcl={}, fclAcc={};
+    var allSups=sups.concat(['__NAOMAP']);
+    allSups.forEach(function(sup){ cmvBySup[sup]={}; });
     months.forEach(function(T,i){
-      // Entradas: Receita Bruta dos meses T, T-1, T-2, T-3 * %
       var e=0;
       for(var d=0; d<4; d++){ var s=i-d; if(s<0) continue; e += rbMes(months[s]) * ((parseFloat(ent[d])||0)/100); }
       entradas[T]=e;
-      // Despesas Totais (Budget)
       despTot[T]=despTotMes(T);
-      // CMV
-      var cv;
-      if(!isFut(T)){
-        cv = realCmv[T]||0; // realizado por vencimento
-      } else {
-        cv=0;
-        sups.forEach(function(sup){
-          var cc=C.cmv[sup]; var ccSum=cc?((+cc[0]||0)+(+cc[1]||0)+(+cc[2]||0)+(+cc[3]||0)):0;
-          var p=(ccSum>0)?cc:(derivedLag[sup]||[100,0,0,0]);
-          for(var d=0; d<4; d++){ var s=i-d; if(s<0) continue;
-            if(!isFut(months[s])) continue; // só compras futuras projetam pra frente
-            var m=(state.matrices&&state.matrices[sup])?state.matrices[sup][months[s]]:null;
-            var val=m?(m.otbCartRealVal||0):0;
-            cv += val * ((parseFloat(p[d])||0)/100);
+      // CMV por fornecedor: futuro = projeção (OTB×%) + venc lançado; realizado = venc lançado
+      var totalCmv=0;
+      allSups.forEach(function(sup){
+        var v=0;
+        if(isFut(T)){
+          if(sup!=='__NAOMAP'){
+            var cc=C.cmv[sup]; var ccSum=cc?((+cc[0]||0)+(+cc[1]||0)+(+cc[2]||0)+(+cc[3]||0)):0;
+            var p=(ccSum>0)?cc:(derivedLag[sup]||[100,0,0,0]);
+            for(var d2=0; d2<4; d2++){ var s2=i-d2; if(s2<0) continue; if(!isFut(months[s2])) continue;
+              var m=(state.matrices&&state.matrices[sup])?state.matrices[sup][months[s2]]:null;
+              v += (m?(m.otbCartRealVal||0):0) * ((parseFloat(p[d2])||0)/100);
+            }
           }
-        });
-        cv += (realCmv[T]||0); // + despesa já lançada por venc para este mês futuro
-      }
-      cmv[T]=cv;
+          v += (realBySup[sup]&&realBySup[sup][T])||0;
+        } else {
+          v = (realBySup[sup]&&realBySup[sup][T])||0;
+        }
+        cmvBySup[sup][T]=v; totalCmv+=v;
+      });
+      cmv[T]=totalCmv;
     });
     // último mês realizado (não-futuro)
     var lastReal=null; months.forEach(function(m){ if(!isFut(m)) lastReal=m; });
@@ -12818,7 +12837,7 @@ async function saveBudgetCfg(btn){
       if(fcl[T]===null){ fclAcc[T]=null; }
       else { acc=(acc==null?fcl[T]:acc+fcl[T]); fclAcc[T]=acc; }
     });
-    return {entradas:entradas, despTot:despTot, cmv:cmv, fcl:fcl, fclAcc:fclAcc, lastReal:lastReal};
+    return {entradas:entradas, despTot:despTot, cmv:cmv, cmvBySup:cmvBySup, fcl:fcl, fclAcc:fclAcc, lastReal:lastReal};
   }
 
   function rowHTML(label, data, months, opts){
@@ -12875,6 +12894,18 @@ async function saveBudgetCfg(btn){
     return el;
   }
   var _fluxoAno='2026';
+  var _cmvExpanded=false;
+  window.fluxoToggleCmv=function(){ _cmvExpanded=!_cmvExpanded; renderFluxoScreen(); };
+  function cmvSubRows(F, months){
+    var bs=F.cmvBySup||{};
+    var order=(typeof state!=='undefined'&&state.suppliers)?state.suppliers.filter(function(s){return s!=='AVACY';}):['ALPARG','BEIRAR','VULCAB','DEMAIS'];
+    var rows=order.map(function(sup){
+      return rowHTML('&nbsp;&nbsp;&nbsp;&nbsp;• '+sup, bs[sup]||{}, months, {color:'#c0181a', lblColor:'#8a95ad', bg:'#fff8f8'});
+    });
+    var nm=bs['__NAOMAP']||{}; var hasNm=months.some(function(m){ return (nm[m]||0)!==0; });
+    if(hasNm) rows.push(rowHTML('&nbsp;&nbsp;&nbsp;&nbsp;• Não mapeado (sem fornecedor OTB)', nm, months, {color:'#c0181a', lblColor:'#c0181a', bg:'#fff0f0'}));
+    return rows.join('');
+  }
   window.fluxoSetAno=function(v){ _fluxoAno=v; renderFluxoScreen(); };
   function renderFluxoScreen(){
     var bodyEl=document.getElementById('fluxoScreenBody'); if(!bodyEl) return;
@@ -12895,7 +12926,8 @@ async function saveBudgetCfg(btn){
     var body=
       rowHTML('⬆️ Entradas', F.entradas, disp, {bold:true, color:'#0a7c4e', bg:'#f2fbf6', lblColor:'#0a7c4e'})+
       rowHTML('↳ Despesas Totais', F.despTot, disp, {color:'#c0181a'})+
-      rowHTML('↳ CMV', F.cmv, disp, {color:'#c0181a'})+
+      rowHTML('<span onclick="fluxoToggleCmv()" style="cursor:pointer;user-select:none">'+(_cmvExpanded?'▼':'▶')+' ↳ CMV</span>', F.cmv, disp, {color:'#c0181a'})+
+      (_cmvExpanded ? cmvSubRows(F, disp) : '')+
       rowHTML('⬇️ Saídas', (function(){var o={};disp.forEach(function(m){o[m]=(F.despTot[m]||0)+(F.cmv[m]||0);});return o;})(), disp, {bold:true, color:'#c0181a', bg:'#fdf3f3', lblColor:'#c0181a'})+
       fclRow(F, disp)+
       rowHTML('📈 FCL Acc', F.fclAcc, disp, {bold:true, bg:'#e6ecfa'});
