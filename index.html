@@ -12634,7 +12634,10 @@ async function saveBudgetCfg(btn){
         var supSum=sumMap[sup]||{};
         (state.months||[]).forEach(function(ym){
           var cell=m[ym]; if(!cell || cell.isFuture) return; // futuro fica na projeção/CMC
-          cell.otbCartRealVal = Math.round(supSum[ym]||0);
+          var val=Math.round(supSum[ym]||0);
+          cell.cartVal=val;         // Carteira Valor (realizado) = CMV real por emissão
+          cell.otbVal=0;            // OTB = 0 no realizado
+          cell.otbCartRealVal=val;  // OTB+Carteira = Carteira + OTB = CMV real
         });
       });
       if(typeof buildAvacyMatrix==='function') buildAvacyMatrix();
