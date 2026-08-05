@@ -12790,27 +12790,29 @@ async function saveBudgetCfg(btn){
   function computeFluxo(months){
     var C=cfg(), ent=C.entrada, sups=otbSups();
     var derivedLag=computeCmvLagPct();
-    var realBySup=(function(){
-      var out={};
-      if(typeof BUDGET_DESP_RAW==='undefined' || !BUDGET_DESP_RAW) return out;
+    // Dois mapas de CMV por fornecedor:
+    //  baixa: por ano_mes_baixa (pagamento efetivo); se não houver, ano_mes_venc  -> usado nos meses REALIZADOS
+    //  venc : por ano_mes_venc (contas a pagar / carteira)                        -> usado nos meses FUTUROS
+    var cmvMaps=(function(){
+      var baixa={}, venc={};
+      if(typeof BUDGET_DESP_RAW==='undefined' || !BUDGET_DESP_RAW) return {baixa:baixa, venc:venc};
       var map=(typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.otbCmvMap)?BUDGET_CFG.otbCmvMap:{};
+      var toYm=function(raw){ raw=String(raw||'').replace(/\D/g,''); var am=''; if(raw.length>=8) am=raw.slice(0,4)+raw.slice(4,6); else if(raw.length===6) am=raw; if(am.length!==6) return null; var y=parseInt(am.slice(0,4)); if(y<2015||y>2030) return null; return am.slice(0,4)+'-'+am.slice(4,6); };
       BUDGET_DESP_RAW.forEach(function(r){
         var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
         var hist=String(r.e2_hist||r.E2_HIST||'').trim();
         var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
         if(!c || String(c.tipo||'').toUpperCase()!=='CMV') return;
-        var _b=String(r.ano_mes_baixa||r.ANO_MES_BAIXA||'').replace(/\D/g,'');
-        var _v=String(r.ano_mes_venc||r.ANO_MES_VENC||'').replace(/\D/g,'');
-        var raw=(_b.length>=6?_b:_v);   // baixa (pagamento efetivo); se não houver, vencimento previsto
-        var am=''; if(raw.length>=8) am=raw.slice(0,4)+raw.slice(4,6); else if(raw.length===6) am=raw; if(am.length!==6) return;
-        var ano=parseInt(am.slice(0,4)); if(ano<2015||ano>2030) return;
-        var ym=am.slice(0,4)+'-'+am.slice(4,6);
         var sup=(typeof otbSupOf==='function')?otbSupOf(nomfor,map):(map[nomfor]||'DEMAIS');
         var val=parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0)||0;
-        out[sup]=out[sup]||{}; out[sup][ym]=(out[sup][ym]||0)+val;
+        var ymV=toYm(r.ano_mes_venc||r.ANO_MES_VENC);
+        var ymB=toYm(r.ano_mes_baixa||r.ANO_MES_BAIXA) || ymV;   // baixa-first, venc como fallback
+        if(ymV){ venc[sup]=venc[sup]||{}; venc[sup][ymV]=(venc[sup][ymV]||0)+val; }
+        if(ymB){ baixa[sup]=baixa[sup]||{}; baixa[sup][ymB]=(baixa[sup][ymB]||0)+val; }
       });
-      return out;
+      return {baixa:baixa, venc:venc};
     })();
+    var realBySup=cmvMaps.baixa, vencBySup=cmvMaps.venc;
     var idx={}; months.forEach(function(m,i){ idx[m]=i; });
     var entradas={}, despTot={}, cmv={}, cmvBySup={}, fcl={}, fclAcc={};
     var allSups=sups.concat(['__NAOMAP']);
@@ -12820,20 +12822,24 @@ async function saveBudgetCfg(btn){
       for(var d=0; d<4; d++){ var s=i-d; if(s<0) continue; e += rbMes(months[s]) * ((parseFloat(ent[d])||0)/100); }
       entradas[T]=e;
       despTot[T]=despTotMes(T);
-      // CMV por fornecedor: futuro = projeção (OTB×%) + venc lançado; realizado = venc lançado
+      // CMV por fornecedor: futuro = contas a pagar por VENCIMENTO (real); projeção OTB×% só onde não há título
       var totalCmv=0;
       allSups.forEach(function(sup){
         var v=0;
         if(isFut(T)){
-          if(sup!=='__NAOMAP'){
+          // Futuro: contas a pagar reais por VENCIMENTO têm precedência.
+          // Só projeta (OTB×%) quando o fornecedor ainda NÃO tem título vencendo no mês.
+          var venc=(vencBySup[sup]&&vencBySup[sup][T])||0;
+          if(venc>0){
+            v = venc;
+          } else if(sup!=='__NAOMAP'){
             var cc=C.cmv[sup]; var ccSum=cc?((+cc[0]||0)+(+cc[1]||0)+(+cc[2]||0)+(+cc[3]||0)):0;
             var p=(ccSum>0)?cc:(derivedLag[sup]||[100,0,0,0]);
-            for(var d2=0; d2<4; d2++){ var s2=i-d2; if(s2<0) continue; if(!isFut(months[s2])) continue;
+            for(var d2=0; d2<4; d2++){ var s2=i-d2; if(s2<0) continue;
               var m=(state.matrices&&state.matrices[sup])?state.matrices[sup][months[s2]]:null;
               v += (m?(m.otbCartRealVal||0):0) * ((parseFloat(p[d2])||0)/100);
             }
           }
-          v += (realBySup[sup]&&realBySup[sup][T])||0;
         } else {
           v = (realBySup[sup]&&realBySup[sup][T])||0;
         }
@@ -13057,28 +13063,27 @@ async function saveBudgetCfg(btn){
     var months=state.months.slice();
     var idx={}; months.forEach(function(m,i){ idx[m]=i; });
 
-    // CMV realizado por fornecedor por MÊS de pagamento (baixa; se não houver, vencimento)
-    var realBySup=(function(){
-      var out={};
-      if(typeof BUDGET_DESP_RAW==='undefined' || !BUDGET_DESP_RAW) return out;
+    // Dois mapas de CMV por fornecedor: baixa-first (meses realizados) e por vencimento (contas a pagar / meses futuros)
+    var cmvMaps=(function(){
+      var baixa={}, venc={};
+      if(typeof BUDGET_DESP_RAW==='undefined' || !BUDGET_DESP_RAW) return {baixa:baixa, venc:venc};
       var map=(typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.otbCmvMap)?BUDGET_CFG.otbCmvMap:{};
+      var toYm=function(raw){ raw=String(raw||'').replace(/\D/g,''); var am=''; if(raw.length>=8) am=raw.slice(0,4)+raw.slice(4,6); else if(raw.length===6) am=raw; if(am.length!==6) return null; var y=parseInt(am.slice(0,4)); if(y<2015||y>2030) return null; return am.slice(0,4)+'-'+am.slice(4,6); };
       BUDGET_DESP_RAW.forEach(function(r){
         var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
         var hist=String(r.e2_hist||r.E2_HIST||'').trim();
         var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
         if(!c || String(c.tipo||'').toUpperCase()!=='CMV') return;
-        var _b=String(r.ano_mes_baixa||r.ANO_MES_BAIXA||'').replace(/\D/g,'');
-        var _v=String(r.ano_mes_venc||r.ANO_MES_VENC||'').replace(/\D/g,'');
-        var raw=(_b.length>=6?_b:_v);
-        var am=''; if(raw.length>=8) am=raw.slice(0,4)+raw.slice(4,6); else if(raw.length===6) am=raw; if(am.length!==6) return;
-        var ano=parseInt(am.slice(0,4)); if(ano<2015||ano>2030) return;
-        var ym=am.slice(0,4)+'-'+am.slice(4,6);
         var sup=(typeof otbSupOf==='function')?otbSupOf(nomfor,map):(map[nomfor]||'DEMAIS');
         var val=parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0)||0;
-        out[sup]=out[sup]||{}; out[sup][ym]=(out[sup][ym]||0)+val;
+        var ymV=toYm(r.ano_mes_venc||r.ANO_MES_VENC);
+        var ymB=toYm(r.ano_mes_baixa||r.ANO_MES_BAIXA) || ymV;
+        if(ymV){ venc[sup]=venc[sup]||{}; venc[sup][ymV]=(venc[sup][ymV]||0)+val; }
+        if(ymB){ baixa[sup]=baixa[sup]||{}; baixa[sup][ymB]=(baixa[sup][ymB]||0)+val; }
       });
-      return out;
+      return {baixa:baixa, venc:venc};
     })();
+    var realBySup=cmvMaps.baixa, vencBySup=cmvMaps.venc;
     var otbVal=function(sup,ym){ var m=(state.matrices&&state.matrices[sup])?state.matrices[sup][ym]:null; return m?(m.otbCartRealVal||0):0; };
     var effPct=function(sup){ var cc=C.cmv[sup]; var s=cc?((+cc[0]||0)+(+cc[1]||0)+(+cc[2]||0)+(+cc[3]||0)):0; return (s>0)?cc:(derivedLag[sup]||[100,0,0,0]); };
 
@@ -13131,7 +13136,7 @@ async function saveBudgetCfg(btn){
 
       /* ===== BLOCO 2 — CMV aberto por fornecedor ===== */
       html+='<div style="height:20px"></div>'+sectionTitle('⬇️ CMV — aberto por fornecedor',
-        'Por fornecedor: OTB gerado no mês e o pagamento que cai em cada mês, decomposto pela origem do OTB conforme os % M / M+1 / M+2 / M+3. Meses futuros usam projeção (OTB × %); meses realizados usam o valor lançado (baixa/vencimento).');
+        'Por fornecedor: OTB gerado no mês e o pagamento por mês. Em meses futuros o Pagamento Total usa as CONTAS A PAGAR por vencimento (ano_mes_venc) — o valor real já lançado; a projeção OTB×% (M / M+1 / M+2 / M+3) só entra em meses sem título emitido. Em meses realizados usa o pagamento por baixa.');
 
       var otbTot={}, payTotAll={};
       months.forEach(function(m){ otbTot[m]=0; payTotAll[m]=0; });
@@ -13144,29 +13149,34 @@ async function saveBudgetCfg(btn){
       supList.forEach(function(sup){
         var isNm=(sup==='__NAOMAP');
         var p=isNm?[0,0,0,0]:effPct(sup);
-        var otbR={}, payFrom=[{},{},{},{}], realR={}, payTot={};
+        var otbR={}, payFrom=[{},{},{},{}], projTot={}, vencR={}, baixaR={}, payTot={};
         months.forEach(function(m){
           otbR[m]=isNm?0:otbVal(sup,m);
-          var i=idx[m];
+          var i=idx[m], pt=0;
           for(var d=0; d<4; d++){
             var s=i-d, val=0;
-            if(!isNm && isFut(m) && s>=0 && isFut(months[s])) val=otbVal(sup,months[s])*((parseFloat(p[d])||0)/100);
-            payFrom[d][m]=val;
+            // projeção do OTB de todos os meses de origem que caem neste mês futuro (referência)
+            if(!isNm && isFut(m) && s>=0) val=otbVal(sup,months[s])*((parseFloat(p[d])||0)/100);
+            payFrom[d][m]=val; pt+=val;
           }
-          realR[m]=(realBySup[sup]&&realBySup[sup][m])||0;
-          var pt=realR[m]; if(isFut(m)){ for(var d2=0; d2<4; d2++) pt+=payFrom[d2][m]; }
-          payTot[m]=pt;
-          otbTot[m]+=otbR[m]; payTotAll[m]+=pt;
+          projTot[m]=pt;
+          vencR[m]=(vencBySup[sup]&&vencBySup[sup][m])||0;      // contas a pagar por vencimento (real)
+          baixaR[m]=(realBySup[sup]&&realBySup[sup][m])||0;     // pagamento efetivo por baixa (realizado)
+          // Futuro: vencimento tem precedência; projeção só onde não há título. Realizado: baixa.
+          payTot[m]=isFut(m) ? (vencR[m]>0 ? vencR[m] : projTot[m]) : baixaR[m];
+          otbTot[m]+=otbR[m]; payTotAll[m]+=payTot[m];
         });
         var supRows=[];
         if(!isNm) supRows.push({label:'📦 OTB gerado no mês', data:otbR, bold:true, color:'#1a2547', bg:'#f4f7ff', lblColor:'#1a2547'});
+        supRows.push({label:'&nbsp;&nbsp;📌 Contas a pagar por vencimento (real)', data:vencR, color:'#c0181a', lblColor:'#c0181a', bg:'#fff3f3'});
+        supRows.push({label:'&nbsp;&nbsp;↳ Pago por baixa (realizado)', data:baixaR, color:'#8a95ad', lblColor:'#8a95ad'});
         if(!isNm){
-          supRows.push({label:'&nbsp;&nbsp;↳ Pagto de OTB do mês — M ('+(parseFloat(p[0])||0)+'%)', data:payFrom[0], color:'#c0181a', lblColor:'#8a95ad'});
-          supRows.push({label:'&nbsp;&nbsp;↳ Pagto de OTB de 1 mês atrás — M+1 ('+(parseFloat(p[1])||0)+'%)', data:payFrom[1], color:'#c0181a', lblColor:'#8a95ad'});
-          supRows.push({label:'&nbsp;&nbsp;↳ Pagto de OTB de 2 meses atrás — M+2 ('+(parseFloat(p[2])||0)+'%)', data:payFrom[2], color:'#c0181a', lblColor:'#8a95ad'});
-          supRows.push({label:'&nbsp;&nbsp;↳ Pagto de OTB de 3 meses atrás — M+3 ('+(parseFloat(p[3])||0)+'%)', data:payFrom[3], color:'#c0181a', lblColor:'#8a95ad'});
+          supRows.push({label:'&nbsp;&nbsp;· Projeção OTB×% — M ('+(parseFloat(p[0])||0)+'%)', data:payFrom[0], color:'#b9769a', lblColor:'#b0b8cc'});
+          supRows.push({label:'&nbsp;&nbsp;· Projeção OTB×% — M+1 ('+(parseFloat(p[1])||0)+'%)', data:payFrom[1], color:'#b9769a', lblColor:'#b0b8cc'});
+          supRows.push({label:'&nbsp;&nbsp;· Projeção OTB×% — M+2 ('+(parseFloat(p[2])||0)+'%)', data:payFrom[2], color:'#b9769a', lblColor:'#b0b8cc'});
+          supRows.push({label:'&nbsp;&nbsp;· Projeção OTB×% — M+3 ('+(parseFloat(p[3])||0)+'%)', data:payFrom[3], color:'#b9769a', lblColor:'#b0b8cc'});
+          supRows.push({label:'&nbsp;&nbsp;∑ Projeção completa (usada só sem título)', data:projTot, color:'#b9769a', lblColor:'#b9769a'});
         }
-        supRows.push({label:'&nbsp;&nbsp;↳ Realizado (lançado por baixa/venc.)', data:realR, color:'#c0181a', lblColor:'#8a95ad'});
         supRows.push({label:'⬇️ Pagamento CMV Total', data:payTot, bold:true, color:'#c0181a', bg:'#fdf3f3', lblColor:'#c0181a'});
         var titleSup=isNm?'NÃO MAPEADO':sup;
         html+='<div style="margin-top:14px">'+buildTable(disp, supRows, titleSup, '#8a1420')+'</div>';
