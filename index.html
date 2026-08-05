@@ -13063,11 +13063,21 @@ async function saveBudgetCfg(btn){
       '</div>';
     document.body.appendChild(ov);
     ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
+    // Cascata do "Padrão": ao mudar um % do padrão, os meses futuros que ainda herdavam o padrão
+    // antigo acompanham o novo valor (evita "congelar" a projeção do mês com o padrão anterior).
+    Array.prototype.forEach.call(ov.querySelectorAll('input[data-pct="entrada"], input[data-pct^="cmv:"]'), function(inp){ inp.setAttribute('data-prev', String(parseFloat(inp.value)||0)); });
+    function cascadePad(inp, futPrefix){
+      var d=parseInt(inp.getAttribute('data-d'),10), nv=(parseFloat(inp.value)||0), prev=parseFloat(inp.getAttribute('data-prev'))||0;
+      Array.prototype.forEach.call(ov.querySelectorAll('input[data-pct^="'+futPrefix+'"]'), function(f){ if(parseInt(f.getAttribute('data-d'),10)===d && (parseFloat(f.value)||0)===prev) f.value=nv; });
+      inp.setAttribute('data-prev', String(nv));
+    }
+    Array.prototype.forEach.call(ov.querySelectorAll('input[data-pct="entrada"]'), function(inp){ inp.addEventListener('input', function(){ cascadePad(inp, 'entm:'); }); });
+    sups.forEach(function(sup){ Array.prototype.forEach.call(ov.querySelectorAll('input[data-pct="cmv:'+sup+'"]'), function(inp){ inp.addEventListener('input', function(){ cascadePad(inp, 'cmvm:'+sup+':'); }); }); });
     // Aplica novo padrão a um fornecedor e faz cascata nos meses futuros que ainda "herdavam" o padrão antigo.
     function setPadrao(sup, arr){
       var oldPad=[0,0,0,0];
       Array.prototype.forEach.call(ov.querySelectorAll('input[data-pct="cmv:'+sup+'"]'), function(inp){ oldPad[parseInt(inp.getAttribute('data-d'),10)]=(parseFloat(inp.value)||0); });
-      Array.prototype.forEach.call(ov.querySelectorAll('input[data-pct="cmv:'+sup+'"]'), function(inp){ var d=parseInt(inp.getAttribute('data-d'),10); inp.value=(parseFloat(arr[d])||0); });
+      Array.prototype.forEach.call(ov.querySelectorAll('input[data-pct="cmv:'+sup+'"]'), function(inp){ var d=parseInt(inp.getAttribute('data-d'),10); inp.value=(parseFloat(arr[d])||0); inp.setAttribute('data-prev', String(parseFloat(arr[d])||0)); });
       // futuros iguais ao padrão antigo acompanham o novo (mantêm herança); os ajustados manualmente ficam
       Array.prototype.forEach.call(ov.querySelectorAll('input[data-pct^="cmvm:'+sup+':"]'), function(inp){ var d=parseInt(inp.getAttribute('data-d'),10); if((parseFloat(inp.value)||0)===oldPad[d]) inp.value=(parseFloat(arr[d])||0); });
     }
