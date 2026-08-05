@@ -12734,7 +12734,7 @@ async function saveBudgetCfg(btn){
       var hist=String(r.e2_hist||r.E2_HIST||'').trim();
       var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
       if(!c || String(c.tipo||'').toUpperCase()!=='CMV') return;
-      var em=m2i(r.ano_mes_emissao||r.ANO_MES_EMISSAO), vc=m2i(r.ano_mes_venc||r.ANO_MES_VENC);
+      var em=m2i(r.ano_mes_emissao||r.ANO_MES_EMISSAO), vc=m2i(r.ano_mes_baixa||r.ANO_MES_BAIXA)||m2i(r.ano_mes_venc||r.ANO_MES_VENC);
       if(em==null||vc==null) return;
       var lag=vc-em; if(lag<0) lag=0; if(lag>3) lag=3;
       var val=parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0)||0;
@@ -12762,7 +12762,7 @@ async function saveBudgetCfg(btn){
       var hist=String(r.e2_hist||r.E2_HIST||'').trim();
       var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
       if(!c||String(c.tipo||'').toUpperCase()!=='CMV') return;
-      var em=m2(r.ano_mes_emissao||r.ANO_MES_EMISSAO), vc=m2(r.ano_mes_venc||r.ANO_MES_VENC);
+      var em=m2(r.ano_mes_emissao||r.ANO_MES_EMISSAO), vc=m2(r.ano_mes_baixa||r.ANO_MES_BAIXA)||m2(r.ano_mes_venc||r.ANO_MES_VENC);
       if(!em||!vc) return;
       var lag=vc.idx-em.idx; if(lag<0) lag=0; if(lag>3) lag=3;
       var val=parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0)||0;
@@ -12799,7 +12799,9 @@ async function saveBudgetCfg(btn){
         var hist=String(r.e2_hist||r.E2_HIST||'').trim();
         var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
         if(!c || String(c.tipo||'').toUpperCase()!=='CMV') return;
-        var raw=String(r.ano_mes_venc||r.ANO_MES_VENC||'').replace(/\D/g,'');
+        var _b=String(r.ano_mes_baixa||r.ANO_MES_BAIXA||'').replace(/\D/g,'');
+        var _v=String(r.ano_mes_venc||r.ANO_MES_VENC||'').replace(/\D/g,'');
+        var raw=(_b.length>=6?_b:_v);   // baixa (pagamento efetivo); se não houver, vencimento previsto
         var am=''; if(raw.length>=8) am=raw.slice(0,4)+raw.slice(4,6); else if(raw.length===6) am=raw; if(am.length!==6) return;
         var ano=parseInt(am.slice(0,4)); if(ano<2015||ano>2030) return;
         var ym=am.slice(0,4)+'-'+am.slice(4,6);
