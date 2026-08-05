@@ -12822,24 +12822,23 @@ async function saveBudgetCfg(btn){
       for(var d=0; d<4; d++){ var s=i-d; if(s<0) continue; e += rbMes(months[s]) * ((parseFloat(ent[d])||0)/100); }
       entradas[T]=e;
       despTot[T]=despTotMes(T);
-      // CMV por fornecedor: futuro = contas a pagar por VENCIMENTO (real); projeção OTB×% só onde não há título
+      // CMV por fornecedor: futuro = MAIOR entre contas a pagar por VENCIMENTO (real) e projeção OTB×% completa
       var totalCmv=0;
       allSups.forEach(function(sup){
         var v=0;
         if(isFut(T)){
-          // Futuro: contas a pagar reais por VENCIMENTO têm precedência.
-          // Só projeta (OTB×%) quando o fornecedor ainda NÃO tem título vencendo no mês.
+          // Futuro: maior entre a carteira real (por ano_mes_venc) e a projeção OTB×% completa.
           var venc=(vencBySup[sup]&&vencBySup[sup][T])||0;
-          if(venc>0){
-            v = venc;
-          } else if(sup!=='__NAOMAP'){
+          var proj=0;
+          if(sup!=='__NAOMAP'){
             var cc=C.cmv[sup]; var ccSum=cc?((+cc[0]||0)+(+cc[1]||0)+(+cc[2]||0)+(+cc[3]||0)):0;
             var p=(ccSum>0)?cc:(derivedLag[sup]||[100,0,0,0]);
             for(var d2=0; d2<4; d2++){ var s2=i-d2; if(s2<0) continue;
               var m=(state.matrices&&state.matrices[sup])?state.matrices[sup][months[s2]]:null;
-              v += (m?(m.otbCartRealVal||0):0) * ((parseFloat(p[d2])||0)/100);
+              proj += (m?(m.otbCartRealVal||0):0) * ((parseFloat(p[d2])||0)/100);
             }
           }
+          v = Math.max(venc, proj);
         } else {
           v = (realBySup[sup]&&realBySup[sup][T])||0;
         }
@@ -13136,7 +13135,7 @@ async function saveBudgetCfg(btn){
 
       /* ===== BLOCO 2 — CMV aberto por fornecedor ===== */
       html+='<div style="height:20px"></div>'+sectionTitle('⬇️ CMV — aberto por fornecedor',
-        'Por fornecedor: OTB gerado no mês e o pagamento por mês. Em meses futuros o Pagamento Total usa as CONTAS A PAGAR por vencimento (ano_mes_venc) — o valor real já lançado; a projeção OTB×% (M / M+1 / M+2 / M+3) só entra em meses sem título emitido. Em meses realizados usa o pagamento por baixa.');
+        'Por fornecedor: OTB gerado no mês e o pagamento por mês. Em meses futuros o Pagamento Total é o MAIOR entre as contas a pagar por vencimento (ano_mes_venc, valor real já lançado) e a projeção OTB×% completa (M / M+1 / M+2 / M+3) — assim, onde os títulos ainda estão parcialmente emitidos, prevalece a projeção mais completa. Em meses realizados usa o pagamento por baixa.');
 
       var otbTot={}, payTotAll={};
       months.forEach(function(m){ otbTot[m]=0; payTotAll[m]=0; });
@@ -13162,8 +13161,8 @@ async function saveBudgetCfg(btn){
           projTot[m]=pt;
           vencR[m]=(vencBySup[sup]&&vencBySup[sup][m])||0;      // contas a pagar por vencimento (real)
           baixaR[m]=(realBySup[sup]&&realBySup[sup][m])||0;     // pagamento efetivo por baixa (realizado)
-          // Futuro: vencimento tem precedência; projeção só onde não há título. Realizado: baixa.
-          payTot[m]=isFut(m) ? (vencR[m]>0 ? vencR[m] : projTot[m]) : baixaR[m];
+          // Futuro: maior entre vencimento (real) e projeção completa. Realizado: baixa.
+          payTot[m]=isFut(m) ? Math.max(vencR[m], projTot[m]) : baixaR[m];
           otbTot[m]+=otbR[m]; payTotAll[m]+=payTot[m];
         });
         var supRows=[];
@@ -13175,9 +13174,9 @@ async function saveBudgetCfg(btn){
           supRows.push({label:'&nbsp;&nbsp;· Projeção OTB×% — M+1 ('+(parseFloat(p[1])||0)+'%)', data:payFrom[1], color:'#b9769a', lblColor:'#b0b8cc'});
           supRows.push({label:'&nbsp;&nbsp;· Projeção OTB×% — M+2 ('+(parseFloat(p[2])||0)+'%)', data:payFrom[2], color:'#b9769a', lblColor:'#b0b8cc'});
           supRows.push({label:'&nbsp;&nbsp;· Projeção OTB×% — M+3 ('+(parseFloat(p[3])||0)+'%)', data:payFrom[3], color:'#b9769a', lblColor:'#b0b8cc'});
-          supRows.push({label:'&nbsp;&nbsp;∑ Projeção completa (usada só sem título)', data:projTot, color:'#b9769a', lblColor:'#b9769a'});
+          supRows.push({label:'&nbsp;&nbsp;∑ Projeção completa', data:projTot, color:'#b9769a', lblColor:'#b9769a'});
         }
-        supRows.push({label:'⬇️ Pagamento CMV Total', data:payTot, bold:true, color:'#c0181a', bg:'#fdf3f3', lblColor:'#c0181a'});
+        supRows.push({label:'⬇️ Pagamento CMV Total (maior: vencimento × projeção)', data:payTot, bold:true, color:'#c0181a', bg:'#fdf3f3', lblColor:'#c0181a'});
         var titleSup=isNm?'NÃO MAPEADO':sup;
         html+='<div style="margin-top:14px">'+buildTable(disp, supRows, titleSup, '#8a1420')+'</div>';
       });
