@@ -13042,6 +13042,7 @@ async function saveBudgetCfg(btn){
       +'<div style="overflow:auto;border:1px solid #f0f2f8;border-radius:6px"><table style="border-collapse:collapse;font-size:11px;min-width:100%"><thead><tr style="background:#f4fbf6">'+entHead+'</tr></thead><tbody>'+entBody+'</tbody></table></div>'
       +'<div style="font-size:10px;color:#9aa6c0;margin-top:4px">Verde = % editável. "Padrão" vale para meses de venda futuros sem ajuste próprio; as colunas dos meses futuros permitem <b>projetar o recebimento por mês de venda</b> (o % incide sobre a Receita Bruta daquele mês).</div></div>';
 
+    var ov=document.createElement('div'); ov.id='fluxoCfgOverlay';
     ov.style.cssText='position:fixed;inset:0;background:rgba(15,26,58,.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:3vh 2vw';
     ov.innerHTML=
       '<div style="background:#fff;border-radius:14px;width:min(1680px,98vw);max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden">'+
