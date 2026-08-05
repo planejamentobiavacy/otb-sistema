@@ -12677,6 +12677,7 @@ async function saveBudgetCfg(btn){
     if(typeof BUDGET_CFG==='undefined') return {entrada:[100,0,0,0], cmv:{}};
     if(!BUDGET_CFG.fluxoCfg) BUDGET_CFG.fluxoCfg = {entrada:[100,0,0,0], cmv:{}};
     if(!BUDGET_CFG.fluxoCfg.entrada) BUDGET_CFG.fluxoCfg.entrada=[100,0,0,0];
+    if(!BUDGET_CFG.fluxoCfg.entradaByMonth) BUDGET_CFG.fluxoCfg.entradaByMonth={};
     if(!BUDGET_CFG.fluxoCfg.cmv) BUDGET_CFG.fluxoCfg.cmv={};
     if(!BUDGET_CFG.fluxoCfg.cmvByMonth) BUDGET_CFG.fluxoCfg.cmvByMonth={};
     if(!BUDGET_CFG.fluxoCfg.fclManual) BUDGET_CFG.fluxoCfg.fclManual={};
@@ -12798,6 +12799,15 @@ async function saveBudgetCfg(btn){
   }
   window.cmvVecFor=cmvVecFor;
 
+  // Vetor de recebimento (M/M+1/M+2/M+3) das ENTRADAS para as vendas de um mês.
+  // Prioridade: override por mês (entradaByMonth) > padrão (entrada).
+  function entVecFor(C, ym){
+    var bm=(C.entradaByMonth)?C.entradaByMonth[ym]:null;
+    if(bm){ var s=(+bm[0]||0)+(+bm[1]||0)+(+bm[2]||0)+(+bm[3]||0); if(s>0) return bm; }
+    return C.entrada||[100,0,0,0];
+  }
+  window.entVecFor=entVecFor;
+
   function computeFluxo(months){
     var C=cfg(), ent=C.entrada, sups=otbSups();
     var derivedLag=computeCmvLagPct();
@@ -12830,7 +12840,8 @@ async function saveBudgetCfg(btn){
     allSups.forEach(function(sup){ cmvBySup[sup]={}; });
     months.forEach(function(T,i){
       var e=0;
-      for(var d=0; d<4; d++){ var s=i-d; if(s<0) continue; e += rbMes(months[s]) * ((parseFloat(ent[d])||0)/100); }
+      // recebimento em T = soma, por lag d, da RB do mês de venda (T-d) × % do vetor DAQUELE mês de venda
+      for(var d=0; d<4; d++){ var s=i-d; if(s<0) continue; var ev=entVecFor(C, months[s]); e += rbMes(months[s]) * ((parseFloat(ev[d])||0)/100); }
       entradas[T]=e;
       despTot[T]=despTotMes(T);
       // CMV por fornecedor: futuro = MAIOR entre contas a pagar por VENCIMENTO (real) e projeção OTB×% completa
@@ -13013,15 +13024,32 @@ async function saveBudgetCfg(btn){
         +'<div style="font-size:10px;color:#9aa6c0;margin-top:4px">Azul = projeção editável por mês futuro (usa o OTB daquele mês). Cinza = lag realizado do histórico (referência). "Padrão" vale para meses futuros sem ajuste próprio.</div></div>';
     }).join('');
 
-    var ov=document.createElement('div'); ov.id='fluxoCfgOverlay';
+    // ===== Tabela de ENTRADAS transposta (colunas = meses, linhas = M/M+1/M+2/M+3) =====
+    var entByM=(C.entradaByMonth)?C.entradaByMonth:{};
+    var entEffForMonth=function(ym){ var bm=entByM[ym]; if(bm){ var s=(+bm[0]||0)+(+bm[1]||0)+(+bm[2]||0)+(+bm[3]||0); if(s>0) return bm; } return C.entrada||[100,0,0,0]; };
+    var entHead='<th style="padding:5px 8px;text-align:left;color:#9aa6c0;position:sticky;left:0;background:#f4fbf6;z-index:3;white-space:nowrap">Lag \\ Mês</th>'+
+      '<th style="padding:5px 8px;color:#0a7c4e;text-align:center;background:#eafaf1;white-space:nowrap;border-right:2px solid #bfe6cf">Padrão</th>'+
+      futMonths.map(function(ym){ return '<th style="padding:5px 6px;color:#0a7c4e;text-align:center;background:#eafaf1;white-space:nowrap">'+mlbl(ym)+'</th>'; }).join('');
+    var entBody=[0,1,2,3].map(function(d){
+      var rl='<td style="padding:3px 8px;font-weight:800;color:#33405c;position:sticky;left:0;background:#fff;z-index:2;white-space:nowrap">'+LAGL[d]+'</td>';
+      var padCell='<td style="padding:3px 4px;text-align:center;background:#eafaf1;border-right:2px solid #bfe6cf"><input type="number" step="1" data-pct="entrada" data-d="'+d+'" value="'+(parseFloat((C.entrada||[100,0,0,0])[d])||0)+'" style="width:52px;padding:4px 3px;border:1.5px solid #0a7c4e;border-radius:6px;font-size:12px;text-align:center;background:#fff;font-weight:700"></td>';
+      var futCells=futMonths.map(function(ym){ var ev=entEffForMonth(ym); return '<td style="padding:3px 4px;text-align:center;background:#f4fbf6"><input type="number" step="1" data-pct="entm:'+ym+'" data-d="'+d+'" value="'+(parseFloat(ev[d])||0)+'" style="width:52px;padding:4px 3px;border:1px solid #a9d8bd;border-radius:6px;font-size:12px;text-align:center"></td>'; }).join('');
+      return '<tr>'+rl+padCell+futCells+'</tr>';
+    }).join('');
+    var entradaTable='<div style="border:1px solid #eef1f8;border-radius:8px;padding:8px 10px;margin-bottom:8px">'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:12px">Recebimento da Receita Bruta</b>'
+      +'<button type="button" id="entAplicaFut" style="margin-left:auto;padding:3px 10px;border:1px solid #0a7c4e;background:#eafaf1;color:#0a7c4e;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700">↦ aplicar padrão aos meses futuros</button></div>'
+      +'<div style="overflow:auto;border:1px solid #f0f2f8;border-radius:6px"><table style="border-collapse:collapse;font-size:11px;min-width:100%"><thead><tr style="background:#f4fbf6">'+entHead+'</tr></thead><tbody>'+entBody+'</tbody></table></div>'
+      +'<div style="font-size:10px;color:#9aa6c0;margin-top:4px">Verde = % editável. "Padrão" vale para meses de venda futuros sem ajuste próprio; as colunas dos meses futuros permitem <b>projetar o recebimento por mês de venda</b> (o % incide sobre a Receita Bruta daquele mês).</div></div>';
+
     ov.style.cssText='position:fixed;inset:0;background:rgba(15,26,58,.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:3vh 2vw';
     ov.innerHTML=
       '<div style="background:#fff;border-radius:14px;width:min(1680px,98vw);max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden">'+
         '<div style="background:linear-gradient(90deg,#0a3d2e,#0a7c4e);color:#fff;padding:14px 20px;font-size:16px;font-weight:800">⚙️ Configurações do Fluxo de Caixa</div>'+
         '<div style="flex:1;overflow:auto;padding:16px 20px">'+
           '<div style="font-size:13px;font-weight:800;color:#0a7c4e;margin-bottom:6px">Entradas — % de recebimento da Receita Bruta</div>'+
-          '<div style="font-size:11px;color:#7a8ab0;margin-bottom:8px">Distribuição do mês da venda (M) e dos 3 seguintes.</div>'+
-          '<div style="margin-bottom:6px"><span style="font-size:11px;color:#5a6a8a;display:inline-block;width:auto">M / M+1 / M+2 / M+3: </span>'+pctInputs('entrada', C.entrada)+'</div>'+
+          '<div style="font-size:11px;color:#7a8ab0;margin-bottom:8px">Colunas = meses, linhas = M / M+1 / M+2 / M+3. A coluna <b>Padrão</b> vale para todo mês de venda futuro sem ajuste; as colunas verdes permitem <b>projetar o recebimento por mês</b>.</div>'+
+          entradaTable+
           '<hr style="border:none;border-top:1px solid #eef1f8;margin:16px 0">'+
           '<div style="font-size:13px;font-weight:800;color:#c0181a;margin-bottom:6px">CMV — % de pagamento por fornecedor OTB</div>'+
           '<div style="font-size:11px;color:#7a8ab0;margin-bottom:8px">Colunas = meses, linhas = M / M+1 / M+2 / M+3. A coluna <b>Padrão</b> vale para todo mês futuro sem ajuste; as colunas azuis permitem <b>projetar por mês</b> (o % incide sobre o OTB daquele mês). Colunas cinza = lag realizado (histórico, referência). <button type="button" id="fluxoRecalcCmv" style="margin-left:6px;padding:3px 10px;border:1px solid #0a7c4e;background:#eafaf1;color:#0a7c4e;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700">📊 Recalcular padrão do histórico (geral)</button> <button type="button" id="fluxoM3Todos" style="padding:3px 10px;border:1px solid #2352c8;background:#eef3ff;color:#2352c8;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700">📊 Replicar média 3M no padrão (todos)</button></div>'+
@@ -13065,14 +13093,28 @@ async function saveBudgetCfg(btn){
       sups.forEach(function(sup){ setPadrao(sup, computeCmvLag3M(sup)); });
       if(typeof toast==='function') toast('Padrão do CMV = média dos últimos 3 meses.','ok');
     };
+    var _entFut=document.getElementById('entAplicaFut');
+    if(_entFut) _entFut.onclick=function(){
+      var pad=[0,0,0,0];
+      Array.prototype.forEach.call(ov.querySelectorAll('input[data-pct="entrada"]'), function(inp){ pad[parseInt(inp.getAttribute('data-d'),10)]=(parseFloat(inp.value)||0); });
+      Array.prototype.forEach.call(ov.querySelectorAll('input[data-pct^="entm:"]'), function(inp){ inp.value=pad[parseInt(inp.getAttribute('data-d'),10)]; });
+      if(typeof toast==='function') toast('Padrão de recebimento aplicado a todos os meses futuros.','ok');
+    };
     document.getElementById('fluxoCfgSave').onclick=function(){
       var C2=cfg();
-      var ent=[0,0,0,0]; var cmvM={}; var byMonthRaw={};
+      var ent=[0,0,0,0]; var cmvM={}; var byMonthRaw={}; var entByMonthRaw={};
       Array.prototype.forEach.call(ov.querySelectorAll('input[data-pct]'), function(inp){
         var id=inp.getAttribute('data-pct'), d=parseInt(inp.getAttribute('data-d'),10), val=parseFloat(inp.value)||0;
         if(id==='entrada'){ ent[d]=val; }
+        else if(id.indexOf('entm:')===0){ var eym=id.slice(5); entByMonthRaw[eym]=entByMonthRaw[eym]||[0,0,0,0]; entByMonthRaw[eym][d]=val; }
         else if(id.indexOf('cmvm:')===0){ var rest=id.slice(5); var ci=rest.indexOf(':'); var sup=rest.slice(0,ci); var ym=rest.slice(ci+1); byMonthRaw[sup]=byMonthRaw[sup]||{}; byMonthRaw[sup][ym]=byMonthRaw[sup][ym]||[0,0,0,0]; byMonthRaw[sup][ym][d]=val; }
         else if(id.indexOf('cmv:')===0){ var sup2=id.slice(4); if(!cmvM[sup2]) cmvM[sup2]=[0,0,0,0]; cmvM[sup2][d]=val; }
+      });
+      // entradas: guarda override por mês só quando difere do padrão
+      var entByMonthM={};
+      Object.keys(entByMonthRaw).forEach(function(ym){
+        var a=entByMonthRaw[ym];
+        if(a[0]!==ent[0]||a[1]!==ent[1]||a[2]!==ent[2]||a[3]!==ent[3]) entByMonthM[ym]=a;
       });
       // guarda override por mês só quando difere do padrão do fornecedor (senão herda o padrão)
       var cmvByMonthM={};
@@ -13084,7 +13126,7 @@ async function saveBudgetCfg(btn){
           if(diff){ cmvByMonthM[sup]=cmvByMonthM[sup]||{}; cmvByMonthM[sup][ym]=a; }
         });
       });
-      C2.entrada=ent; C2.cmv=cmvM; C2.cmvByMonth=cmvByMonthM;
+      C2.entrada=ent; C2.entradaByMonth=entByMonthM; C2.cmv=cmvM; C2.cmvByMonth=cmvByMonthM;
       BUDGET_CFG.fluxoCfg=C2;
       ov.remove();
       if(typeof handleSaveAll==='function'){ try{ handleSaveAll(document.createElement('button')); }catch(e){} }
@@ -13163,15 +13205,15 @@ async function saveBudgetCfg(btn){
       months.forEach(function(m){ fb[m]=rbMes(m); });
       months.forEach(function(m){
         var i=idx[m], tot=0;
-        for(var d=0; d<4; d++){ var s=i-d; var val=(s>=0)?(rbMes(months[s])*((parseFloat(ent[d])||0)/100)):0; recFrom[d][m]=val; tot+=val; }
+        for(var d=0; d<4; d++){ var s=i-d; var ev=(s>=0)?entVecFor(C, months[s]):[0,0,0,0]; var val=(s>=0)?(rbMes(months[s])*((parseFloat(ev[d])||0)/100)):0; recFrom[d][m]=val; tot+=val; }
         recTot[m]=tot;
       });
       var recRows=[
         {label:'💵 Faturamento Bruto Total', data:fb, bold:true, color:'#0a7c4e', bg:'#f2fbf6', lblColor:'#0a7c4e'},
-        {label:'&nbsp;&nbsp;↳ Recebido de vendas do mês — M ('+(parseFloat(ent[0])||0)+'%)', data:recFrom[0], lblColor:'#5a6a8a'},
-        {label:'&nbsp;&nbsp;↳ Recebido de vendas de 1 mês atrás — M+1 ('+(parseFloat(ent[1])||0)+'%)', data:recFrom[1], lblColor:'#5a6a8a'},
-        {label:'&nbsp;&nbsp;↳ Recebido de vendas de 2 meses atrás — M+2 ('+(parseFloat(ent[2])||0)+'%)', data:recFrom[2], lblColor:'#5a6a8a'},
-        {label:'&nbsp;&nbsp;↳ Recebido de vendas de 3 meses atrás — M+3 ('+(parseFloat(ent[3])||0)+'%)', data:recFrom[3], lblColor:'#5a6a8a'},
+        {label:'&nbsp;&nbsp;↳ Recebido de vendas do mês — M (padrão '+(parseFloat(ent[0])||0)+'%)', data:recFrom[0], lblColor:'#5a6a8a'},
+        {label:'&nbsp;&nbsp;↳ Recebido de vendas de 1 mês atrás — M+1 (padrão '+(parseFloat(ent[1])||0)+'%)', data:recFrom[1], lblColor:'#5a6a8a'},
+        {label:'&nbsp;&nbsp;↳ Recebido de vendas de 2 meses atrás — M+2 (padrão '+(parseFloat(ent[2])||0)+'%)', data:recFrom[2], lblColor:'#5a6a8a'},
+        {label:'&nbsp;&nbsp;↳ Recebido de vendas de 3 meses atrás — M+3 (padrão '+(parseFloat(ent[3])||0)+'%)', data:recFrom[3], lblColor:'#5a6a8a'},
         {label:'⬆️ Recebimento Total (Entradas)', data:recTot, bold:true, color:'#0a7c4e', bg:'#eafaf1', lblColor:'#0a7c4e'}
       ];
       var html=sectionTitle('⬆️ Faturamento Bruto e Recebimento',
