@@ -666,6 +666,7 @@ var TBLS = (function(){
     stk:       localStorage.getItem('otb_tbl_stk')       || 'dw_otb_stk',
     venda:     localStorage.getItem('otb_tbl_venda')     || 'dw_otb_venda',
     carteira:  localStorage.getItem('otb_tbl_carteira')  || 'otb_carteira',
+    receb:     localStorage.getItem('otb_tbl_receb')     || 'dw_otb_receb',
     produto:   localStorage.getItem('otb_tbl_produto')   || 'otb_produto',
     venda_dre: localStorage.getItem('otb_tbl_venda_dre') || 'dw_otb_venda_dre',
     frete_dre: localStorage.getItem('otb_tbl_frete_dre') || 'dw_otb_frete_dre',
@@ -692,6 +693,10 @@ var COLS = {
   // otb_carteira: ano_mes, qtd, valor (cod_produto removido — não é usado no consumo,
   // só causava erro 42703 ao pedir uma coluna que não existe mais na tabela)
   carteira: ['ano_mes','qtd','valor'],
+
+  // dw_otb_receb: recebimento REAL de mercadoria por mês/fornecedor (preenche Carteira dos meses realizados)
+  // select=* (tabela pequena) — o agregador aceita aliases de coluna (fornecedor/FORNECEDOR, qtd/pares, valor)
+  receb: null,
 
   // otb_produto: cod_produto, fornecedor, categoria
   produto: ['grade','fornecedor','categoria'],
@@ -2317,6 +2322,7 @@ function _loadOtbRawTablesBackground(){
   var tasks = [];
   var counter = { done: 0, total: 0 };
   if(!state.cart  || !state.cart.length)  { counter.total++; tasks.push({ table: TBLS.carteira, hint: 'carteira', assign: function(r){ state.cart = r; } }); }
+  if(!state.receb || !state.receb.length) { counter.total++; tasks.push({ table: TBLS.receb,    hint: 'receb',    assign: function(r){ state.receb = r; } }); }
   if(!state.venda || !state.venda.length) { counter.total++; tasks.push({ table: TBLS.venda,    hint: 'venda',    assign: function(r){ state.venda = r; } }); }
   if(!state.stk   || !state.stk.length)   { counter.total++; tasks.push({ table: TBLS.stk,      hint: 'stk',      assign: function(r){ state.stk = r; } }); }
   if(!tasks.length){ _maybeRerender(); return; }
@@ -2334,6 +2340,7 @@ async function reloadAllOtbTables(){
     state.stk   = await fetchAll(TBLS.stk,      null, 'stk');
     state.venda  = await fetchAll(TBLS.venda,    null, 'venda');
     state.cart   = await fetchAll(TBLS.carteira, null, 'carteira');
+    try{ state.receb = await fetchAll(TBLS.receb, null, 'receb'); }catch(e){ state.receb = state.receb||[]; console.warn('[OTB] '+TBLS.receb+' indisponível:', e.message); }
     state.prod   = await fetchAll(TBLS.produto,  null, 'produto');
     updateOtbStatus();
     var otbMain = document.getElementById('otbMain');
@@ -2529,6 +2536,7 @@ async function handleReloadAll(btn){
     {label:'Recarregando Estoque...', fn: async function(){ state.stk = await fetchAll(TBLS.stk, null, 'stk', _onProg(TBLS.stk)); var s=document.getElementById('cfg_status_stk'); if(s) s.textContent=state.stk.length+' linhas'; }},
     {label:'Recarregando Vendas...', fn: async function(){ state.venda = await fetchAll(TBLS.venda, null, 'venda', _onProg(TBLS.venda)); var s=document.getElementById('cfg_status_venda'); if(s) s.textContent=state.venda.length+' linhas'; }},
     {label:'Recarregando Carteira...', fn: async function(){ state.cart = await fetchAll(TBLS.carteira, null, 'carteira', _onProg(TBLS.carteira)); var s=document.getElementById('cfg_status_carteira'); if(s) s.textContent=state.cart.length+' linhas'; }},
+    {label:'Recarregando Recebimento...', fn: async function(){ try{ state.receb = await fetchAll(TBLS.receb, null, 'receb', _onProg(TBLS.receb)); }catch(e){ state.receb = state.receb||[]; } var s=document.getElementById('cfg_status_receb'); if(s) s.textContent=(state.receb?state.receb.length:0)+' linhas'; }},
     {label:'Recarregando DRE...', fn: async function(){ DRE_RAW = await fetchAll(TBLS.venda_dre, null, 'venda_dre', _onProg(TBLS.venda_dre)); DRE_LOADED = DRE_RAW.length > 0; }},
     {label:'Recarregando Folha...', fn: async function(){ FOLHA_RAW = await fetchAll(TBLS.folha, null, null, _onProg(TBLS.folha)); FOLHA_LOADED = FOLHA_RAW.length > 0; }},
   ];
@@ -3098,6 +3106,21 @@ function processAll(){
   // Diagnóstico: mostra o que o stkAgg tem para março
   var vendaAgg=aggregate(vendaDedup,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['faturamento','FATURAMENTO','VALOR']},'venda');
   var cartAgg=aggregate(state.cart,{date:['ano_mes','ANO_MES'],qty:['qtd','QTD','QUANTIDADE'],val:['valor','VALOR','VL_CARTEIRA']},'cart');
+  // Recebimento REAL por fornecedor/mês (dw_otb_receb). Atribui direto pelo nome do fornecedor
+  // (não usa grade). Preenche a Carteira dos meses realizados. Vazio/ausente => sem efeito.
+  var recebAgg=(function(){
+    var out={}, rows=state.receb||[];
+    rows.forEach(function(r){
+      var ym=monthFromDate(r.ano_mes||r.ANO_MES); if(!ym) return;
+      var forn=r.fornecedor||r.FORNECEDOR||r.e2_nomfor||r.E2_NOMFOR||r.nomfor||'';
+      var sup=supplierFromFornecedor(String(forn));
+      var q=parseNum(r.qtd||r.QTD||r.qtde||r.QTDE||r.pares||r.PARES||0);
+      var v=parseNum(r.valor||r.VALOR||r.vl||r.VL||0);
+      out[sup]=out[sup]||{}; out[sup][ym]=out[sup][ym]||{qty:0,val:0};
+      out[sup][ym].qty+=q; out[sup][ym].val+=v;
+    });
+    return out;
+  })();
   var minYm='2024-01',maxYm='2027-03',months=[],ym=minYm; // inclui jan-mar/27 para cobertura futura
   while(ym<=maxYm){months.push(ym);ym=ymNext(ym);}
   state.months=months;
@@ -3141,7 +3164,12 @@ function processAll(){
     });
     months.forEach(function(ym,i){
       var prev=i>0?m[months[i-1]]:null,cell=m[ym],isPast=ym<state.currentMonth;
-      if(isPast){ if(prev){cell.cartQty=cell.stkQty+cell.vendaQty-prev.stkQty;cell.cartVal=cell.stkVal+cell.vendaVal-prev.stkVal;}else{cell.cartQty=cell.cartFileQty;cell.cartVal=cell.cartFileVal;}}
+      if(isPast){
+        var rc=recebAgg[sup]&&recebAgg[sup][ym];
+        if(rc && (rc.qty||rc.val)){ cell.cartQty=rc.qty; cell.cartVal=rc.val; }              // recebimento REAL (dw_otb_receb)
+        else if(prev){ cell.cartQty=cell.stkQty+cell.vendaQty-prev.stkQty; cell.cartVal=cell.stkVal+cell.vendaVal-prev.stkVal; }  // fallback: identidade de estoque
+        else { cell.cartQty=cell.cartFileQty; cell.cartVal=cell.cartFileVal; }
+      }
       else{cell.cartQty=cell.cartFileQty;cell.cartVal=cell.cartFileVal;}
       cell.precoVenda=cell.vendaQty>0?cell.vendaVal/cell.vendaQty:0;
       cell.precoCart=cell.cartQty>0?Math.abs(cell.cartVal)/Math.abs(cell.cartQty):0;
