@@ -12904,7 +12904,7 @@ async function saveBudgetCfg(btn){
             '<a onclick="openFolha()">Folha</a>'+
           '</nav>'+
         '</div>'+
-        '<div style="margin-left:auto;display:flex;gap:8px;align-items:center"><button class="btn" onclick="if(typeof openFluxoConfig===\'function\')openFluxoConfig()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button><button class="btn save" onclick="if(typeof handleSaveAll===\'function\')handleSaveAll(this)">💾 Salvar</button></div>'+
+        '<div style="margin-left:auto;display:flex;gap:8px;align-items:center"><button class="btn" onclick="if(typeof openFluxoCalculo===\'function\')openFluxoCalculo()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">📊 Cálculo</button><button class="btn" onclick="if(typeof openFluxoConfig===\'function\')openFluxoConfig()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Configurações</button><button class="btn save" onclick="if(typeof handleSaveAll===\'function\')handleSaveAll(this)">💾 Salvar</button></div>'+
       '</header>'+
       '<div id="fluxoScreenBody" style="flex:1;overflow:auto;padding:16px 20px"></div>';
     document.body.appendChild(el);
@@ -13041,6 +13041,162 @@ async function saveBudgetCfg(btn){
       if(typeof renderFluxoScreen==='function' && document.getElementById('screenFluxo') && document.getElementById('screenFluxo').classList.contains('screen-active')){ renderFluxoScreen(); }
       if(typeof toast==='function') toast('Configurações do Fluxo salvas.','ok');
     };
+  };
+
+  /* ============================================================
+     CÁLCULO — detalhamento mês a mês
+       • Faturamento Bruto Total + Recebimento por mês (% M, M+1, M+2, M+3)
+       • CMV aberto por fornecedor: OTB + pagamentos por mês (% M..M+3)
+     ============================================================ */
+  window.openFluxoCalculo=function(){
+    if(typeof state==='undefined' || !state.months || !state.months.length){ if(typeof toast==='function') toast('Carregue os dados (OTB) primeiro.','err'); return; }
+    if(!ensureBudgetComputed() && typeof toast==='function'){ toast('Abra o Budget uma vez para carregar as Despesas Totais.','err'); }
+    var old=document.getElementById('fluxoCalcOverlay'); if(old) old.remove();
+
+    var C=cfg(), ent=C.entrada, sups=otbSups(), derivedLag=computeCmvLagPct();
+    var months=state.months.slice();
+    var idx={}; months.forEach(function(m,i){ idx[m]=i; });
+
+    // CMV realizado por fornecedor por MÊS de pagamento (baixa; se não houver, vencimento)
+    var realBySup=(function(){
+      var out={};
+      if(typeof BUDGET_DESP_RAW==='undefined' || !BUDGET_DESP_RAW) return out;
+      var map=(typeof BUDGET_CFG!=='undefined' && BUDGET_CFG.otbCmvMap)?BUDGET_CFG.otbCmvMap:{};
+      BUDGET_DESP_RAW.forEach(function(r){
+        var nomfor=String(r.e2_nomfor||r.E2_NOMFOR||'').trim(); if(!nomfor) return;
+        var hist=String(r.e2_hist||r.E2_HIST||'').trim();
+        var c=(typeof getBudgetClassif==='function')?getBudgetClassif(nomfor,hist):null;
+        if(!c || String(c.tipo||'').toUpperCase()!=='CMV') return;
+        var _b=String(r.ano_mes_baixa||r.ANO_MES_BAIXA||'').replace(/\D/g,'');
+        var _v=String(r.ano_mes_venc||r.ANO_MES_VENC||'').replace(/\D/g,'');
+        var raw=(_b.length>=6?_b:_v);
+        var am=''; if(raw.length>=8) am=raw.slice(0,4)+raw.slice(4,6); else if(raw.length===6) am=raw; if(am.length!==6) return;
+        var ano=parseInt(am.slice(0,4)); if(ano<2015||ano>2030) return;
+        var ym=am.slice(0,4)+'-'+am.slice(4,6);
+        var sup=(typeof otbSupOf==='function')?otbSupOf(nomfor,map):(map[nomfor]||'DEMAIS');
+        var val=parseFloat(r.valor_pagamento||r.VALOR_PAGAMENTO||r.valor||r.VALOR||0)||0;
+        out[sup]=out[sup]||{}; out[sup][ym]=(out[sup][ym]||0)+val;
+      });
+      return out;
+    })();
+    var otbVal=function(sup,ym){ var m=(state.matrices&&state.matrices[sup])?state.matrices[sup][ym]:null; return m?(m.otbCartRealVal||0):0; };
+    var effPct=function(sup){ var cc=C.cmv[sup]; var s=cc?((+cc[0]||0)+(+cc[1]||0)+(+cc[2]||0)+(+cc[3]||0)):0; return (s>0)?cc:(derivedLag[sup]||[100,0,0,0]); };
+
+    var _calcAno = (typeof _fluxoAno!=='undefined') ? _fluxoAno : 'TODOS';
+    window.__fluxoCalcSetAno=function(v){ _calcAno=v; renderCalc(); };
+    function anosList(){ var a=[]; months.forEach(function(m){var y=m.split('-')[0]; if(a.indexOf(y)<0)a.push(y);}); a.sort(); return a; }
+
+    function moneyCell(v, opts){ opts=opts||{}; var col=opts.color||(v<0?'#c0181a':'#1a2547'); return '<td style="padding:5px 9px;text-align:center;white-space:nowrap;font-size:11.5px;'+(opts.bold?'font-weight:800;':'')+'color:'+col+';'+(opts.fut?'background:#fffdf5;':'')+'border-bottom:1px solid #eef1f8">'+BRL(v||0)+'</td>'; }
+    function buildTable(disp, rows, title, accent){
+      var head='<th style="padding:7px 12px;position:sticky;left:0;background:'+accent+';color:#fff;font-size:10.5px;text-align:left;z-index:2;white-space:nowrap">'+title+'</th>'+
+        disp.map(function(m){ return '<th style="padding:7px 9px;background:'+(isFut(m)?'#2352c8':accent)+';color:#fff;font-size:10.5px;text-align:center;white-space:nowrap">'+mlbl(m)+'</th>'; }).join('');
+      var body=rows.map(function(r){
+        var lbl='<td style="padding:5px 12px;position:sticky;left:0;background:'+(r.bg||'#fff')+';font-size:11px;'+(r.bold?'font-weight:800;':'font-weight:600;')+'color:'+(r.lblColor||'#1a2547')+';border-bottom:1px solid #eef1f8;white-space:nowrap">'+r.label+'</td>';
+        var tds=disp.map(function(m){ return moneyCell(r.data[m]||0, {fut:isFut(m), bold:r.bold, color:r.color}); }).join('');
+        return '<tr'+(r.bg?' style="background:'+r.bg+'"':'')+'>'+lbl+tds+'</tr>';
+      }).join('');
+      return '<div style="overflow:auto;background:#fff;border:1px solid #e6ebf5;border-radius:10px"><table style="border-collapse:collapse;min-width:100%"><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table></div>';
+    }
+    function sectionTitle(t, sub){ return '<div style="margin:6px 2px 8px"><div style="font-size:13.5px;font-weight:800;color:#0f1830">'+t+'</div>'+(sub?'<div style="font-size:11px;color:#7a8ab0;margin-top:1px">'+sub+'</div>':'')+'</div>'; }
+
+    function renderCalc(){
+      var anos=anosList();
+      if(_calcAno!=='TODOS' && anos.indexOf(_calcAno)<0) _calcAno=anos.length?anos[anos.length-1]:'TODOS';
+      var disp=(_calcAno==='TODOS')?months:months.filter(function(m){return m.indexOf(_calcAno+'-')===0;});
+
+      var sel='<select onchange="__fluxoCalcSetAno(this.value)" style="padding:4px 9px;border:1px solid rgba(255,255,255,.4);border-radius:7px;font-size:12px;background:rgba(255,255,255,.15);color:#fff;font-family:inherit;cursor:pointer">'+
+        '<option value="TODOS"'+(_calcAno==='TODOS'?' selected':'')+' style="color:#1a2547">Todos os anos</option>'+
+        anos.map(function(y){ return '<option value="'+y+'"'+(_calcAno===y?' selected':'')+' style="color:#1a2547">'+y+'</option>'; }).join('')+'</select>';
+      var anoWrap=document.getElementById('fluxoCalcAnoWrap'); if(anoWrap) anoWrap.innerHTML='Ano: '+sel;
+
+      /* ===== BLOCO 1 — Recebimento (Entradas) ===== */
+      var fb={}, recFrom=[{},{},{},{}], recTot={};
+      months.forEach(function(m){ fb[m]=rbMes(m); });
+      months.forEach(function(m){
+        var i=idx[m], tot=0;
+        for(var d=0; d<4; d++){ var s=i-d; var val=(s>=0)?(rbMes(months[s])*((parseFloat(ent[d])||0)/100)):0; recFrom[d][m]=val; tot+=val; }
+        recTot[m]=tot;
+      });
+      var recRows=[
+        {label:'💵 Faturamento Bruto Total', data:fb, bold:true, color:'#0a7c4e', bg:'#f2fbf6', lblColor:'#0a7c4e'},
+        {label:'&nbsp;&nbsp;↳ Recebido de vendas do mês — M ('+(parseFloat(ent[0])||0)+'%)', data:recFrom[0], lblColor:'#5a6a8a'},
+        {label:'&nbsp;&nbsp;↳ Recebido de vendas de 1 mês atrás — M+1 ('+(parseFloat(ent[1])||0)+'%)', data:recFrom[1], lblColor:'#5a6a8a'},
+        {label:'&nbsp;&nbsp;↳ Recebido de vendas de 2 meses atrás — M+2 ('+(parseFloat(ent[2])||0)+'%)', data:recFrom[2], lblColor:'#5a6a8a'},
+        {label:'&nbsp;&nbsp;↳ Recebido de vendas de 3 meses atrás — M+3 ('+(parseFloat(ent[3])||0)+'%)', data:recFrom[3], lblColor:'#5a6a8a'},
+        {label:'⬆️ Recebimento Total (Entradas)', data:recTot, bold:true, color:'#0a7c4e', bg:'#eafaf1', lblColor:'#0a7c4e'}
+      ];
+      var html=sectionTitle('⬆️ Faturamento Bruto e Recebimento',
+        'Recebimento que cai em cada mês, decomposto pela origem da venda conforme os % M / M+1 / M+2 / M+3 configurados nas Entradas.')+
+        buildTable(disp, recRows, 'RECEBIMENTO', '#0a7c4e');
+
+      /* ===== BLOCO 2 — CMV aberto por fornecedor ===== */
+      html+='<div style="height:20px"></div>'+sectionTitle('⬇️ CMV — aberto por fornecedor',
+        'Por fornecedor: OTB gerado no mês e o pagamento que cai em cada mês, decomposto pela origem do OTB conforme os % M / M+1 / M+2 / M+3. Meses futuros usam projeção (OTB × %); meses realizados usam o valor lançado (baixa/vencimento).');
+
+      var otbTot={}, payTotAll={};
+      months.forEach(function(m){ otbTot[m]=0; payTotAll[m]=0; });
+
+      var supList=sups.slice();
+      // inclui "não mapeado" (só realizado) se houver movimento
+      var hasNm=Object.keys(realBySup['__NAOMAP']||{}).length>0;
+      if(hasNm) supList.push('__NAOMAP');
+
+      supList.forEach(function(sup){
+        var isNm=(sup==='__NAOMAP');
+        var p=isNm?[0,0,0,0]:effPct(sup);
+        var otbR={}, payFrom=[{},{},{},{}], realR={}, payTot={};
+        months.forEach(function(m){
+          otbR[m]=isNm?0:otbVal(sup,m);
+          var i=idx[m];
+          for(var d=0; d<4; d++){
+            var s=i-d, val=0;
+            if(!isNm && isFut(m) && s>=0 && isFut(months[s])) val=otbVal(sup,months[s])*((parseFloat(p[d])||0)/100);
+            payFrom[d][m]=val;
+          }
+          realR[m]=(realBySup[sup]&&realBySup[sup][m])||0;
+          var pt=realR[m]; if(isFut(m)){ for(var d2=0; d2<4; d2++) pt+=payFrom[d2][m]; }
+          payTot[m]=pt;
+          otbTot[m]+=otbR[m]; payTotAll[m]+=pt;
+        });
+        var supRows=[];
+        if(!isNm) supRows.push({label:'📦 OTB gerado no mês', data:otbR, bold:true, color:'#1a2547', bg:'#f4f7ff', lblColor:'#1a2547'});
+        if(!isNm){
+          supRows.push({label:'&nbsp;&nbsp;↳ Pagto de OTB do mês — M ('+(parseFloat(p[0])||0)+'%)', data:payFrom[0], color:'#c0181a', lblColor:'#8a95ad'});
+          supRows.push({label:'&nbsp;&nbsp;↳ Pagto de OTB de 1 mês atrás — M+1 ('+(parseFloat(p[1])||0)+'%)', data:payFrom[1], color:'#c0181a', lblColor:'#8a95ad'});
+          supRows.push({label:'&nbsp;&nbsp;↳ Pagto de OTB de 2 meses atrás — M+2 ('+(parseFloat(p[2])||0)+'%)', data:payFrom[2], color:'#c0181a', lblColor:'#8a95ad'});
+          supRows.push({label:'&nbsp;&nbsp;↳ Pagto de OTB de 3 meses atrás — M+3 ('+(parseFloat(p[3])||0)+'%)', data:payFrom[3], color:'#c0181a', lblColor:'#8a95ad'});
+        }
+        supRows.push({label:'&nbsp;&nbsp;↳ Realizado (lançado por baixa/venc.)', data:realR, color:'#c0181a', lblColor:'#8a95ad'});
+        supRows.push({label:'⬇️ Pagamento CMV Total', data:payTot, bold:true, color:'#c0181a', bg:'#fdf3f3', lblColor:'#c0181a'});
+        var titleSup=isNm?'NÃO MAPEADO':sup;
+        html+='<div style="margin-top:14px">'+buildTable(disp, supRows, titleSup, '#8a1420')+'</div>';
+      });
+
+      // resumo consolidado
+      var resumoRows=[
+        {label:'📦 OTB Total (todos)', data:otbTot, bold:true, color:'#1a2547', bg:'#f4f7ff', lblColor:'#1a2547'},
+        {label:'⬇️ Pagamento CMV Total (todos)', data:payTotAll, bold:true, color:'#c0181a', bg:'#fdf3f3', lblColor:'#c0181a'}
+      ];
+      html+='<div style="margin-top:16px">'+sectionTitle('Σ Resumo CMV (consolidado)')+buildTable(disp, resumoRows, 'RESUMO CMV', '#5a1420')+'</div>';
+
+      var bodyEl=document.getElementById('fluxoCalcBody'); if(bodyEl) bodyEl.innerHTML=html;
+    }
+
+    var ov=document.createElement('div'); ov.id='fluxoCalcOverlay';
+    ov.style.cssText='position:fixed;inset:0;background:rgba(15,26,58,.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:3vh 2vw';
+    ov.innerHTML=
+      '<div style="background:#fff;border-radius:14px;width:min(1180px,98vw);max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden">'+
+        '<div style="background:linear-gradient(90deg,#0a3d2e,#0a7c4e);color:#fff;padding:14px 20px;font-size:16px;font-weight:800;display:flex;align-items:center;gap:12px">📊 Cálculo — Detalhamento mês a mês'+
+          '<span id="fluxoCalcAnoWrap" style="margin-left:auto;font-size:12px;font-weight:600"></span>'+
+        '</div>'+
+        '<div id="fluxoCalcBody" style="flex:1;overflow:auto;padding:16px 20px;background:#f4f6fb"></div>'+
+        '<div style="padding:12px 20px;border-top:1px solid #e6ebf5;display:flex;justify-content:flex-end">'+
+          '<button onclick="document.getElementById(\'fluxoCalcOverlay\').remove()" style="padding:8px 18px;border:none;background:#0a7c4e;color:#fff;border-radius:8px;font-size:13px;cursor:pointer;font-weight:700">Fechar</button>'+
+        '</div>'+
+      '</div>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', function(e){ if(e.target===ov) ov.remove(); });
+    renderCalc();
   };
 })();
 
