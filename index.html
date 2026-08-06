@@ -395,7 +395,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
     <div class="home-mark">Plan&amp;BI</div>
     <div>
       <h1 style="font-size:24px;font-weight:600;color:#fff">Sistema de Planejamento</h1>
-      <small style="font-size:12px;color:rgba(255,255,255,.5)">Selecione o módulo <span style="margin-left:8px;padding:1px 8px;border:1px solid rgba(255,255,255,.25);border-radius:10px;font-size:11px;color:rgba(255,255,255,.65);font-family:ui-monospace,Menlo,Consolas,monospace">build 50</span></small>
+      <small style="font-size:12px;color:rgba(255,255,255,.5)">Selecione o módulo <span style="margin-left:8px;padding:1px 8px;border:1px solid rgba(255,255,255,.25);border-radius:10px;font-size:11px;color:rgba(255,255,255,.65);font-family:ui-monospace,Menlo,Consolas,monospace">build 56</span></small>
     </div>
   </div>
   <div class="home-modules">
@@ -4751,6 +4751,38 @@ function exportDrePDF(btn){
     var metaEl   = document.getElementById('dreHeaderMeta');
     var metaTxt  = metaEl ? metaEl.textContent.trim() : '';
     var now      = new Date().toLocaleString('pt-BR');
+    // ── Gráfico (Ponte de EBITDA) para a 2ª página ─────────────────────────────
+    // Só entra se houver histórico do ANO ANTERIOR — a Ponte compara ano vs ano-1.
+    // Ex.: com dados a partir de 2025, selecionar 2025 não gera gráfico (falta 2024).
+    var grfHtml='', grfTitulo='', grfSkip='';
+    try{
+      var sufMap={mensal:'mensal',canal:'canal',cluster:'cluster',regiao:'regiao',fornecedor:'forn',transportadora:'transp',vendedor:'vend'};
+      var anosData={};
+      (typeof DRE_RAW!=='undefined'?(DRE_RAW||[]):[]).forEach(function(r){ var a=parseInt(r.ano!=null?r.ano:r.ANO,10); if(a) anosData[a]=true; });
+      var grfOv=document.getElementById('grf-overlay'), createdGrf=false;
+      if(!grfOv && typeof openDreGrafico==='function'){
+        openDreGrafico(); grfOv=document.getElementById('grf-overlay'); createdGrf=true;
+        // alinha o ano do gráfico ao filtro "Ano" da aba do DRE (quando há um único ano marcado)
+        try{
+          var fv=(typeof dreGv==='function')?dreGv('dre-ano-'+(sufMap[tab]||tab)):'TODOS';
+          var only=(Array.isArray(fv)&&fv.length===1)?String(fv[0]):null;
+          var selA=document.getElementById('grf-ano');
+          if(only && selA && Array.prototype.some.call(selA.options,function(o){return o.value===only;}) && selA.value!==only){
+            selA.value=only; if(typeof grfRender==='function') grfRender();
+          }
+        }catch(e){}
+      }
+      var anoSel=document.getElementById('grf-ano');
+      var anoN=anoSel?parseInt(anoSel.value,10):NaN;
+      var gb=document.getElementById('grf-body');
+      if(anoN && !anosData[anoN-1]){
+        grfSkip='Gráfico não incluído: sem histórico de '+(anoN-1)+' para comparar.';
+      } else if(gb && gb.innerHTML.replace(/\s/g,'')){
+        grfHtml=gb.innerHTML;
+        grfTitulo='Ponte de EBITDA — '+(anoN-1)+' vs '+anoN;
+      }
+      if(createdGrf && grfOv) grfOv.remove();
+    }catch(e){ console.warn('[exportDrePDF] gráfico indisponível:', e); }
     // copia os <style> do app para preservar a aparência da tabela no PDF
     var styles = Array.prototype.map.call(document.querySelectorAll('style'), function(s){ return s.outerHTML; }).join('\n');
     var w = window.open('', '_blank');
@@ -4759,19 +4791,40 @@ function exportDrePDF(btn){
       + styles
       + '<style>'
       + '@page{size:A4 landscape;margin:6mm}'
-      + 'html,body{background:#fff !important;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;color:#111}'
+      // força a impressão de fundos/gradientes (senão o navegador descarta as cores dos cabeçalhos)
+      + '*{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important}'
+      + 'html,body{background:#fff !important;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;color:#111;height:auto !important;overflow:visible !important}'
       + '.pdf-head{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:2px solid #1a2a6c;padding-bottom:6px;margin-bottom:8px}'
       + '.pdf-head h1{font-size:15px;margin:0;color:#1a2a6c}'
       + '.pdf-head .sub{font-size:9px;color:#555;margin-top:2px}'
-      + '.pdf-kpis{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}'
-      + '.pdf-kpis > *{flex:0 0 auto !important;transform:scale(.92);transform-origin:top left}'
+      + '.pdf-kpis{display:flex;flex-wrap:nowrap;align-items:stretch;gap:4px;margin-bottom:8px;width:100%}'
+      // cada cartão divide igualmente a largura da folha (sem sobrar espaço à direita)
+      + '.pdf-kpis > *{flex:1 1 0 !important;min-width:0 !important;transform:none !important;padding:6px 4px !important;box-shadow:none !important}'
+      + '.pdf-kpis *{white-space:nowrap !important}'
+      // fontes menores nos cartões para os valores não quebrarem em várias linhas
+      + '.pdf-kpis > * > div:nth-child(1){font-size:6.5px !important;letter-spacing:.2px !important;margin-bottom:3px !important;white-space:normal !important}'
+      + '.pdf-kpis > * > div:nth-child(2){font-size:10.5px !important;line-height:1.1 !important}'
+      + '.pdf-kpis > * > div:nth-child(3){font-size:7px !important;margin-top:2px !important}'
+      + '.pdf-kpis > * > div:nth-child(4){margin-top:3px !important;padding-top:3px !important;gap:3px !important}'
+      + '.pdf-kpis > * > div:nth-child(4) span{font-size:6.5px !important}'
       + 'table{border-collapse:collapse !important;width:auto;font-size:8.5px}'
       + 'th,td{border:1px solid #d0d8ee;padding:1px 3px;white-space:nowrap}'
       + 'thead{display:table-header-group}'      // repete o cabeçalho a cada página
       + 'tr{page-break-inside:avoid}'
+      // não deixa o título da seção (ex.: FRETE) sozinho no fim da página — desce junto com suas linhas
+      + '.pdf-body tr.dre-sec-row{break-after:avoid-page !important;page-break-after:avoid !important;break-inside:avoid !important}'
       // neutraliza scroll/sticky/altura fixa do app na impressão
       + '.pdf-body, .pdf-body *{overflow:visible !important;max-height:none !important}'
       + '.pdf-body [style*="position:sticky"],.pdf-body [style*="position: sticky"]{position:static !important}'
+      // relatório completo: mostra também as seções que estejam recolhidas na tela (display:none inline)
+      + '.pdf-body tr{display:table-row !important}'
+      + '.pdf-body .dre-sec-toggle{display:none !important}'
+      // quebra de página só ENTRE blocos: cada bloco vira um <tbody> que não pode ser dividido
+      + '.pdf-table tbody{break-inside:avoid !important;page-break-inside:avoid !important}'
+      // 2ª página: gráfico (Ponte de EBITDA) — SVG com viewBox escala para a largura da folha
+      + '.pdf-page2{break-before:page;page-break-before:always;padding-top:2mm}'
+      + '.pdf-chart svg{width:100% !important;height:auto !important;display:block}'
+      + '.pdf-chart{width:100%}'
       + '</style></head><body>'
       + '<div class="pdf-head"><div><h1>DRE - '+tabLabel+'</h1>'
       + '<div class="sub">'+metaTxt+'</div>'
@@ -4779,26 +4832,56 @@ function exportDrePDF(btn){
       + '</div><div style="font-size:12px;font-weight:800;color:#1a2a6c;white-space:nowrap;margin-left:16px">AVACY</div></div>'
       + '<div class="pdf-body">'
       + (kpiWrap && kpiWrap.innerHTML.replace(/\s/g,'') ? '<div class="pdf-kpis">'+kpiWrap.innerHTML+'</div>' : '')
-      + tableWrap.innerHTML
+      + '<div class="pdf-table">'+tableWrap.innerHTML+'</div>'
+      + (grfHtml
+          ? '<div class="pdf-page2">'
+            + '<div class="pdf-head"><div><h1>📊 '+(grfTitulo||'Ponte de EBITDA')+'</h1>'
+            + '<div class="sub">DRE - '+tabLabel+' · variação linha a linha, do EBITDA anterior ao atual</div>'
+            + '<div class="sub">Gerado em '+now+'</div>'
+            + '</div><div style="font-size:12px;font-weight:800;color:#1a2a6c;white-space:nowrap;margin-left:16px">AVACY</div></div>'
+            + '<div class="pdf-chart">'+grfHtml+'</div>'
+            + '</div>'
+          : '')
       + '</div></body></html>';
     w.document.open(); w.document.write(html); w.document.close();
-    // Ajuste automático de largura: mede a tabela e aplica zoom para caber na largura da página
-    // (A4 paisagem @96dpi, margem 6mm => ~1060px úteis). zoom pagina corretamente tabelas altas.
+    // Ajuste automático de largura: mede a tabela e aplica zoom SÓ NA TABELA para caber na
+    // largura da página (A4 paisagem @96dpi, margem 6mm => ~1055px úteis). Assim os cartões
+    // de KPI continuam em tamanho cheio, ocupando toda a largura da folha.
     function fitToPage(){
       try{
         var d=w.document; if(!d||!d.body) return;
-        d.body.style.zoom=''; // reset antes de medir
-        var tbl=d.querySelector('.pdf-body table');
+        var box=d.querySelector('.pdf-table'); if(!box) return;
+        box.style.zoom=''; // reset antes de medir
+        var tbl=box.querySelector('table');
         var natW = tbl ? Math.max(tbl.scrollWidth, tbl.offsetWidth) : 0;
         var TARGET = 1055; // largura útil aproximada da folha A4 paisagem
-        if(natW > TARGET){ d.body.style.zoom = (TARGET/natW).toFixed(4); }
+        if(natW > TARGET){ box.style.zoom = (TARGET/natW).toFixed(4); }
+      }catch(e){}
+    }
+    // Agrupa cada bloco do DRE (linha de seção + suas linhas) em um <tbody> próprio.
+    // Com o CSS break-inside:avoid, o navegador só quebra a página ENTRE blocos —
+    // um bloco nunca é dividido no meio (ex.: DESPESAS COMERCIAIS, FRETE).
+    function groupSections(){
+      try{
+        var d=w.document; var tbl=d.querySelector('.pdf-table table'); if(!tbl) return;
+        var rows=Array.prototype.slice.call(tbl.querySelectorAll('tbody > tr'));
+        if(!rows.length) return;
+        var oldBodies=Array.prototype.slice.call(tbl.querySelectorAll('tbody'));
+        var groups=[], cur=null;
+        rows.forEach(function(tr){
+          var isSec = tr.className && tr.className.indexOf('dre-sec-row')>=0;
+          if(cur===null || isSec){ cur=d.createElement('tbody'); groups.push(cur); }
+          cur.appendChild(tr);   // move a linha para o tbody do bloco
+        });
+        groups.forEach(function(tb){ tbl.appendChild(tb); });
+        oldBodies.forEach(function(tb){ if(!tb.rows.length && tb.parentNode) tb.parentNode.removeChild(tb); });
       }catch(e){}
     }
     // dá tempo do layout/estilos renderizarem antes de medir e imprimir
-    var done=false; var go=function(){ if(done)return; done=true; fitToPage(); try{ w.focus(); w.print(); }catch(e){} };
+    var done=false; var go=function(){ if(done)return; done=true; groupSections(); fitToPage(); try{ w.focus(); w.print(); }catch(e){} };
     if(w.document.readyState==='complete') setTimeout(go,400);
     w.onload=go; setTimeout(go,800);
-    if(typeof toast==='function') toast('Abrindo diálogo de impressão — escolha "Salvar como PDF".','ok');
+    if(typeof toast==='function') toast('Abrindo diálogo de impressão — escolha "Salvar como PDF".'+(grfSkip?' '+grfSkip:''), grfSkip?'err':'ok');
   }catch(e){ if(typeof toast==='function') toast('Erro ao exportar PDF: '+e.message,'err'); console.error('[exportDrePDF]', e); }
 }
 
@@ -13467,7 +13550,7 @@ async function saveBudgetCfg(btn){
 })();
 
 </script>
-<div id="buildTag" style="position:fixed;left:5px;bottom:3px;font-size:9px;color:rgba(120,130,160,.6);font-family:ui-monospace,Menlo,Consolas,monospace;z-index:2147483000;pointer-events:none;user-select:none">build 50</div>
-<script>try{document.title='OTB/DRE · build 50';}catch(e){}</script>
+<div id="buildTag" style="position:fixed;left:5px;bottom:3px;font-size:9px;color:rgba(120,130,160,.6);font-family:ui-monospace,Menlo,Consolas,monospace;z-index:2147483000;pointer-events:none;user-select:none">build 56</div>
+<script>try{document.title='OTB/DRE · build 56';}catch(e){}</script>
 </body>
 </html>
