@@ -513,6 +513,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn" data-perm-admin onclick="dreForceReload(this)" title="Limpa o cache local e busca dados do DRE direto do Supabase. Use quando dw_otb_venda_dre foi atualizado externamente." style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">🔄 Recarregar Dados</button>
       <button class="btn" data-perm-admin onclick="openDreCfg()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">⚙️ Config</button>
+      <button class="btn" onclick="exportDrePDF(this)" title="Gera um PDF em paisagem com a aba do DRE atualmente selecionada (KPIs + tabela, já com os filtros aplicados)." style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.25);color:#fff;font-size:12px">📄 Exportar PDF</button>
       <button class="btn save" data-perm-edit id="btnSaveDre" onclick="handleSaveDre(this)">💾 Salvar</button>
     </div>
   </header>
@@ -4733,6 +4734,60 @@ async function initDre(){
     '<div id="drePanel-transportadora" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-transp'),selQ('dre-q-transp'),selMes('dre-mes-transp'),selCanal('dre-canal-transp'),selCluster('dre-cluster-transp'),selRegiao('dre-reg-transp'),selForn('dre-forn-transp'),selVend('dre-vend-transp')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-transp" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(144px,1fr));gap:8px"></div></div>'+'<div id="dreTable-transp"></div></div>'+
     '<div id="drePanel-vendedor" style="display:none">'+'<div class="dre-fbar-wrap">'+fBar([selAno('dre-ano-vend'),selQ('dre-q-vend'),selMes('dre-mes-vend'),selCanal('dre-canal-vend'),selCluster('dre-cluster-vend'),selRegiao('dre-reg-vend'),selForn('dre-forn-vend'),selTransp('dre-transp-vend')])+'</div>'+'<div class="dre-kpi-wrap"><div id="dreKpi-vend" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(144px,1fr));gap:8px"></div></div>'+'<div id="dreTable-vend"></div></div>';
   dreSwitchTab('mensal');
+}
+
+// Exporta a aba de DRE atualmente selecionada como PDF (paisagem), via impressão nativa do navegador.
+// Reaproveita o KPI + a tabela já renderizados (WYSIWYG, com os filtros aplicados). Sem biblioteca externa.
+function exportDrePDF(btn){
+  try{
+    var tab = (typeof DRE_TAB!=='undefined' && DRE_TAB) ? DRE_TAB : 'mensal';
+    var panel = document.getElementById('drePanel-'+tab);
+    if(!panel){ if(typeof toast==='function') toast('Painel do DRE não encontrado.','err'); return; }
+    var tableWrap = panel.querySelector('[id^="dreTable-"]');
+    var kpiWrap   = panel.querySelector('[id^="dreKpi-"]');
+    if(!tableWrap || !tableWrap.innerHTML.replace(/\s/g,'')){ if(typeof toast==='function') toast('Nada para exportar nesta aba do DRE.','err'); return; }
+    var tabBtn   = document.querySelector('.dre-tab-btn[data-tab="'+tab+'"]');
+    var tabLabel = tabBtn ? tabBtn.textContent.trim() : tab;
+    var metaEl   = document.getElementById('dreHeaderMeta');
+    var metaTxt  = metaEl ? metaEl.textContent.trim() : '';
+    var now      = new Date().toLocaleString('pt-BR');
+    // copia os <style> do app para preservar a aparência da tabela no PDF
+    var styles = Array.prototype.map.call(document.querySelectorAll('style'), function(s){ return s.outerHTML; }).join('\n');
+    var w = window.open('', '_blank');
+    if(!w){ if(typeof toast==='function') toast('Permita pop-ups neste site para exportar o PDF.','err'); return; }
+    var html = '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>DRE - '+tabLabel+'</title>'
+      + styles
+      + '<style>'
+      + '@page{size:A4 landscape;margin:8mm}'
+      + 'html,body{background:#fff !important;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;color:#111}'
+      + '.pdf-head{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:2px solid #1a2a6c;padding-bottom:8px;margin-bottom:10px}'
+      + '.pdf-head h1{font-size:16px;margin:0;color:#1a2a6c}'
+      + '.pdf-head .sub{font-size:10px;color:#555;margin-top:2px}'
+      + '.pdf-kpis{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}'
+      + '.pdf-kpis > *{flex:0 0 auto !important}'
+      + 'table{border-collapse:collapse !important;width:100%;font-size:9px}'
+      + 'th,td{border:1px solid #d0d8ee;padding:2px 4px;white-space:nowrap}'
+      + 'thead{display:table-header-group}'      // repete o cabeçalho a cada página
+      + 'tr{page-break-inside:avoid}'
+      // neutraliza scroll/sticky/altura fixa do app na impressão
+      + '.pdf-body, .pdf-body *{overflow:visible !important;max-height:none !important}'
+      + '.pdf-body [style*="position:sticky"],.pdf-body [style*="position: sticky"]{position:static !important}'
+      + '</style></head><body>'
+      + '<div class="pdf-head"><div><h1>DRE - '+tabLabel+'</h1>'
+      + '<div class="sub">'+metaTxt+'</div>'
+      + '<div class="sub">Gerado em '+now+' (dados conforme filtros aplicados na tela)</div>'
+      + '</div><div style="font-size:12px;font-weight:800;color:#1a2a6c;white-space:nowrap;margin-left:16px">AVACY</div></div>'
+      + '<div class="pdf-body">'
+      + (kpiWrap && kpiWrap.innerHTML.replace(/\s/g,'') ? '<div class="pdf-kpis">'+kpiWrap.innerHTML+'</div>' : '')
+      + tableWrap.innerHTML
+      + '</div></body></html>';
+    w.document.open(); w.document.write(html); w.document.close();
+    // dá tempo do layout/estilos renderizarem antes de abrir o diálogo de impressão
+    var done=false; var go=function(){ if(done)return; done=true; try{ w.focus(); w.print(); }catch(e){} };
+    if(w.document.readyState==='complete') setTimeout(go,300); 
+    w.onload=go; setTimeout(go,700);
+    if(typeof toast==='function') toast('Abrindo diálogo de impressão — escolha "Salvar como PDF".','ok');
+  }catch(e){ if(typeof toast==='function') toast('Erro ao exportar PDF: '+e.message,'err'); console.error('[exportDrePDF]', e); }
 }
 
 // Toggle de expansão da barra de filtros do DRE
