@@ -395,11 +395,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
     <div class="home-mark">Plan&amp;BI</div>
     <div>
       <h1 style="font-size:24px;font-weight:600;color:#fff">Sistema de Planejamento</h1>
-<<<<<<< HEAD
       <small style="font-size:12px;color:rgba(255,255,255,.5)">Selecione o módulo <span style="margin-left:8px;padding:1px 8px;border:1px solid rgba(255,255,255,.25);border-radius:10px;font-size:11px;color:rgba(255,255,255,.65);font-family:ui-monospace,Menlo,Consolas,monospace">build 56</span></small>
-=======
-      <small style="font-size:12px;color:rgba(255,255,255,.5)">Selecione o módulo <span style="margin-left:8px;padding:1px 8px;border:1px solid rgba(255,255,255,.25);border-radius:10px;font-size:11px;color:rgba(255,255,255,.65);font-family:ui-monospace,Menlo,Consolas,monospace">build 51</span></small>
->>>>>>> 5debe02f8c4432867034c6a1ffea6389d84a82b5
     </div>
   </div>
   <div class="home-modules">
@@ -4795,11 +4791,8 @@ function exportDrePDF(btn){
       + styles
       + '<style>'
       + '@page{size:A4 landscape;margin:6mm}'
-<<<<<<< HEAD
       // força a impressão de fundos/gradientes (senão o navegador descarta as cores dos cabeçalhos)
       + '*{-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;color-adjust:exact !important}'
-=======
->>>>>>> 5debe02f8c4432867034c6a1ffea6389d84a82b5
       + 'html,body{background:#fff !important;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;color:#111;height:auto !important;overflow:visible !important}'
       + '.pdf-head{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:2px solid #1a2a6c;padding-bottom:6px;margin-bottom:8px}'
       + '.pdf-head h1{font-size:15px;margin:0;color:#1a2a6c}'
@@ -4826,15 +4819,12 @@ function exportDrePDF(btn){
       // relatório completo: mostra também as seções que estejam recolhidas na tela (display:none inline)
       + '.pdf-body tr{display:table-row !important}'
       + '.pdf-body .dre-sec-toggle{display:none !important}'
-<<<<<<< HEAD
       // quebra de página só ENTRE blocos: cada bloco vira um <tbody> que não pode ser dividido
       + '.pdf-table tbody{break-inside:avoid !important;page-break-inside:avoid !important}'
       // 2ª página: gráfico (Ponte de EBITDA) — SVG com viewBox escala para a largura da folha
       + '.pdf-page2{break-before:page;page-break-before:always;padding-top:2mm}'
       + '.pdf-chart svg{width:100% !important;height:auto !important;display:block}'
       + '.pdf-chart{width:100%}'
-=======
->>>>>>> 5debe02f8c4432867034c6a1ffea6389d84a82b5
       + '</style></head><body>'
       + '<div class="pdf-head"><div><h1>DRE - '+tabLabel+'</h1>'
       + '<div class="sub">'+metaTxt+'</div>'
@@ -13560,12 +13550,7 @@ async function saveBudgetCfg(btn){
 })();
 
 </script>
-<<<<<<< HEAD
 <div id="buildTag" style="position:fixed;left:5px;bottom:3px;font-size:9px;color:rgba(120,130,160,.6);font-family:ui-monospace,Menlo,Consolas,monospace;z-index:2147483000;pointer-events:none;user-select:none">build 56</div>
 <script>try{document.title='OTB/DRE · build 56';}catch(e){}</script>
-=======
-<div id="buildTag" style="position:fixed;left:5px;bottom:3px;font-size:9px;color:rgba(120,130,160,.6);font-family:ui-monospace,Menlo,Consolas,monospace;z-index:2147483000;pointer-events:none;user-select:none">build 51</div>
-<script>try{document.title='OTB/DRE · build 51';}catch(e){}</script>
->>>>>>> 5debe02f8c4432867034c6a1ffea6389d84a82b5
 </body>
 </html>
