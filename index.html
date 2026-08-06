@@ -395,7 +395,7 @@ table.otb tr.blank-sep td{background:var(--bg);height:16px;padding:0;border:none
     <div class="home-mark">Plan&amp;BI</div>
     <div>
       <h1 style="font-size:24px;font-weight:600;color:#fff">Sistema de Planejamento</h1>
-      <small style="font-size:12px;color:rgba(255,255,255,.5)">Selecione o módulo <span style="margin-left:8px;padding:1px 8px;border:1px solid rgba(255,255,255,.25);border-radius:10px;font-size:11px;color:rgba(255,255,255,.65);font-family:ui-monospace,Menlo,Consolas,monospace">build 49</span></small>
+      <small style="font-size:12px;color:rgba(255,255,255,.5)">Selecione o módulo <span style="margin-left:8px;padding:1px 8px;border:1px solid rgba(255,255,255,.25);border-radius:10px;font-size:11px;color:rgba(255,255,255,.65);font-family:ui-monospace,Menlo,Consolas,monospace">build 50</span></small>
     </div>
   </div>
   <div class="home-modules">
@@ -4758,15 +4758,15 @@ function exportDrePDF(btn){
     var html = '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>DRE - '+tabLabel+'</title>'
       + styles
       + '<style>'
-      + '@page{size:A4 landscape;margin:8mm}'
+      + '@page{size:A4 landscape;margin:6mm}'
       + 'html,body{background:#fff !important;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;color:#111}'
-      + '.pdf-head{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:2px solid #1a2a6c;padding-bottom:8px;margin-bottom:10px}'
-      + '.pdf-head h1{font-size:16px;margin:0;color:#1a2a6c}'
-      + '.pdf-head .sub{font-size:10px;color:#555;margin-top:2px}'
-      + '.pdf-kpis{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}'
-      + '.pdf-kpis > *{flex:0 0 auto !important}'
-      + 'table{border-collapse:collapse !important;width:100%;font-size:9px}'
-      + 'th,td{border:1px solid #d0d8ee;padding:2px 4px;white-space:nowrap}'
+      + '.pdf-head{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:2px solid #1a2a6c;padding-bottom:6px;margin-bottom:8px}'
+      + '.pdf-head h1{font-size:15px;margin:0;color:#1a2a6c}'
+      + '.pdf-head .sub{font-size:9px;color:#555;margin-top:2px}'
+      + '.pdf-kpis{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}'
+      + '.pdf-kpis > *{flex:0 0 auto !important;transform:scale(.92);transform-origin:top left}'
+      + 'table{border-collapse:collapse !important;width:auto;font-size:8.5px}'
+      + 'th,td{border:1px solid #d0d8ee;padding:1px 3px;white-space:nowrap}'
       + 'thead{display:table-header-group}'      // repete o cabeçalho a cada página
       + 'tr{page-break-inside:avoid}'
       // neutraliza scroll/sticky/altura fixa do app na impressão
@@ -4782,10 +4782,22 @@ function exportDrePDF(btn){
       + tableWrap.innerHTML
       + '</div></body></html>';
     w.document.open(); w.document.write(html); w.document.close();
-    // dá tempo do layout/estilos renderizarem antes de abrir o diálogo de impressão
-    var done=false; var go=function(){ if(done)return; done=true; try{ w.focus(); w.print(); }catch(e){} };
-    if(w.document.readyState==='complete') setTimeout(go,300); 
-    w.onload=go; setTimeout(go,700);
+    // Ajuste automático de largura: mede a tabela e aplica zoom para caber na largura da página
+    // (A4 paisagem @96dpi, margem 6mm => ~1060px úteis). zoom pagina corretamente tabelas altas.
+    function fitToPage(){
+      try{
+        var d=w.document; if(!d||!d.body) return;
+        d.body.style.zoom=''; // reset antes de medir
+        var tbl=d.querySelector('.pdf-body table');
+        var natW = tbl ? Math.max(tbl.scrollWidth, tbl.offsetWidth) : 0;
+        var TARGET = 1055; // largura útil aproximada da folha A4 paisagem
+        if(natW > TARGET){ d.body.style.zoom = (TARGET/natW).toFixed(4); }
+      }catch(e){}
+    }
+    // dá tempo do layout/estilos renderizarem antes de medir e imprimir
+    var done=false; var go=function(){ if(done)return; done=true; fitToPage(); try{ w.focus(); w.print(); }catch(e){} };
+    if(w.document.readyState==='complete') setTimeout(go,400);
+    w.onload=go; setTimeout(go,800);
     if(typeof toast==='function') toast('Abrindo diálogo de impressão — escolha "Salvar como PDF".','ok');
   }catch(e){ if(typeof toast==='function') toast('Erro ao exportar PDF: '+e.message,'err'); console.error('[exportDrePDF]', e); }
 }
@@ -13455,7 +13467,7 @@ async function saveBudgetCfg(btn){
 })();
 
 </script>
-<div id="buildTag" style="position:fixed;left:5px;bottom:3px;font-size:9px;color:rgba(120,130,160,.6);font-family:ui-monospace,Menlo,Consolas,monospace;z-index:2147483000;pointer-events:none;user-select:none">build 49</div>
-<script>try{document.title='OTB/DRE · build 49';}catch(e){}</script>
+<div id="buildTag" style="position:fixed;left:5px;bottom:3px;font-size:9px;color:rgba(120,130,160,.6);font-family:ui-monospace,Menlo,Consolas,monospace;z-index:2147483000;pointer-events:none;user-select:none">build 50</div>
+<script>try{document.title='OTB/DRE · build 50';}catch(e){}</script>
 </body>
 </html>
